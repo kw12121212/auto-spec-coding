@@ -23,4 +23,12 @@ public interface AgentContext {
      * May return null if no tools have been registered yet.
      */
     Map<String, Tool> toolRegistry();
+
+    /**
+     * Returns the conversation context for this agent invocation.
+     * Default implementation returns null for backward compatibility.
+     */
+    default Conversation conversation() {
+        return null;
+    }
 }

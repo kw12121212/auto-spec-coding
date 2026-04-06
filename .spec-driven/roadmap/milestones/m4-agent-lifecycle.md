@@ -28,7 +28,7 @@
 ## Planned Changes
 
 - `agent-lifecycle` - Declared: complete - Agent 状态机与生命周期管理实现
-- `agent-conversation` - Declared: planned - 会话与消息管理实现
+- `agent-conversation` - Declared: complete - 会话与消息管理实现
 - `agent-orchestrator` - Declared: planned - 多轮工具调用编排循环实现（VirtualThread 并发）
 
 ## Dependencies

@@ -1,7 +1,7 @@
 # Specs Index
 
 - [tool-interface.md](tool-interface.md) - Tool, ToolInput, ToolResult, ToolContext, ToolParameter
-- [agent-interface.md](agent-interface.md) - Agent, AgentState, AgentContext
+- [agent-interface.md](agent-interface.md) - Agent, AgentState, AgentContext, Message, Conversation
 - [event-system.md](event-system.md) - Event, EventType, EventBus
 - [permission-interface.md](permission-interface.md) - PermissionProvider, Permission, PermissionContext
 - [config-loader.md](config-loader.md) - ConfigLoader, Config, ConfigException
