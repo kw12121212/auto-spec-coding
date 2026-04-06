@@ -1,0 +1,3 @@
+[submodule "lealone"]
+	path = lealone
+	url = https://github.com/lealone/Lealone.git

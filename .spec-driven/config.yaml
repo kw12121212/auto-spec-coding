@@ -1,0 +1,37 @@
+schema: spec-driven
+context: |
+  Java SDK reimplementation of spec-coding-sdk (Go), which itself reimplements claw-code
+  (Rust coding agent harness). Exposes core agent capabilities through multiple interface
+  layers: native Java SDK library, JSON-RPC over stdin, and HTTP REST API. Built on
+  Lealone framework (https://github.com/lealone/Lealone) as the primary dependency,
+  leveraging its embedded database, HTTP server, scheduling, and async networking —
+  minimizing external dependencies. Tool surface includes bash, file ops, grep, glob,
+  LSP, MCP, task/team/cron registries, and permissions. Licensed under Apache 2.0.
+rules:
+  specs:
+    - Describe observable behavior only — no implementation details, technology
+      choices, or internal structure
+    - MUST = required with no exceptions; SHOULD = default unless explicitly
+      justified; MAY = genuinely optional
+    - Each requirement must be independently verifiable from outside the system
+  change:
+    - Implement only what is in scope in proposal.md — if scope needs to expand,
+      use /spec-driven-modify first, never expand silently
+    - When a requirement or task is ambiguous, ask the user before proceeding —
+      do not assume or guess
+    - Delta specs must reflect what was actually built, not the original plan
+    - Mark tasks [x] immediately upon completion — never batch at the end
+    - Every change must include test tasks (lint + unit tests at minimum)
+  code:
+    - Read existing code before modifying it
+    - Implement only what the current task requires — no speculative features
+    - No abstractions for hypothetical future needs (YAGNI)
+  test:
+    - Tests must verify observable behavior described in specs, not internal
+      implementation details
+    - Each test must be independent — no shared mutable state between tests
+    - Prefer real dependencies over mocks for code the project owns
+# fileMatch:              # per-pattern rules applied in addition to global rules above
+#   - pattern: "**/*.test.*"
+#     rules:
+#       - Tests must cover happy path, error cases, and edge cases
