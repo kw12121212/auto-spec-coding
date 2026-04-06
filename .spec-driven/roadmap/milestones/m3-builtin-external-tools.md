@@ -9,6 +9,7 @@
 - 内置工具管理器（外部工具检测、预编译二进制下载与安装）
 - ripgrep 集成（供 M2 tool-grep 高性能模式使用）
 - GitHub CLI（gh）集成工具
+- fd 集成（替代 M2 GlobTool 纯 Java 实现，纯 Java 作为 fallback）
 
 ## Out of Scope
 
@@ -22,11 +23,13 @@
 - 缺失的外部工具可被自动下载预编译二进制并安装
 - ripgrep 可通过工具管理器获取并供 M2 tool-grep 使用
 - gh 工具可被 agent 调用执行基本 GitHub 操作
+- fd 可通过工具管理器获取并供 GlobTool 使用，fd 不可用时回退到纯 Java 实现
 
 ## Planned Changes
 
 - `builtin-tool-manager` - Declared: planned - 内置工具管理器，自动检测、下载预编译二进制并安装外部工具
 - `tool-gh` - Declared: planned - GitHub CLI 集成工具实现
+- `tool-fd` - Declared: planned - fd 集成工具，使用 fd 二进制提供高性能文件查找，GlobTool 纯 Java 实现作为 fallback
 
 ## Dependencies
 
@@ -45,6 +48,6 @@
 ## Notes
 
 - 所有外部工具仅下载预编译二进制，不从源码编译
-- 预编译二进制来源：ripgrep（GitHub Releases）、gh（GitHub Releases）
-- builtin-tool-manager 应作为此里程碑的基础设施先行完成，tool-gh 依赖它
+- 预编译二进制来源：ripgrep（GitHub Releases）、gh（GitHub Releases）、fd（GitHub Releases）
+- builtin-tool-manager 应作为此里程碑的基础设施先行完成，tool-gh 和 tool-fd 均依赖它
 - HTTP 下载使用 Lealone 的异步网络模块（lealone-net）
