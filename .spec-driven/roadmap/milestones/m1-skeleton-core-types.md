@@ -28,8 +28,8 @@
 
 ## Planned Changes
 
-- `project-scaffold` - Declared: planned - 初始化 Maven 项目、目录结构、pom.xml、Lealone 依赖引入
-- `core-interfaces` - Declared: planned - 定义 Tool、Agent、Event、PermissionProvider 等核心 Java 接口
+- `project-scaffold` - Declared: complete - 初始化 Maven 项目、目录结构、pom.xml、Lealone 依赖引入
+- `core-interfaces` - Declared: complete - 定义 Tool、Agent、Event、PermissionProvider 等核心 Java 接口
 - `config-loader` - Declared: planned - 实现配置文件解析与 Java 对象映射
 - `event-system-types` - Declared: planned - 定义结构化事件系统的核心类型
 
@@ -45,7 +45,9 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: active
+
+
 
 ## Notes
 

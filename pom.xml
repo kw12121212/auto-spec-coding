@@ -32,6 +32,11 @@
             <artifactId>lealone-net</artifactId>
             <version>${lealone.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.lealone</groupId>
+            <artifactId>lealone-orm</artifactId>
+            <version>${lealone.version}</version>
+        </dependency>
 
         <!-- Testing -->
         <dependency>
