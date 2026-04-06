@@ -1,0 +1,13 @@
+agent:
+  name: "test-agent"
+  max_retries: 3
+  debug: true
+llm:
+  provider: "openai"
+  model: "gpt-4"
+  api_key: "${TEST_API_KEY}"
+permissions:
+  default: "ask"
+  allowed:
+    - "bash"
+    - "file"
