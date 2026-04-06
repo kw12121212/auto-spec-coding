@@ -5,3 +5,4 @@
 - [event-system.md](event-system.md) - Event, EventType, EventBus
 - [permission-interface.md](permission-interface.md) - PermissionProvider, Permission, PermissionContext
 - [config-loader.md](config-loader.md) - ConfigLoader, Config, ConfigException
+- [bash-tool.md](bash-tool.md) - BashTool, shell command execution with timeout and permission checks

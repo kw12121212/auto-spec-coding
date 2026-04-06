@@ -1,7 +1,7 @@
 # Roadmap Index
 
 ## Milestones
-- [m1-skeleton-core-types.md](milestones/m1-skeleton-core-types.md) - M1 - 项目骨架与核心接口 - active
+- [m1-skeleton-core-types.md](milestones/m1-skeleton-core-types.md) - M1 - 项目骨架与核心接口 - complete
 - [m10-mcp-integration.md](milestones/m10-mcp-integration.md) - M10 - MCP 协议适配 - proposed
 - [m11-service-sql.md](milestones/m11-service-sql.md) - M11 - Service SQL 集成 - proposed
 - [m12-native-java-sdk.md](milestones/m12-native-java-sdk.md) - M12 - Native Java SDK 层 - proposed

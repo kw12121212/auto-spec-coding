@@ -28,7 +28,7 @@
 
 ## Planned Changes
 
-- `tool-bash` - Declared: planned - Bash 命令执行工具实现（ProcessBuilder + 超时控制）
+- `tool-bash` - Declared: complete - Bash 命令执行工具实现（ProcessBuilder + 超时控制）
 - `tool-file-ops` - Declared: planned - 文件读/写/编辑工具实现（java.nio.file）
 - `tool-grep` - Declared: planned - 内容搜索工具实现（Java NIO 或 ripgrep 调用）
 - `tool-glob` - Declared: planned - 文件模式匹配工具实现（PathMatcher）
