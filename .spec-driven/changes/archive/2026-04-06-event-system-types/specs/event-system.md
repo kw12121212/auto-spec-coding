@@ -1,24 +1,6 @@
-# Event System Spec
+# Event System Spec (delta: event-system-types)
 
-## Requirements
-
-### Requirement: Event record
-
-- MUST be a Java record with fields: `type` (EventType), `timestamp` (long), `source` (String), `metadata` (Map<String, Object>)
-- MUST be immutable
-- Compact constructor MUST defensively copy the metadata map and normalize null to empty map
-
-### Requirement: EventType enum
-
-- MUST define at minimum: TOOL_EXECUTED, AGENT_STATE_CHANGED, TASK_CREATED, TASK_COMPLETED, CRON_TRIGGERED, ERROR
-- MAY be extended in future milestones
-
-### Requirement: EventBus pub/sub
-
-- MUST support `subscribe(EventType, Consumer<Event>)` for event listeners
-- MUST support `publish(Event)` to dispatch events to subscribers
-- MUST support `unsubscribe(EventType, Consumer<Event>)` to remove listeners
-- MUST use JDK `Consumer<Event>` as callback type, not Lealone's `AsyncHandler`
+## ADDED Requirements
 
 ### Requirement: SimpleEventBus production implementation
 
@@ -34,3 +16,17 @@
 - Metadata values MUST be limited to String, Number, and Boolean types
 - MUST handle null/empty metadata as `{}`
 - `Event` compact constructor MUST defensively copy the metadata map and normalize null to empty map
+
+## UNCHANGED Requirements
+
+### Requirement: Event record
+
+- No changes to existing Event record fields or immutability
+
+### Requirement: EventType enum
+
+- No changes to existing enum values
+
+### Requirement: EventBus pub/sub
+
+- No changes to existing EventBus interface methods

@@ -73,34 +73,4 @@ class EventSystemTest {
         assertEquals(1, received.size());
         assertEquals(EventType.ERROR, received.get(0).type());
     }
-
-    /**
-     * Minimal EventBus implementation for testing.
-     */
-    private static class SimpleEventBus implements EventBus {
-        private final Map<EventType, List<Consumer<Event>>> listeners = new java.util.HashMap<>();
-
-        @Override
-        public void publish(Event event) {
-            List<Consumer<Event>> list = listeners.get(event.type());
-            if (list != null) {
-                for (Consumer<Event> l : list) {
-                    l.accept(event);
-                }
-            }
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-            listeners.computeIfAbsent(type, k -> new ArrayList<>()).add(listener);
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-            List<Consumer<Event>> list = listeners.get(type);
-            if (list != null) {
-                list.remove(listener);
-            }
-        }
-    }
 }
