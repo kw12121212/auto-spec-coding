@@ -6,3 +6,4 @@
 - [permission-interface.md](permission-interface.md) - PermissionProvider, Permission, PermissionContext
 - [config-loader.md](config-loader.md) - ConfigLoader, Config, ConfigException
 - [bash-tool.md](bash-tool.md) - BashTool, shell command execution with timeout and permission checks
+- [file-ops-tools.md](file-ops-tools.md) - ReadTool, WriteTool, EditTool — file read/write/edit with permission checks
