@@ -53,8 +53,9 @@ public class BashTool implements Tool {
         // Permission check
         Permission permission = new Permission("execute", "bash", Map.of("command", command));
         PermissionContext permCtx = new PermissionContext(NAME, "execute", "agent");
-        if (!context.permissionProvider().check(permission, permCtx)) {
-            return new ToolResult.Error("Permission denied for command: " + command);
+        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "command: " + command);
+        if (permissionError != null) {
+            return permissionError;
         }
 
         // Resolve timeout

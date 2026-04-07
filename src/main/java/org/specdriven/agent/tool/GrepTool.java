@@ -80,8 +80,9 @@ public class GrepTool implements Tool {
         // Permission check
         Permission permission = new Permission("search", searchRoot.toString(), Map.of());
         PermissionContext permCtx = new PermissionContext(NAME, "search", "agent");
-        if (!context.permissionProvider().check(permission, permCtx)) {
-            return new ToolResult.Error("Permission denied for search: " + searchRoot);
+        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "search: " + searchRoot);
+        if (permissionError != null) {
+            return permissionError;
         }
 
         // Resolve output mode

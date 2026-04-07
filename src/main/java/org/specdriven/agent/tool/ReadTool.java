@@ -53,8 +53,9 @@ public class ReadTool implements Tool {
         // Permission check
         Permission permission = new Permission("read", filePath.toString(), Map.of());
         PermissionContext permCtx = new PermissionContext(NAME, "read", "agent");
-        if (!context.permissionProvider().check(permission, permCtx)) {
-            return new ToolResult.Error("Permission denied for read: " + filePath);
+        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "read: " + filePath);
+        if (permissionError != null) {
+            return permissionError;
         }
 
         // Resolve optional offset/limit

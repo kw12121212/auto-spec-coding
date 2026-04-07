@@ -48,7 +48,10 @@
 - ReadTool MUST call `ToolContext.permissionProvider().check()` before reading, with `action="read"`, `resource` set to the resolved file path
 - WriteTool MUST call `ToolContext.permissionProvider().check()` before writing, with `action="write"`, `resource` set to the resolved file path
 - EditTool MUST call `ToolContext.permissionProvider().check()` before editing, with `action="edit"`, `resource` set to the resolved file path
-- All three MUST return `ToolResult.Error` without performing the operation if the permission check returns `false`
+- ReadTool MUST return `ToolResult.Error` without performing the operation when the permission decision is `PermissionDecision.DENY`
+- ReadTool MUST return `ToolResult.Error` without performing the operation when the permission decision is `PermissionDecision.CONFIRM`, and the error message MUST indicate that explicit confirmation is required
+- WriteTool and EditTool MUST return `ToolResult.Error` without performing the operation when the permission decision is `PermissionDecision.DENY`
+- WriteTool and EditTool MUST return `ToolResult.Error` without performing the operation when the permission decision is `PermissionDecision.CONFIRM`, and the error message MUST indicate that explicit confirmation is required
 
 ### Requirement: File ops error handling
 

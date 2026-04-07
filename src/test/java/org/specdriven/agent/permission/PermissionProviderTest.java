@@ -15,8 +15,10 @@ class PermissionProviderTest {
         Set<String> granted = new HashSet<>();
         PermissionProvider provider = new PermissionProvider() {
             @Override
-            public boolean check(Permission permission, PermissionContext context) {
-                return granted.contains(key(permission, context));
+            public PermissionDecision check(Permission permission, PermissionContext context) {
+                return granted.contains(key(permission, context))
+                        ? PermissionDecision.ALLOW
+                        : PermissionDecision.DENY;
             }
 
             @Override
@@ -37,10 +39,10 @@ class PermissionProviderTest {
         Permission perm = new Permission("execute", "/bin/bash", Map.of());
         PermissionContext ctx = new PermissionContext("bash-tool", "run", "agent-1");
 
-        assertFalse(provider.check(perm, ctx));
+        assertEquals(PermissionDecision.DENY, provider.check(perm, ctx));
         provider.grant(perm, ctx);
-        assertTrue(provider.check(perm, ctx));
+        assertEquals(PermissionDecision.ALLOW, provider.check(perm, ctx));
         provider.revoke(perm, ctx);
-        assertFalse(provider.check(perm, ctx));
+        assertEquals(PermissionDecision.DENY, provider.check(perm, ctx));
     }
 }

@@ -4,6 +4,7 @@ import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
 import org.specdriven.agent.tool.ToolResult;
+import org.specdriven.agent.permission.DefaultPermissionProvider;
 import org.specdriven.agent.permission.PermissionProvider;
 
 import java.util.Collections;
@@ -88,7 +89,7 @@ public class DefaultOrchestrator implements Orchestrator {
             try {
                 ToolContext toolCtx = new SimpleToolContext(
                         context.config().getOrDefault("workDir", "."),
-                        null,
+                        new DefaultPermissionProvider(context.config().getOrDefault("workDir", ".")),
                         Collections.emptyMap());
                 ToolInput input = new ToolInput(call.parameters());
                 ToolResult result = tool.execute(input, toolCtx);

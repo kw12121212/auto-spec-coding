@@ -7,10 +7,8 @@ public interface PermissionProvider {
 
     /**
      * Checks whether the given permission is allowed in the given context.
-     *
-     * @return true if the permission is granted
      */
-    boolean check(Permission permission, PermissionContext context);
+    PermissionDecision check(Permission permission, PermissionContext context);
 
     /**
      * Grants the given permission in the given context.

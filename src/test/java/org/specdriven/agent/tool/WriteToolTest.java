@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
 import org.specdriven.agent.permission.PermissionProvider;
 
 class WriteToolTest {
@@ -116,7 +117,7 @@ class WriteToolTest {
     @Test
     void permissionDenied_returnsErrorWithoutWriting(@TempDir Path tempDir) {
         PermissionProvider denier = new PermissionProvider() {
-            @Override public boolean check(Permission p, PermissionContext c) { return false; }
+            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.DENY; }
             @Override public void grant(Permission p, PermissionContext c) {}
             @Override public void revoke(Permission p, PermissionContext c) {}
         };
@@ -133,11 +134,30 @@ class WriteToolTest {
         assertTrue(((ToolResult.Error) result).message().contains("Permission denied"));
     }
 
+    @Test
+    void permissionConfirm_returnsExplicitConfirmationError(@TempDir Path tempDir) {
+        PermissionProvider confirmer = new PermissionProvider() {
+            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.CONFIRM; }
+            @Override public void grant(Permission p, PermissionContext c) {}
+            @Override public void revoke(Permission p, PermissionContext c) {}
+        };
+        ToolContext ctx = new ToolContext() {
+            @Override public String workDir() { return tempDir.toString(); }
+            @Override public PermissionProvider permissionProvider() { return confirmer; }
+            @Override public Map<String, String> env() { return Map.of(); }
+        };
+
+        ToolResult result = tool.execute(new ToolInput(Map.of("path", tempDir.resolve("x.txt").toString(), "content", "nope")), ctx);
+
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
+    }
+
     // --- Helpers ---
 
     private static ToolContext allowAllContext(String workDir) {
         PermissionProvider allowAll = new PermissionProvider() {
-            @Override public boolean check(Permission p, PermissionContext c) { return true; }
+            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.ALLOW; }
             @Override public void grant(Permission p, PermissionContext c) {}
             @Override public void revoke(Permission p, PermissionContext c) {}
         };

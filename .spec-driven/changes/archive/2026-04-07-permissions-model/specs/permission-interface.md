@@ -1,24 +1,17 @@
 # Permission Interface Spec
 
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: PermissionProvider contract
 
 - MUST define `check(Permission, PermissionContext)` returning `PermissionDecision`
 - MUST define `grant(Permission, PermissionContext)`
 - MUST define `revoke(Permission, PermissionContext)`
-
 - MUST treat `PermissionDecision.ALLOW` as permission granted
 - MUST treat `PermissionDecision.DENY` as permission rejected without further confirmation
 - MUST treat `PermissionDecision.CONFIRM` as permission requiring an explicit approval step from a later hook or interface layer before execution may proceed
 
-### Requirement: Permission record
-
-- MUST be a Java record with fields: `action` (String), `resource` (String), `constraints` (Map<String, String>)
-
-### Requirement: PermissionContext record
-
-- MUST be a Java record with fields: `toolName` (String), `operation` (String), `requester` (String)
+## ADDED Requirements
 
 ### Requirement: PermissionDecision enum
 

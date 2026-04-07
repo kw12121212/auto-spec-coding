@@ -65,8 +65,9 @@ public class EditTool implements Tool {
         // Permission check
         Permission permission = new Permission("edit", filePath.toString(), Map.of());
         PermissionContext permCtx = new PermissionContext(NAME, "edit", "agent");
-        if (!context.permissionProvider().check(permission, permCtx)) {
-            return new ToolResult.Error("Permission denied for edit: " + filePath);
+        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "edit: " + filePath);
+        if (permissionError != null) {
+            return permissionError;
         }
 
         // Execute edit

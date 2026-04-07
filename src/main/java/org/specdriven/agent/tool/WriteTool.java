@@ -57,8 +57,9 @@ public class WriteTool implements Tool {
         // Permission check
         Permission permission = new Permission("write", filePath.toString(), Map.of());
         PermissionContext permCtx = new PermissionContext(NAME, "write", "agent");
-        if (!context.permissionProvider().check(permission, permCtx)) {
-            return new ToolResult.Error("Permission denied for write: " + filePath);
+        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "write: " + filePath);
+        if (permissionError != null) {
+            return permissionError;
         }
 
         // Execute write
