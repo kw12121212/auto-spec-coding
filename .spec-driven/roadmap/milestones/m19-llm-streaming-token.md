@@ -25,9 +25,8 @@
 - 有单元测试覆盖（使用 mock SSE stream）
 
 ## Planned Changes
-
-- `llm-streaming` - Declared: planned - 统一流式响应处理（SSE 解析 + 回调机制）
-- `llm-token-counter` - Declared: planned - Token 计数与上下文窗口管理实现
+- `llm-streaming` - Declared: complete - 统一流式响应处理（SSE 解析 + 回调机制）
+- `llm-token-counter` - Declared: complete - Token 计数与上下文窗口管理实现
 
 ## Dependencies
 
@@ -42,10 +41,11 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
 - 流式处理需兼容两种 SSE 协议差异：OpenAI 用 `data: [DONE]` 结束，Claude 用 `event: message_stop`
 - Token 计数首期可使用近似估算（字符数/4），后续可集成 tiktoken 等精确 tokenizer
 - 与 M5 的 provider 实现可并行开发，通过 LlmStreamCallback 接口解耦
+
