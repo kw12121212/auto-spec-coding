@@ -9,6 +9,7 @@
 - [m14-http-rest-api.md](milestones/m14-http-rest-api.md) - M14 - HTTP REST API - proposed
 - [m15-background-process.md](milestones/m15-background-process.md) - M15 - 后台进程管理 - proposed
 - [m16-integration-release.md](milestones/m16-integration-release.md) - M16 - 集成与发布 - proposed
+- [m17-db-cache-layer.md](milestones/m17-db-cache-layer.md) - M17 - Lealone DB 缓存层 - proposed
 - [m2-tool-surface-basics.md](milestones/m2-tool-surface-basics.md) - M2 - Tool Surface 基础工具集 - complete
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - proposed
 - [m4-agent-lifecycle.md](milestones/m4-agent-lifecycle.md) - M4 - Agent 生命周期与编排 - proposed

@@ -72,10 +72,22 @@ public class DefaultAgent implements Agent {
 
     /**
      * Hook for subclasses to override execute behavior.
-     * Default implementation is a no-op.
+     * Default implementation delegates to the orchestrator loop.
      */
     protected void doExecute(AgentContext context) {
-        // no-op by default — orchestrator will override
+        OrchestratorConfig orchestratorConfig = OrchestratorConfig.fromMap(config);
+        Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, this::getState);
+
+        LlmClient llmClient = createLlmClient(context);
+        orchestrator.run(context, llmClient);
+    }
+
+    /**
+     * Creates the LLM client for this execution.
+     * Default returns null — subclasses or config should override.
+     */
+    protected LlmClient createLlmClient(AgentContext context) {
+        return null;
     }
 
     /**

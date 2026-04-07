@@ -27,16 +27,19 @@
 
 - `permissions-model` - Declared: planned - 权限模型定义与策略接口实现
 - `permissions-hooks` - Declared: planned - 权限检查执行钩子与工具调用拦截实现
+- `permission-policy-store` - Declared: planned - 权限策略 DB 存储与运行时 grant/revoke 审计日志，基于 Lealone DB
 
 ## Dependencies
 
 - M1 核心接口（PermissionProvider）
 - M4 Agent 生命周期（权限检查注入到编排循环）
+- Lealone 数据库模块（lealone-db, lealone-sql）用于策略存储和审计日志
 
 ## Risks
 
 - 权限模型设计过紧会限制后续接口层的灵活性
 - 默认策略的覆盖面需要与 spec-coding-sdk 的安全行为对齐
+- DB 存储的策略与代码默认策略的优先级和合并规则需明确
 
 ## Status
 
@@ -45,3 +48,4 @@
 ## Notes
 
 - 权限模型需同时支持 SDK 嵌入场景（自动授权）和服务化场景（需确认）
+- permission-policy-store 使权限可在运行时动态配置（无需重启），并记录完整的 grant/revoke 审计链
