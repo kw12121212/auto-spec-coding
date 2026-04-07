@@ -9,3 +9,4 @@
 - [file-ops-tools.md](file-ops-tools.md) - ReadTool, WriteTool, EditTool — file read/write/edit with permission checks
 - [tool-grep.md](tool-grep.md) - GrepTool — content search with regex, glob filtering, and multiple output modes
 - [tool-glob.md](tool-glob.md) - GlobTool — file pattern matching with glob, sorted by modification time
+- [llm-provider.md](llm-provider.md) - LlmProvider, LlmConfig, LlmRequest, LlmResponse, LlmUsage, ToolSchema, LlmStreamCallback, LlmProviderRegistry, DefaultLlmProviderRegistry, SkillRoute, LlmProviderFactory

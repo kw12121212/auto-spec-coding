@@ -1,47 +1,58 @@
-# M11 - Service SQL 集成
+# M11 - Service SQL + Skill 嵌入
 
 ## Goal
 
-利用 Lealone 原生 `CREATE SERVICE` SQL 语法，提供 SQL 驱动的 agent 能力定义机制，使开发者可通过 service.sql 声明式地定义工具和技能，作为 skill 系统的等价替代。
+将 auto-spec-driven 的 skill 系统拆解为 Lealone CREATE SERVICE SQL 格式，通过插件 SPI 扩展实现 skill 执行引擎，不修改 Lealone 基础仓库。
 
 ## In Scope
 
-- service.sql 文件解析与加载（CREATE SERVICE / CREATE WORKFLOW 等 Lealone SQL 语法）
-- SQL 定义的 Service 到 M1 Tool 接口的自动适配（每个 service method 映射为一个可调用 Tool）
-- Service 参数绑定与结果序列化（SQL 类型 <-> Java 类型 <-> Tool 输入输出）
-- Service SQL 文件的自动发现与热加载（从 classpath 或指定目录扫描 *.sql）
-- 内置 skill 等价功能（预置常用 service.sql 模板，如代码生成、文件处理等）
+- SKILL.md → CREATE SERVICE SQL 的分解规范与转换工具
+- ServiceExecutorFactory 插件实现 skill agent 循环引擎
+- TypeScript CLI 的 Java ProcessBuilder 桥接层
+- skill 指令体存储与渐进加载机制
+- skills/ 目录自动发现并批量生成 DDL
 
 ## Out of Scope
 
-- 具体 skill 内容的开发（仅提供框架和模板）
+- 具体 skill 指令内容开发（仅提供框架）
+- Lealone 核心仓库修改
 - MCP 协议（M10）
+- LLM 后端实现（M5）
 - SDK 公共 API 封装（M12）
 
 ## Done Criteria
 
-- 可通过 service.sql 文件定义 agent 工具，并被 agent 编排循环正确调用
-- service.sql 中定义的 service method 自动注册为 M1 Tool 接口实例
-- 参数绑定正确处理基本类型、字符串、JSON 对象
-- 支持从 classpath 和文件系统自动发现并加载 *.sql 文件
-- 有单元测试验证 SQL 定义到 Tool 调用的完整链路
+- 可将 SKILL.md frontmatter 自动转换为 CREATE SERVICE SQL 语句
+- 通过 PARAMETERS 配置 allowed_tools、scripts、instructions 等元数据
+- ServiceExecutorFactory 插件通过 SPI 注册，不修改 Lealone core
+- agent 循环能加载指令体、绑定 Tool 实例、执行 LLM 推理并返回结果
+- TypeScript CLI 的 12 个子命令全部用 Java 改写，无 Node.js 外部依赖
+- 支持 3 级渐进加载：元数据（始终在 context）→ 指令体（触发时加载）→ 脚本资源（按需执行）
+- 自动扫描 skills/ 目录并批量生成 DDL 注册
+- 有单元测试验证 SKILL.md → SQL 转换和插件注册链路
 
 ## Planned Changes
 
-- `service-sql-loader` - Declared: planned - service.sql 文件解析、发现与加载机制实现
-- `service-sql-tool-adapter` - Declared: planned - SQL Service 到 Tool 接口的自动适配层，参数绑定与结果序列化
-- `service-sql-builtin-skills` - Declared: planned - 预置常用 skill 等价的 service.sql 模板集合
+- `skill-sql-schema` - Declared: planned - SKILL.md → SQL 分解规范、参数映射规则、SQL 模板生成工具
+- `skill-executor-plugin` - Declared: planned - ServiceExecutorFactory SPI 实现：加载 PARAMETERS 配置、构建 agent 循环、绑定 allowed-tools 到 M1 Tool 实例
+- `skill-cli-java` - Declared: planned - 用 Java 改写 spec-driven.ts 全部 12 个子命令（propose/apply/verify/archive/cancel/init/list 等），实现全内置无外部依赖
+- `skill-instructions-store` - Declared: planned - 指令体外部文件管理，3 级渐进加载机制（元数据→指令体→脚本资源）
+- `skill-auto-discovery` - Declared: planned - 扫描 skills/ 目录解析 SKILL.md frontmatter，批量生成 CREATE SERVICE DDL 并执行注册
 
 ## Dependencies
 
-- M1 核心接口（Tool 接口）
-- M2 基础工具集（Service SQL 可调用基础工具）
-- Lealone SQL 引擎（lealone-sql, lealone-server 的 CREATE SERVICE 能力）
+- M1 核心接口（Tool 接口，service method 需映射为 Tool）
+- M2 基础工具集（skill executor 需绑定 Read/Write/Edit/Bash/Glob/Grep 实例）
+- M5 LLM 后端（agent 循环依赖 LLM 推理能力）
+- Lealone SQL 引擎（CREATE SERVICE 语法、PARAMETERS 子句、ServiceExecutorFactory SPI）
+- [auto-spec-driven](https://github.com/kw12121212/auto-spec-driven)（内嵌 skill 源：18 个 SKILL.md + scripts/spec-driven.ts 逻辑，TypeScript CLI 用 Java 改写，实现全内置）
 
 ## Risks
 
-- Lealone CREATE SERVICE 的能力边界需确认，复杂逻辑可能需要 WORKFLOW 或 Java 回调补充
-- SQL 语法的表达能力可能不足以覆盖所有 skill 场景，需设计合理的扩展机制
+- PARAMETERS 值长度需验证：长 allowed_tools 列表和 scripts 路径可能超出解析限制
+- agent 循环端到端测试需 M5 就绪，否则只能 mock LLM 层
+- Lealone ServiceLoader SPI 类加载隔离：插件 JAR 需正确放入 classpath
+- spec-driven.ts 改写为 Java 需保持行为一致性（12 个子命令的 JSON 输出格式、退出码语义）
 
 ## Status
 
@@ -49,7 +60,9 @@
 
 ## Notes
 
-- 这是本 SDK 区别于 Go 版本的独有特性——利用 Lealone 原生 SQL 能力提供声明式工具定义
-- service.sql 与 skill 功能等价但表达方式不同：skill 用代码，service.sql 用 SQL 声明
+- SKILL.md 拆解为 SQL 的映射：frontmatter → PARAMETERS + COMMENT，方法签名 → execute(params) return varchar，指令体 → PARAMETERS 引用的外部文件
+- 不修改 Lealone 核心：所有扩展通过 ServiceExecutorFactory、ServiceCodeGenerator 的 SPI 插件实现，注册到 META-INF/services/
+- 不依赖 TypeScript/Node.js：spec-driven.ts 的全部逻辑用 Java 改写，实现纯 Java 全内置
+- Lealone 已验证支持：COMMENT 多行无大小限制、PARAMETERS 任意 string 键值对、ServiceLoader 插件机制
+- 这是本 SDK 区别于 Go 版本的独有特性——利用 Lealone 原生 SQL + SPI 提供声明式 skill 定义
 - 可与 M10（MCP）并行开发，两者都是工具集成层但机制不同
-- Lealone 的 CREATE SERVICE / CREATE WORKFLOW 语法参考：https://github.com/lealone/Lealone
