@@ -17,6 +17,6 @@
 - [m4-agent-lifecycle.md](milestones/m4-agent-lifecycle.md) - M4 - Agent 生命周期与编排 - complete
 - [m5-llm-backend.md](milestones/m5-llm-backend.md) - M5 - LLM Provider Layer - complete
 - [m6-permissions.md](milestones/m6-permissions.md) - M6 - 权限模型与执行钩子 - complete
-- [m7-registries.md](milestones/m7-registries.md) - M7 - 任务与团队注册表 - proposed
-- [m8-cron-registry.md](milestones/m8-cron-registry.md) - M8 - 定时任务注册表 - proposed
-- [m9-lsp-integration.md](milestones/m9-lsp-integration.md) - M9 - LSP 客户端工具 - proposed
+- [m7-registries.md](milestones/m7-registries.md) - M7 - 任务与团队注册表 - complete
+- [m8-cron-registry.md](milestones/m8-cron-registry.md) - M8 - 定时任务注册表 - complete
+- [m9-lsp-integration.md](milestones/m9-lsp-integration.md) - M9 - LSP 客户端工具 - complete

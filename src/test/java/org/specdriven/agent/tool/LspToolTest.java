@@ -1,0 +1,355 @@
+package org.specdriven.agent.tool;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.permission.Permission;
+
+class LspToolTest {
+
+    private final LspTool tool = new LspTool();
+
+    // --- Identity ---
+
+    @Test
+    void getName_returnsLsp() {
+        assertEquals("lsp", tool.getName());
+    }
+
+    @Test
+    void getDescription_isNonEmpty() {
+        assertFalse(tool.getDescription().isBlank());
+    }
+
+    @Test
+    void getParameters_declaresRequiredAndOptional() {
+        List<ToolParameter> params = tool.getParameters();
+        assertEquals(6, params.size());
+        assertEquals("operation", params.get(0).name());
+        assertTrue(params.get(0).required());
+        assertEquals("file", params.get(1).name());
+        assertTrue(params.get(1).required());
+        assertEquals("line", params.get(2).name());
+        assertFalse(params.get(2).required());
+        assertEquals("character", params.get(3).name());
+        assertFalse(params.get(3).required());
+        assertEquals("serverCommand", params.get(4).name());
+        assertFalse(params.get(4).required());
+        assertEquals("timeout", params.get(5).name());
+        assertFalse(params.get(5).required());
+    }
+
+    // --- Parameter validation ---
+
+    @Test
+    void missingOperation_returnsError(@TempDir Path tempDir) {
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("file", tempDir.toString())),
+                stubContext(tempDir));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Missing or empty required parameter: operation"));
+    }
+
+    @Test
+    void blankOperation_returnsError(@TempDir Path tempDir) {
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("operation", " ", "file", tempDir.toString())),
+                stubContext(tempDir));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Missing or empty required parameter: operation"));
+    }
+
+    @Test
+    void invalidOperation_returnsError(@TempDir Path tempDir) throws IOException {
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("operation", "unknownOp", "file", file.toString())),
+                stubContext(tempDir));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Invalid operation: unknownOp"));
+    }
+
+    @Test
+    void missingFile_returnsError() {
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("operation", "hover")),
+                stubContext(Path.of("/tmp")));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Missing or empty required parameter: file"));
+    }
+
+    @Test
+    void nonexistentFile_returnsError(@TempDir Path tempDir) {
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("operation", "hover", "file", "/nonexistent/File.java")),
+                stubContext(tempDir));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Failed to read file"));
+    }
+
+    @Test
+    void noServerCommand_returnsError(@TempDir Path tempDir) throws IOException {
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+        ToolResult result = tool.execute(
+                new ToolInput(Map.of("operation", "diagnostics", "file", file.toString())),
+                stubContext(tempDir));
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("No language server command"));
+    }
+
+    // --- Permission ---
+
+    @Test
+    void permissionFor_returnsExecuteLspPermission() {
+        ToolInput input = new ToolInput(Map.of(
+                "operation", "diagnostics",
+                "file", "/tmp/Test.java"
+        ));
+        Permission perm = tool.permissionFor(input, stubContext(Path.of("/tmp")));
+        assertEquals("execute", perm.action());
+        assertEquals("lsp", perm.resource());
+        assertEquals("diagnostics", perm.constraints().get("operation"));
+        assertEquals("/tmp/Test.java", perm.constraints().get("file"));
+    }
+
+    // --- Dispatch with mock server ---
+
+    @Test
+    void diagnostics_withMockServer_returnsSuccess(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "diagnostics",
+                            "file", file.toString(),
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Success.class, result,
+                    "Expected Success but got Error: " + (result instanceof ToolResult.Error e ? e.message() : ""));
+            String output = ((ToolResult.Success) result).output();
+            assertTrue(output.contains("Error"));
+            assertTrue(output.contains("test error"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    @Test
+    void hover_withMockServer_returnsSuccess(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "hover",
+                            "file", file.toString(),
+                            "line", 0,
+                            "character", 6,
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Success.class, result,
+                    "Expected Success but got Error: " + (result instanceof ToolResult.Error e ? e.message() : ""));
+            assertTrue(((ToolResult.Success) result).output().contains("test hover"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    @Test
+    void goToDefinition_withMockServer_returnsSuccess(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "goToDefinition",
+                            "file", file.toString(),
+                            "line", 0,
+                            "character", 6,
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Success.class, result,
+                    "Expected Success but got Error: " + (result instanceof ToolResult.Error e ? e.message() : ""));
+            String output = ((ToolResult.Success) result).output();
+            assertTrue(output.contains("test.java"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    @Test
+    void references_withMockServer_returnsSuccess(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "references",
+                            "file", file.toString(),
+                            "line", 0,
+                            "character", 6,
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Success.class, result,
+                    "Expected Success but got Error: " + (result instanceof ToolResult.Error e ? e.message() : ""));
+            assertTrue(((ToolResult.Success) result).output().contains("test.java"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    @Test
+    void documentSymbols_withMockServer_returnsSuccess(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "documentSymbols",
+                            "file", file.toString(),
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Success.class, result,
+                    "Expected Success but got Error: " + (result instanceof ToolResult.Error e ? e.message() : ""));
+            String output = ((ToolResult.Success) result).output();
+            assertTrue(output.contains("TestClass"));
+            assertTrue(output.contains("Class"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    @Test
+    void hover_withoutLineAndChar_returnsError(@TempDir Path tempDir) throws Exception {
+        Path mockServer = createMockServer(tempDir);
+        Path file = tempDir.resolve("Test.java");
+        Files.writeString(file, "class Test {}");
+
+        LspTool lspTool = new LspTool();
+        try {
+            ToolResult result = lspTool.execute(
+                    new ToolInput(Map.of(
+                            "operation", "hover",
+                            "file", file.toString(),
+                            "serverCommand", "python3 " + mockServer.toString(),
+                            "timeout", 10
+                    )),
+                    stubContext(tempDir));
+
+            assertInstanceOf(ToolResult.Error.class, result);
+            assertTrue(((ToolResult.Error) result).message().contains("line") || ((ToolResult.Error) result).message().contains("character"));
+        } finally {
+            lspTool.close();
+        }
+    }
+
+    // --- Helpers ---
+
+    private static ToolContext stubContext(Path workDir) {
+        return new ToolContext() {
+            @Override public String workDir() { return workDir.toString(); }
+            @Override public org.specdriven.agent.permission.PermissionProvider permissionProvider() {
+                return new org.specdriven.agent.permission.PermissionProvider() {
+                    @Override public org.specdriven.agent.permission.PermissionDecision check(org.specdriven.agent.permission.Permission p, org.specdriven.agent.permission.PermissionContext c) { return org.specdriven.agent.permission.PermissionDecision.ALLOW; }
+                    @Override public void grant(org.specdriven.agent.permission.Permission p, org.specdriven.agent.permission.PermissionContext c) {}
+                    @Override public void revoke(org.specdriven.agent.permission.Permission p, org.specdriven.agent.permission.PermissionContext c) {}
+                };
+            }
+            @Override public Map<String, String> env() { return Map.of(); }
+        };
+    }
+
+    private static Path createMockServer(Path tempDir) throws IOException {
+        String script = """
+import sys, json
+
+def read_msg():
+    length = 0
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line:
+            return None
+        line = line.decode('utf-8').strip()
+        if line == '':
+            break
+        if line.startswith('Content-Length:'):
+            length = int(line.split(':')[1].strip())
+    if length == 0:
+        return None
+    body = sys.stdin.buffer.read(length).decode('utf-8')
+    return json.loads(body)
+
+def send_msg(msg):
+    body = json.dumps(msg).encode('utf-8')
+    sys.stdout.buffer.write(f'Content-Length: {len(body)}\\r\\n\\r\\n'.encode('utf-8'))
+    sys.stdout.buffer.write(body)
+    sys.stdout.buffer.flush()
+
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get('method', '')
+    mid = msg.get('id')
+    if method == 'initialize':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':{'capabilities':{}}})
+    elif method == 'shutdown':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':None})
+        break
+    elif method == 'textDocument/hover':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':{'contents':'test hover'}})
+    elif method == 'textDocument/definition':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':{'uri':'file:///test.java','range':{'start':{'line':0,'character':0},'end':{'line':0,'character':5}}}})
+    elif method == 'textDocument/references':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':[{'uri':'file:///test.java','range':{'start':{'line':0,'character':0},'end':{'line':0,'character':5}}}]})
+    elif method == 'textDocument/documentSymbol':
+        send_msg({'jsonrpc':'2.0','id':mid,'result':[{'name':'TestClass','kind':5,'range':{'start':{'line':0,'character':0},'end':{'line':10,'character':1}}}]})
+    elif method == 'textDocument/didOpen':
+        uri = msg.get('params',{}).get('textDocument',{}).get('uri','')
+        send_msg({'jsonrpc':'2.0','method':'textDocument/publishDiagnostics','params':{'uri':uri,'diagnostics':[{'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':5}},'severity':1,'message':'test error'}]}})
+""";
+        Path scriptFile = tempDir.resolve("mock_lsp_server.py");
+        Files.writeString(scriptFile, script);
+        return scriptFile;
+    }
+}

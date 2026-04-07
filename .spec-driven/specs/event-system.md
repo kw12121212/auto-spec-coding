@@ -10,7 +10,7 @@
 
 ### Requirement: EventType enum
 
-- MUST define at minimum: TOOL_EXECUTED, AGENT_STATE_CHANGED, TASK_CREATED, TASK_COMPLETED, CRON_TRIGGERED, ERROR
+- MUST define at minimum: TOOL_EXECUTED, AGENT_STATE_CHANGED, TASK_CREATED, TASK_COMPLETED, TEAM_CREATED, TEAM_DISSOLVED, CRON_TRIGGERED, ERROR
 - MAY be extended in future milestones
 
 ### Requirement: EventBus pub/sub

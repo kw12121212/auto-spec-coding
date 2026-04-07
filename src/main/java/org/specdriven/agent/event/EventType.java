@@ -8,6 +8,8 @@ public enum EventType {
     AGENT_STATE_CHANGED,
     TASK_CREATED,
     TASK_COMPLETED,
+    TEAM_CREATED,
+    TEAM_DISSOLVED,
     CRON_TRIGGERED,
     ERROR
 }

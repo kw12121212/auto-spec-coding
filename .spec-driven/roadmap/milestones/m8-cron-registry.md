@@ -27,7 +27,7 @@
 
 ## Planned Changes
 
-- `registry-cron` - Declared: planned - Cron 调度器与定时任务注册表实现（基于 Lealone 调度能力）
+- `registry-cron` - Declared: complete - Cron 调度器与定时任务注册表实现（基于 Lealone 调度能力）
 
 ## Dependencies
 
@@ -42,7 +42,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
