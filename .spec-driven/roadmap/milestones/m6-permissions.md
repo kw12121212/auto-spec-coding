@@ -24,10 +24,9 @@
 - 默认策略可覆盖 bash 和文件操作的基本安全约束
 
 ## Planned Changes
-
-- `permissions-model` - Declared: planned - 权限模型定义与策略接口实现
-- `permissions-hooks` - Declared: planned - 权限检查执行钩子与工具调用拦截实现
-- `permission-policy-store` - Declared: planned - 权限策略 DB 存储与运行时 grant/revoke 审计日志，基于 Lealone DB
+- `permissions-model` - Declared: complete - 权限模型定义与策略接口实现
+- `permissions-hooks` - Declared: complete - 权限检查执行钩子与工具调用拦截实现
+- `permission-policy-store` - Declared: complete - 权限策略 DB 存储与运行时 grant/revoke 审计日志，基于 Lealone DB
 
 ## Dependencies
 
@@ -42,10 +41,11 @@
 - DB 存储的策略与代码默认策略的优先级和合并规则需明确
 
 ## Status
-
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
 - 权限模型需同时支持 SDK 嵌入场景（自动授权）和服务化场景（需确认）
 - permission-policy-store 使权限可在运行时动态配置（无需重启），并记录完整的 grant/revoke 审计链
+
+

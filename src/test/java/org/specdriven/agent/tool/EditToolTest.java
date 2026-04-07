@@ -145,62 +145,6 @@ class EditToolTest {
         assertTrue(((ToolResult.Error) result).message().contains("Missing required parameter: new_string"));
     }
 
-    // --- Permission denied ---
-
-    @Test
-    void permissionDenied_returnsErrorWithoutEditing(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("protected.txt");
-        Files.writeString(file, "original");
-
-        PermissionProvider denier = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.DENY; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return denier; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolInput input = new ToolInput(Map.of(
-                "path", file.toString(),
-                "old_string", "original",
-                "new_string", "changed"
-        ));
-        ToolResult result = tool.execute(input, ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("Permission denied"));
-        assertEquals("original", Files.readString(file));
-    }
-
-    @Test
-    void permissionConfirm_returnsExplicitConfirmationError(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("protected.txt");
-        Files.writeString(file, "original");
-
-        PermissionProvider confirmer = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.CONFIRM; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return confirmer; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolResult result = tool.execute(new ToolInput(Map.of(
-                "path", file.toString(),
-                "old_string", "original",
-                "new_string", "changed")), ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
-        assertEquals("original", Files.readString(file));
-    }
-
     // --- Helpers ---
 
     private static ToolContext allowAllContext(String workDir) {

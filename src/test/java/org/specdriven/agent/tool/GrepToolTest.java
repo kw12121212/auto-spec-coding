@@ -78,47 +78,6 @@ class GrepToolTest {
         assertTrue(((ToolResult.Error) result).message().contains("does not exist or is not a directory"));
     }
 
-    // --- Permission denied ---
-
-    @Test
-    void permissionDenied_returnsErrorWithoutSearching(@TempDir Path tempDir) {
-        PermissionProvider denier = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.DENY; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return denier; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolInput input = new ToolInput(Map.of("pattern", "anything"));
-        ToolResult result = tool.execute(input, ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("Permission denied"));
-    }
-
-    @Test
-    void permissionConfirm_returnsExplicitConfirmationError(@TempDir Path tempDir) {
-        PermissionProvider confirmer = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.CONFIRM; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return confirmer; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolResult result = tool.execute(new ToolInput(Map.of("pattern", "anything")), ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
-    }
-
     // --- Content mode ---
 
     @Test

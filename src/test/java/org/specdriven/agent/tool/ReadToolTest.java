@@ -151,53 +151,6 @@ class ReadToolTest {
         assertTrue(((ToolResult.Error) result).message().contains("Missing or empty"));
     }
 
-    // --- Permission denied ---
-
-    @Test
-    void permissionDenied_returnsErrorWithoutReading(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("secret.txt");
-        Files.writeString(file, "should not be read");
-
-        PermissionProvider denier = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.DENY; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return denier; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolInput input = new ToolInput(Map.of("path", file.toString()));
-        ToolResult result = tool.execute(input, ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("Permission denied"));
-    }
-
-    @Test
-    void permissionConfirm_returnsExplicitConfirmationError(@TempDir Path tempDir) throws IOException {
-        Path file = tempDir.resolve("confirm.txt");
-        Files.writeString(file, "blocked");
-
-        PermissionProvider confirmer = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.CONFIRM; }
-            @Override public void grant(Permission p, PermissionContext c) {}
-            @Override public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return tempDir.toString(); }
-            @Override public PermissionProvider permissionProvider() { return confirmer; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolResult result = tool.execute(new ToolInput(Map.of("path", file.toString())), ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
-    }
-
     // --- Helpers ---
 
     private static ToolContext allowAllContext(String workDir) {

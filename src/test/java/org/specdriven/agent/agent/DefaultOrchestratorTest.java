@@ -1,9 +1,11 @@
 package org.specdriven.agent.agent;
 
 import org.junit.jupiter.api.Test;
+import org.specdriven.agent.hook.*;
 import org.specdriven.agent.tool.*;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -236,5 +238,86 @@ class DefaultOrchestratorTest {
         };
         // should not throw
         orch.run(nullConvCtx, msgs -> new LlmResponse.TextResponse("hi"));
+    }
+
+    // --- Hook integration tests ---
+
+    @Test
+    void hookBlocksExecution_toolNotCalled() {
+        Conversation conv = new Conversation();
+        AtomicInteger executeCount = new AtomicInteger(0);
+        Tool tool = new Tool() {
+            @Override public String getName() { return "bash"; }
+            @Override public String getDescription() { return ""; }
+            @Override public List<ToolParameter> getParameters() { return List.of(); }
+            @Override public ToolResult execute(ToolInput input, ToolContext ctx) {
+                executeCount.incrementAndGet();
+                return new ToolResult.Success("should not reach");
+            }
+        };
+
+        ToolExecutionHook blockingHook = new ToolExecutionHook() {
+            @Override public ToolResult beforeExecute(Tool t, ToolInput i, ToolContext c) {
+                return new ToolResult.Error("blocked by hook");
+            }
+            @Override public void afterExecute(Tool t, ToolInput i, ToolResult r) {}
+        };
+
+        OrchestratorConfig config = new OrchestratorConfig(5, 10, List.of(blockingHook));
+        LlmClient llm = new LlmClient() {
+            private int callCount = 0;
+            @Override public LlmResponse chat(List<Message> msgs) {
+                callCount++;
+                if (callCount == 1) {
+                    return new LlmResponse.ToolCallResponse(
+                            List.of(new ToolCall("bash", Map.of(), null)));
+                }
+                return new LlmResponse.TextResponse("done");
+            }
+        };
+
+        Orchestrator orch = new DefaultOrchestrator(config, () -> AgentState.RUNNING);
+        orch.run(ctx(Map.of("bash", tool), conv), llm);
+
+        assertEquals(0, executeCount.get(), "Tool should not be executed when hook blocks");
+        ToolMessage toolMsg = (ToolMessage) conv.get(1);
+        assertTrue(toolMsg.content().contains("blocked by hook"));
+    }
+
+    @Test
+    void hookAllowsExecution_toolRunsNormally() {
+        Conversation conv = new Conversation();
+        AtomicInteger afterExecuteCount = new AtomicInteger(0);
+
+        ToolExecutionHook allowingHook = new ToolExecutionHook() {
+            @Override public ToolResult beforeExecute(Tool t, ToolInput i, ToolContext c) {
+                return null; // allow
+            }
+            @Override public void afterExecute(Tool t, ToolInput i, ToolResult r) {
+                afterExecuteCount.incrementAndGet();
+            }
+        };
+
+        Tool bash = stubTool("bash", "hello");
+
+        OrchestratorConfig config = new OrchestratorConfig(5, 10, List.of(allowingHook));
+        LlmClient llm = new LlmClient() {
+            private int callCount = 0;
+            @Override public LlmResponse chat(List<Message> msgs) {
+                callCount++;
+                if (callCount == 1) {
+                    return new LlmResponse.ToolCallResponse(
+                            List.of(new ToolCall("bash", Map.of(), null)));
+                }
+                return new LlmResponse.TextResponse("done");
+            }
+        };
+
+        Orchestrator orch = new DefaultOrchestrator(config, () -> AgentState.RUNNING);
+        orch.run(ctx(Map.of("bash", bash), conv), llm);
+
+        assertEquals(1, afterExecuteCount.get(), "afterExecute should be called once");
+        ToolMessage toolMsg = (ToolMessage) conv.get(1);
+        assertEquals("hello", toolMsg.content());
     }
 }

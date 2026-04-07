@@ -132,18 +132,23 @@
 - MUST append a ToolMessage to Conversation for each tool execution result, including errors — Tool execution failure MUST NOT terminate the loop; the error MUST be fed back as a ToolMessage for LLM self-repair
 - MUST construct ToolInput from ToolCall parameters and execute via Tool.execute
 - MUST be a public class in `org.specdriven.agent.agent`
+- Before invoking `tool.execute()`, MUST run `beforeExecute` on each registered `ToolExecutionHook` in list order
+- If any hook's `beforeExecute` returns `ToolResult.Error`, MUST skip `tool.execute()` and use the hook's error as the result
+- After successful tool execution, MUST run `afterExecute` on each registered hook
 
 ### Requirement: OrchestratorConfig
 
-- MUST be a Java record with `maxTurns` (int, default 50) and `toolTimeoutSeconds` (int, default 120)
+- MUST be a Java record with `maxTurns` (int, default 50), `toolTimeoutSeconds` (int, default 120), and `hooks` (List<ToolExecutionHook>, default empty list)
 - MUST provide a static factory `defaults()` returning the default configuration
 - MUST provide a static factory `fromMap(Map<String, String>)` constructing config from key-value pairs with fallback to defaults
+- MUST provide a convenience constructor without hooks for backward compatibility
 - MUST be accepted by DefaultOrchestrator constructor
 
 ### Requirement: DefaultAgent doExecute delegation
 
 - `DefaultAgent.doExecute(AgentContext)` MUST create a DefaultOrchestrator and delegate execution
 - MUST construct OrchestratorConfig from the agent's config map if present, otherwise use defaults
+- MUST register a `PermissionCheckHook` in the OrchestratorConfig hooks list
 
 ### Requirement: Session record
 

@@ -1,23 +1,36 @@
 package org.specdriven.agent.agent;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+
+import org.specdriven.agent.hook.ToolExecutionHook;
 
 /**
  * Configuration for the orchestrator loop.
  */
 public record OrchestratorConfig(
         int maxTurns,
-        int toolTimeoutSeconds
+        int toolTimeoutSeconds,
+        List<ToolExecutionHook> hooks
 ) {
-    private static final OrchestratorConfig DEFAULTS = new OrchestratorConfig(50, 120);
+    private static final OrchestratorConfig DEFAULTS = new OrchestratorConfig(50, 120, Collections.emptyList());
 
     public OrchestratorConfig {
         if (maxTurns <= 0) throw new IllegalArgumentException("maxTurns must be positive");
         if (toolTimeoutSeconds <= 0) throw new IllegalArgumentException("toolTimeoutSeconds must be positive");
+        if (hooks == null) throw new IllegalArgumentException("hooks must not be null");
     }
 
     /**
-     * Returns the default configuration (50 turns, 120s timeout).
+     * Convenience constructor without hooks (defaults to empty list).
+     */
+    public OrchestratorConfig(int maxTurns, int toolTimeoutSeconds) {
+        this(maxTurns, toolTimeoutSeconds, Collections.emptyList());
+    }
+
+    /**
+     * Returns the default configuration (50 turns, 120s timeout, no hooks).
      */
     public static OrchestratorConfig defaults() {
         return DEFAULTS;
@@ -25,12 +38,13 @@ public record OrchestratorConfig(
 
     /**
      * Creates a config from a key-value map, falling back to defaults for missing keys.
+     * Hooks are not configurable from the map — use the constructor directly.
      */
     public static OrchestratorConfig fromMap(Map<String, String> config) {
         if (config == null) return defaults();
         int turns = parseInt(config, "orchestrator.maxTurns", DEFAULTS.maxTurns());
         int timeout = parseInt(config, "orchestrator.toolTimeoutSeconds", DEFAULTS.toolTimeoutSeconds());
-        return new OrchestratorConfig(turns, timeout);
+        return new OrchestratorConfig(turns, timeout, Collections.emptyList());
     }
 
     private static int parseInt(Map<String, String> config, String key, int defaultValue) {

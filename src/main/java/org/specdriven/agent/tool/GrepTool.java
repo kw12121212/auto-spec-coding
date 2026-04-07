@@ -16,7 +16,6 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 import org.specdriven.agent.permission.Permission;
-import org.specdriven.agent.permission.PermissionContext;
 
 /**
  * Tool that searches file contents using regular expression patterns.
@@ -52,6 +51,13 @@ public class GrepTool implements Tool {
     }
 
     @Override
+    public Permission permissionFor(ToolInput input, ToolContext context) {
+        String pathStr = stringParam(input, "path", context.workDir());
+        Path searchRoot = resolvePath(pathStr, context.workDir());
+        return new Permission("search", searchRoot.toString(), Map.of());
+    }
+
+    @Override
     public ToolResult execute(ToolInput input, ToolContext context) {
         // Validate pattern
         Object patternObj = input.parameters().get("pattern");
@@ -75,14 +81,6 @@ public class GrepTool implements Tool {
         Path searchRoot = resolvePath(pathStr, context.workDir());
         if (!Files.exists(searchRoot) || !Files.isDirectory(searchRoot)) {
             return new ToolResult.Error("Search path does not exist or is not a directory: " + searchRoot);
-        }
-
-        // Permission check
-        Permission permission = new Permission("search", searchRoot.toString(), Map.of());
-        PermissionContext permCtx = new PermissionContext(NAME, "search", "agent");
-        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "search: " + searchRoot);
-        if (permissionError != null) {
-            return permissionError;
         }
 
         // Resolve output mode

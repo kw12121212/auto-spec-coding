@@ -31,13 +31,13 @@
 - `agent-conversation` - Declared: complete - 会话与消息管理实现
 - `agent-orchestrator` - Declared: complete - 多轮工具调用编排循环实现（VirtualThread 并发）
 - `agent-session-store` - Declared: complete - Session/Conversation 持久化与 Agent 状态快照，基于 Lealone DB 支持崩溃恢复和跨 session 对话续接
-- `event-audit-log` - Declared: planned - EventBus 事件持久化存储，支持审计查询、调试回放和行为链路追踪
+- `event-audit-log` - Declared: complete - EventBus 事件持久化存储，支持审计查询、调试回放和行为链路追踪
 
 
 - `agent-conversation` - Declared: complete - 会话与消息管理实现
 - `agent-orchestrator` - Declared: complete - 多轮工具调用编排循环实现（VirtualThread 并发）
-- `agent-session-store` - Declared: planned - Session/Conversation 持久化与 Agent 状态快照，基于 Lealone DB 支持崩溃恢复和跨 session 对话续接
-- `event-audit-log` - Declared: planned - EventBus 事件持久化存储，支持审计查询、调试回放和行为链路追踪
+- `agent-session-store` - Declared: complete - Session/Conversation 持久化与 Agent 状态快照，基于 Lealone DB 支持崩溃恢复和跨 session 对话续接
+- `event-audit-log` - Declared: complete - EventBus 事件持久化存储，支持审计查询、调试回放和行为链路追踪
 
 ## Dependencies
 
@@ -53,7 +53,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

@@ -1,8 +1,12 @@
 package org.specdriven.agent.agent;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
+import org.specdriven.agent.hook.PermissionCheckHook;
+import org.specdriven.agent.hook.ToolExecutionHook;
 
 /**
  * Default implementation of the Agent interface with a state machine
@@ -94,7 +98,7 @@ public class DefaultAgent implements Agent {
             }
         }
 
-        OrchestratorConfig orchestratorConfig = OrchestratorConfig.fromMap(config);
+        OrchestratorConfig orchestratorConfig = buildOrchestratorConfig();
         Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, this::getState);
         LlmClient llmClient = createLlmClient(context);
 
@@ -120,6 +124,15 @@ public class DefaultAgent implements Agent {
      */
     protected LlmClient createLlmClient(AgentContext context) {
         return null;
+    }
+
+    /**
+     * Builds the OrchestratorConfig with permission check hook.
+     */
+    private OrchestratorConfig buildOrchestratorConfig() {
+        OrchestratorConfig base = OrchestratorConfig.fromMap(config);
+        List<ToolExecutionHook> hooks = List.of(new PermissionCheckHook());
+        return new OrchestratorConfig(base.maxTurns(), base.toolTimeoutSeconds(), hooks);
     }
 
     /**

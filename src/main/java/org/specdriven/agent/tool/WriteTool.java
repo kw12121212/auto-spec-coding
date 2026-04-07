@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import org.specdriven.agent.permission.Permission;
-import org.specdriven.agent.permission.PermissionContext;
 
 /**
  * Tool that writes content to a file, creating parent directories as needed.
@@ -37,6 +36,14 @@ public class WriteTool implements Tool {
     }
 
     @Override
+    public Permission permissionFor(ToolInput input, ToolContext context) {
+        Object pathObj = input.parameters().get("path");
+        String path = pathObj != null ? pathObj.toString() : "";
+        Path filePath = ReadTool.resolvePath(path, context.workDir());
+        return new Permission("write", filePath.toString(), Map.of());
+    }
+
+    @Override
     public ToolResult execute(ToolInput input, ToolContext context) {
         // Validate path parameter
         Object pathObj = input.parameters().get("path");
@@ -53,14 +60,6 @@ public class WriteTool implements Tool {
 
         // Resolve file path
         Path filePath = ReadTool.resolvePath(pathObj.toString(), context.workDir());
-
-        // Permission check
-        Permission permission = new Permission("write", filePath.toString(), Map.of());
-        PermissionContext permCtx = new PermissionContext(NAME, "write", "agent");
-        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "write: " + filePath);
-        if (permissionError != null) {
-            return permissionError;
-        }
 
         // Execute write
         try {

@@ -1,39 +1,6 @@
-# Event System Spec
+# Event System Spec (Delta)
 
-## Requirements
-
-### Requirement: Event record
-
-- MUST be a Java record with fields: `type` (EventType), `timestamp` (long), `source` (String), `metadata` (Map<String, Object>)
-- MUST be immutable
-- Compact constructor MUST defensively copy the metadata map and normalize null to empty map
-
-### Requirement: EventType enum
-
-- MUST define at minimum: TOOL_EXECUTED, AGENT_STATE_CHANGED, TASK_CREATED, TASK_COMPLETED, CRON_TRIGGERED, ERROR
-- MAY be extended in future milestones
-
-### Requirement: EventBus pub/sub
-
-- MUST support `subscribe(EventType, Consumer<Event>)` for event listeners
-- MUST support `publish(Event)` to dispatch events to subscribers
-- MUST support `unsubscribe(EventType, Consumer<Event>)` to remove listeners
-- MUST use JDK `Consumer<Event>` as callback type, not Lealone's `AsyncHandler`
-
-### Requirement: SimpleEventBus production implementation
-
-- MUST implement the `EventBus` interface
-- MUST use `CopyOnWriteArrayList` for listener lists to ensure thread-safe iteration during publish
-- MUST be a public class in `org.specdriven.agent.event`
-
-### Requirement: Event JSON serialization
-
-- MUST support `Event.toJson()` returning a JSON string with structure: `{"type":"<enum-name>","timestamp":<long>,"source":"<string>","metadata":{<key>:<value>,...}}`
-- MUST support `Event.fromJson(String)` static factory to reconstruct an Event from its JSON representation
-- MUST round-trip correctly: `Event.fromJson(event.toJson())` MUST produce an equal Event
-- Metadata values MUST be limited to String, Number, and Boolean types
-- MUST handle null/empty metadata as `{}`
-- `Event` compact constructor MUST defensively copy the metadata map and normalize null to empty map
+## ADDED Requirements
 
 ### Requirement: AuditEntry record
 

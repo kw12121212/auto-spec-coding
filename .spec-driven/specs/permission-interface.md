@@ -1,6 +1,6 @@
 # Permission Interface Spec
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: PermissionProvider contract
 
@@ -35,3 +35,66 @@
 - The default permission policy MUST return `ALLOW` for read and search operations targeting paths inside the active working directory tree
 - The default permission policy MUST return `DENY` for read and search operations targeting paths outside the active working directory tree
 - The default permission policy MAY be extended by later changes, but those extensions MUST preserve the observable meanings of `ALLOW`, `DENY`, and `CONFIRM`
+
+### Requirement: Hook-based permission enforcement
+
+- The orchestrator MUST invoke registered `ToolExecutionHook` instances before each tool execution
+- A hook returning `ToolResult.Error` from `beforeExecute` MUST prevent the tool from being invoked
+- A hook returning `null` from `beforeExecute` MUST allow execution to proceed to the next hook or the tool itself
+- When the permission provider returns `PermissionDecision.DENY`, the `PermissionCheckHook` MUST return `ToolResult.Error` describing that permission was denied
+- When the permission provider returns `PermissionDecision.CONFIRM`, the `PermissionCheckHook` MUST return `ToolResult.Error` describing that explicit confirmation is required
+- When the permission provider returns `PermissionDecision.ALLOW`, the `PermissionCheckHook` MUST return `null` to allow execution
+
+### Requirement: ToolExecutionHook interface
+
+- MUST be a public interface in `org.specdriven.agent.hook`
+- MUST define `ToolResult beforeExecute(Tool tool, ToolInput input, ToolContext context)` returning `null` to allow or `ToolResult.Error` to block
+- MUST define `void afterExecute(Tool tool, ToolInput input, ToolResult result)` as a post-execution notification
+- `afterExecute` MUST be called even when the tool returns `ToolResult.Error`
+- `afterExecute` MUST NOT be called when `beforeExecute` blocks execution
+
+### Requirement: PermissionCheckHook
+
+- MUST implement `ToolExecutionHook`
+- MUST be a public class in `org.specdriven.agent.hook`
+- `beforeExecute` MUST call `tool.permissionFor(input, context)` to obtain the Permission, construct a `PermissionContext`, and delegate to `context.permissionProvider().check()`
+- `afterExecute` MUST be a no-op
+
+### Requirement: PolicyStore interface
+
+- MUST be a public interface in `org.specdriven.agent.permission`
+- MUST define `void grant(Permission permission, PermissionContext context)` to persist an ALLOW decision for the given permission and context
+- MUST define `void revoke(Permission permission, PermissionContext context)` to remove any stored decision for the given permission and context
+- MUST define `Optional<PermissionDecision> find(Permission permission, PermissionContext context)` to look up a stored decision
+- MUST define `List<StoredPolicy> listPolicies()` to return all active stored policies
+- MUST define `List<AuditEntry> auditLog()` to return recent grant/revoke audit entries
+
+### Requirement: StoredPolicy record
+
+- MUST be a Java record with fields: `id` (String), `permission` (Permission), `decision` (PermissionDecision), `createdAt` (long), `updatedAt` (long)
+
+### Requirement: AuditEntry record
+
+- MUST be a Java record with fields: `id` (String), `operation` (String), `action` (String), `resource` (String), `requester` (String), `performedBy` (String), `timestamp` (long), `metadata` (Map<String, String>)
+
+### Requirement: LealonePolicyStore
+
+- MUST implement `PolicyStore`
+- MUST be a public class in `org.specdriven.agent.permission`
+- MUST create `permission_policies` and `permission_audit_log` tables on initialization using `CREATE TABLE IF NOT EXISTS`
+- MUST use Lealone embedded JDBC (`jdbc:lealone:embed:`) for all database operations
+- `grant()` MUST persist an ALLOW decision and append a GRANT entry to the audit log
+- `revoke()` MUST remove the stored policy entry and append a REVOKE entry to the audit log
+- `find()` MUST return `Optional.empty()` when no stored policy matches
+- `find()` MUST match policies by action, resource, and requester fields
+- `listPolicies()` MUST return all rows from `permission_policies`
+- `auditLog()` MUST return audit entries ordered by timestamp descending
+
+### Requirement: DefaultPermissionProvider with PolicyStore
+
+- The existing constructor `DefaultPermissionProvider(String workDir)` MUST continue to work without a PolicyStore, with grant/revoke as no-ops
+- A new constructor `DefaultPermissionProvider(String workDir, PolicyStore store)` MUST accept an optional PolicyStore
+- `check()` MUST query `PolicyStore.find()` first when a store is present; if a stored decision exists, return it without evaluating default rules
+- `check()` MUST fall through to existing default rules when no stored decision exists or no store is configured
+- `grant()` MUST delegate to `store.grant()` when a store is present
+- `revoke()` MUST delegate to `store.revoke()` when a store is present

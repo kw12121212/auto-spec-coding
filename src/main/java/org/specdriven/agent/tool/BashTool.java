@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.specdriven.agent.permission.Permission;
-import org.specdriven.agent.permission.PermissionContext;
 
 /**
  * Tool that executes shell commands via the system shell.
@@ -42,6 +41,13 @@ public class BashTool implements Tool {
     }
 
     @Override
+    public Permission permissionFor(ToolInput input, ToolContext context) {
+        Object commandObj = input.parameters().get("command");
+        String command = commandObj != null ? commandObj.toString() : "";
+        return new Permission("execute", "bash", Map.of("command", command));
+    }
+
+    @Override
     public ToolResult execute(ToolInput input, ToolContext context) {
         // Extract and validate command parameter
         Object commandObj = input.parameters().get("command");
@@ -49,14 +55,6 @@ public class BashTool implements Tool {
             return new ToolResult.Error("Missing or empty required parameter: command");
         }
         String command = commandObj.toString();
-
-        // Permission check
-        Permission permission = new Permission("execute", "bash", Map.of("command", command));
-        PermissionContext permCtx = new PermissionContext(NAME, "execute", "agent");
-        ToolResult permissionError = PermissionChecks.check(context, permission, permCtx, "command: " + command);
-        if (permissionError != null) {
-            return permissionError;
-        }
 
         // Resolve timeout
         int timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;

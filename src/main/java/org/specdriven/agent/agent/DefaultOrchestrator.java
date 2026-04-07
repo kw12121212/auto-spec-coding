@@ -1,13 +1,17 @@
 package org.specdriven.agent.agent;
 
+import org.specdriven.agent.hook.ToolExecutionHook;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
 import org.specdriven.agent.tool.ToolResult;
 import org.specdriven.agent.permission.DefaultPermissionProvider;
+import org.specdriven.agent.permission.LealonePolicyStore;
 import org.specdriven.agent.permission.PermissionProvider;
+import org.specdriven.agent.permission.PolicyStore;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,6 +27,7 @@ public class DefaultOrchestrator implements Orchestrator {
 
     private final OrchestratorConfig config;
     private final AgentStateAccessor stateAccessor;
+    private final PolicyStore policyStore;
 
     /**
      * Functional interface to check the agent's current state without
@@ -36,6 +41,7 @@ public class DefaultOrchestrator implements Orchestrator {
     public DefaultOrchestrator(OrchestratorConfig config, AgentStateAccessor stateAccessor) {
         this.config = config;
         this.stateAccessor = stateAccessor;
+        this.policyStore = new LealonePolicyStore("jdbc:lealone:embed:agent_db");
     }
 
     @Override
@@ -89,10 +95,19 @@ public class DefaultOrchestrator implements Orchestrator {
             try {
                 ToolContext toolCtx = new SimpleToolContext(
                         context.config().getOrDefault("workDir", "."),
-                        new DefaultPermissionProvider(context.config().getOrDefault("workDir", ".")),
+                        new DefaultPermissionProvider(context.config().getOrDefault("workDir", "."), policyStore),
                         Collections.emptyMap());
                 ToolInput input = new ToolInput(call.parameters());
-                ToolResult result = tool.execute(input, toolCtx);
+
+                // Run beforeExecute hooks
+                ToolResult hookResult = runBeforeHooks(tool, input, toolCtx);
+                ToolResult result;
+                if (hookResult != null) {
+                    result = hookResult;
+                } else {
+                    result = tool.execute(input, toolCtx);
+                    runAfterHooks(tool, input, result);
+                }
 
                 if (result instanceof ToolResult.Success success) {
                     resultContent = success.output();
@@ -107,6 +122,24 @@ public class DefaultOrchestrator implements Orchestrator {
         }
 
         conversation.append(new ToolMessage(resultContent, System.currentTimeMillis(), call.toolName(), call.callId()));
+    }
+
+    private ToolResult runBeforeHooks(Tool tool, ToolInput input, ToolContext toolCtx) {
+        List<ToolExecutionHook> hooks = config.hooks();
+        for (ToolExecutionHook hook : hooks) {
+            ToolResult result = hook.beforeExecute(tool, input, toolCtx);
+            if (result != null) {
+                return result;
+            }
+        }
+        return null;
+    }
+
+    private void runAfterHooks(Tool tool, ToolInput input, ToolResult result) {
+        List<ToolExecutionHook> hooks = config.hooks();
+        for (ToolExecutionHook hook : hooks) {
+            hook.afterExecute(tool, input, result);
+        }
     }
 
     /**

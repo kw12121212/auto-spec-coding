@@ -83,53 +83,6 @@ class BashToolTest {
         assertTrue(((ToolResult.Error) result).message().contains("timed out"));
     }
 
-    // --- Permission denied ---
-
-    @Test
-    void permissionDenied_returnsErrorWithoutExecution() {
-        PermissionProvider denier = new PermissionProvider() {
-            @Override
-            public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.DENY; }
-            @Override
-            public void grant(Permission p, PermissionContext c) {}
-            @Override
-            public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return "/tmp"; }
-            @Override public PermissionProvider permissionProvider() { return denier; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolInput input = new ToolInput(Map.of("command", "echo should_not_run"));
-        ToolResult result = tool.execute(input, ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("Permission denied"));
-    }
-
-    @Test
-    void permissionConfirm_returnsExplicitConfirmationError() {
-        PermissionProvider confirmer = new PermissionProvider() {
-            @Override
-            public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.CONFIRM; }
-            @Override
-            public void grant(Permission p, PermissionContext c) {}
-            @Override
-            public void revoke(Permission p, PermissionContext c) {}
-        };
-        ToolContext ctx = new ToolContext() {
-            @Override public String workDir() { return "/tmp"; }
-            @Override public PermissionProvider permissionProvider() { return confirmer; }
-            @Override public Map<String, String> env() { return Map.of(); }
-        };
-
-        ToolResult result = tool.execute(new ToolInput(Map.of("command", "echo blocked")), ctx);
-
-        assertInstanceOf(ToolResult.Error.class, result);
-        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
-    }
-
     // --- Missing command ---
 
     @Test
