@@ -10,3 +10,4 @@
 - [tool-grep.md](tool-grep.md) - GrepTool — content search with regex, glob filtering, and multiple output modes
 - [tool-glob.md](tool-glob.md) - GlobTool — file pattern matching with glob, sorted by modification time
 - [llm-provider.md](llm-provider.md) - LlmProvider, LlmConfig, LlmRequest, LlmResponse, LlmUsage, ToolSchema, LlmStreamCallback, LlmProviderRegistry, DefaultLlmProviderRegistry, SkillRoute, LlmProviderFactory
+- [task-registry.md](task-registry.md) - Task, TaskStatus, TaskStore, LealoneTaskStore

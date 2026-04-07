@@ -26,7 +26,7 @@
 
 ## Planned Changes
 
-- `registry-tasks` - Declared: planned - 任务注册表实现（Lealone DB 持久化）
+- `registry-tasks` - Declared: complete - 任务注册表实现（Lealone DB 持久化）
 - `registry-teams` - Declared: planned - 团队注册表实现（Lealone DB 持久化）
 
 ## Dependencies
