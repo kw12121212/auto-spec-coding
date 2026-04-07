@@ -1,5 +1,16 @@
 # llm-provider.md (delta)
 
+## CHANGED Requirements
+
+### Requirement: ToolCall carries call ID
+`ToolCall` MUST include a `callId` field containing the LLM-assigned invocation ID (e.g. OpenAI `tool_calls[].id`, Claude `content[].id`). `callId` MAY be null when created outside an LLM response context.
+
+### Requirement: ToolMessage carries tool call ID
+`ToolMessage` MUST include a `toolCallId` field to correlate tool results with the originating tool call. `toolCallId` MAY be null. Providers MUST use `toolCallId` when serializing tool result messages (e.g. OpenAI `tool_call_id` field).
+
+### Requirement: JSON utilities in shared package
+The system MUST provide `JsonWriter` and `JsonReader` utility classes in package `org.specdriven.agent.json` for LLM provider request/response serialization without external JSON library dependencies.
+
 ## ADDED Requirements
 
 ### Requirement: OpenAI-Compatible Provider

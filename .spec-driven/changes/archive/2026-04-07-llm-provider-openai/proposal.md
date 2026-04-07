@@ -11,10 +11,12 @@ M5's interface (`LlmProvider`, `LlmClient`, `LlmConfig`, `LlmRequest`/`LlmRespon
 ## Scope
 
 **In scope:**
+- `ToolMessage` record: add `toolCallId` field to carry the LLM-assigned call ID for precise tool result correlation
+- `JsonWriter` and `JsonReader` utility classes in `org.specdriven.agent.json` (public, reusable by Claude provider)
 - `OpenAiProvider` implementing `LlmProvider` — creates clients, holds config, manages lifecycle
 - `OpenAiClient` implementing `LlmClient` — serializes `LlmRequest` to OpenAI Chat Completions JSON, sends HTTP request, parses response into `LlmResponse`
-- Request serialization: convert `Message` subtypes to OpenAI message format, `ToolSchema` to OpenAI tools format, handle system prompt, temperature, max_tokens
-- Response parsing: handle text responses and tool_call responses, map `usage` to `LlmUsage`, map `finish_reason`
+- Request serialization: convert `Message` subtypes to OpenAI message format, `ToolSchema` to OpenAI tools format, handle system prompt, temperature, max_tokens; `ToolMessage.toolCallId` → `tool_call_id`
+- Response parsing: handle text responses and tool_call responses, map `usage` to `LlmUsage`, map `finish_reason`; populate `ToolCall` with call ID from `tool_calls[].id`
 - Retry with exponential backoff on transient HTTP errors (429, 500, 502, 503, 504)
 - Error handling: wrap HTTP/network errors into descriptive runtime exceptions
 - `OpenAiProviderFactory` implementing `LlmProviderFactory` for registry integration
@@ -25,7 +27,7 @@ M5's interface (`LlmProvider`, `LlmClient`, `LlmConfig`, `LlmRequest`/`LlmRespon
 - Token counting / context window management (M19)
 - Claude Messages API provider (separate change `llm-provider-claude`)
 - LLM provider registry changes (already complete)
-- Interface changes to `LlmClient`, `LlmProvider`, etc.
+- Interface changes to `LlmClient`, `LlmProvider`, `LlmRequest`, `LlmResponse`
 
 ## Unchanged Behavior
 

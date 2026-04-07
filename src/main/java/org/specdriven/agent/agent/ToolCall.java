@@ -8,7 +8,8 @@ import java.util.Map;
  */
 public record ToolCall(
         String toolName,
-        Map<String, Object> parameters
+        Map<String, Object> parameters,
+        String callId
 ) {
     public ToolCall {
         parameters = parameters != null ? Map.copyOf(parameters) : Collections.emptyMap();

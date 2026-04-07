@@ -79,7 +79,7 @@ class DefaultAgentOrchestratorTest {
                         callCount++;
                         if (callCount == 1) {
                             return new LlmResponse.ToolCallResponse(
-                                    List.of(new ToolCall("bash", Map.of("command", "ls"))));
+                                    List.of(new ToolCall("bash", Map.of("command", "ls"), null)));
                         }
                         return new LlmResponse.TextResponse("done");
                     }

@@ -30,7 +30,7 @@ class LlmResponseTest {
 
     @Test
     void toolCallResponse_backwardCompatible() {
-        List<ToolCall> calls = List.of(new ToolCall("bash", Map.of("command", "ls")));
+        List<ToolCall> calls = List.of(new ToolCall("bash", Map.of("command", "ls"), null));
         LlmResponse.ToolCallResponse resp = new LlmResponse.ToolCallResponse(calls);
         assertEquals(1, resp.toolCalls().size());
         assertEquals("bash", resp.toolCalls().get(0).toolName());
@@ -40,7 +40,7 @@ class LlmResponseTest {
 
     @Test
     void toolCallResponse_full() {
-        List<ToolCall> calls = List.of(new ToolCall("read", Map.of("path", "/tmp")));
+        List<ToolCall> calls = List.of(new ToolCall("read", Map.of("path", "/tmp"), null));
         LlmUsage usage = new LlmUsage(15, 25, 40);
         LlmResponse.ToolCallResponse resp = new LlmResponse.ToolCallResponse(calls, usage, "tool_calls");
         assertEquals(1, resp.toolCalls().size());
@@ -57,9 +57,9 @@ class LlmResponseTest {
     @Test
     void toolCallResponse_defensivelyCopiesList() {
         java.util.List<ToolCall> calls = new java.util.ArrayList<>();
-        calls.add(new ToolCall("bash", Map.of()));
+        calls.add(new ToolCall("bash", Map.of(), null));
         LlmResponse.ToolCallResponse resp = new LlmResponse.ToolCallResponse(calls);
-        calls.add(new ToolCall("grep", Map.of()));
+        calls.add(new ToolCall("grep", Map.of(), null));
         assertEquals(1, resp.toolCalls().size());
     }
 

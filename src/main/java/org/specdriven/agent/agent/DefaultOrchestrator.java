@@ -105,7 +105,7 @@ public class DefaultOrchestrator implements Orchestrator {
             }
         }
 
-        conversation.append(new ToolMessage(resultContent, System.currentTimeMillis(), call.toolName()));
+        conversation.append(new ToolMessage(resultContent, System.currentTimeMillis(), call.toolName(), call.callId()));
     }
 
     /**

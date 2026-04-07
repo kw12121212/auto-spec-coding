@@ -33,8 +33,8 @@
 
 - `llm-provider-interface` - Declared: complete - Provider-agnostic LLM 客户端抽象接口与统一消息类型定义
 - `llm-provider-registry` - Declared: complete - 多 Provider 注册表（命名实例管理、按请求路由、skill-to-provider 绑定、default provider 回退）
-- `llm-provider-openai` - Declared: planned - OpenAI API 兼容 provider 实现
-- `llm-provider-claude` - Declared: planned - Anthropic Claude Messages API provider 实现
+- `llm-provider-openai` - Declared: complete - OpenAI API 兼容 provider 实现
+- `llm-provider-claude` - Declared: complete - Anthropic Claude Messages API provider 实现
 
 ## Dependencies
 
@@ -49,7 +49,11 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
+
+
+
+
 
 ## Notes
 

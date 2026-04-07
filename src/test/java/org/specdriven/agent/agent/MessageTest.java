@@ -24,11 +24,12 @@ class MessageTest {
 
     @Test
     void toolMessageRoleAndToolName() {
-        ToolMessage msg = new ToolMessage("output", 3000L, "bash");
+        ToolMessage msg = new ToolMessage("output", 3000L, "bash", "call_abc");
         assertEquals("tool", msg.role());
         assertEquals("output", msg.content());
         assertEquals(3000L, msg.timestamp());
         assertEquals("bash", msg.toolName());
+        assertEquals("call_abc", msg.toolCallId());
     }
 
     @Test

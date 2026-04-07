@@ -70,7 +70,7 @@ class DefaultOrchestratorTest {
                 callCount++;
                 if (callCount == 1) {
                     return new LlmResponse.ToolCallResponse(
-                            List.of(new ToolCall("bash", Map.of("command", "ls"))));
+                            List.of(new ToolCall("bash", Map.of("command", "ls"), null)));
                 }
                 return new LlmResponse.TextResponse("all done");
             }
@@ -117,8 +117,8 @@ class DefaultOrchestratorTest {
                 callCount++;
                 if (callCount == 1) {
                     return new LlmResponse.ToolCallResponse(List.of(
-                            new ToolCall("a", Map.of()),
-                            new ToolCall("b", Map.of())));
+                            new ToolCall("a", Map.of(), null),
+                            new ToolCall("b", Map.of(), null)));
                 }
                 return new LlmResponse.TextResponse("done");
             }
@@ -145,7 +145,7 @@ class DefaultOrchestratorTest {
                 callCount++;
                 if (callCount == 1) {
                     return new LlmResponse.ToolCallResponse(
-                            List.of(new ToolCall("bash", Map.of("command", "rm -rf /"))));
+                            List.of(new ToolCall("bash", Map.of("command", "rm -rf /"), null)));
                 }
                 // second call sees the error message in conversation
                 return new LlmResponse.TextResponse("I see the error, stopping");
@@ -167,7 +167,7 @@ class DefaultOrchestratorTest {
         Conversation conv = new Conversation();
         // LLM always returns tool calls — would loop forever
         LlmClient llm = msgs -> new LlmResponse.ToolCallResponse(
-                List.of(new ToolCall("bash", Map.of("command", "echo"))));
+                List.of(new ToolCall("bash", Map.of("command", "echo"), null)));
         Tool bash = stubTool("bash", "echo");
 
         OrchestratorConfig smallConfig = new OrchestratorConfig(3, 10);
@@ -190,7 +190,7 @@ class DefaultOrchestratorTest {
         };
 
         LlmClient llm = msgs -> new LlmResponse.ToolCallResponse(
-                List.of(new ToolCall("bash", Map.of())));
+                List.of(new ToolCall("bash", Map.of(), null)));
         Tool bash = stubTool("bash", "out");
 
         Orchestrator orch = new DefaultOrchestrator(OrchestratorConfig.defaults(), accessor);
@@ -210,7 +210,7 @@ class DefaultOrchestratorTest {
                 callCount++;
                 if (callCount == 1) {
                     return new LlmResponse.ToolCallResponse(
-                            List.of(new ToolCall("nonexistent", Map.of())));
+                            List.of(new ToolCall("nonexistent", Map.of(), null)));
                 }
                 return new LlmResponse.TextResponse("ok");
             }

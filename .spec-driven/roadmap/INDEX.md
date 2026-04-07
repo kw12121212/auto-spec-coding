@@ -15,7 +15,7 @@
 - [m2-tool-surface-basics.md](milestones/m2-tool-surface-basics.md) - M2 - Tool Surface 基础工具集 - complete
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - proposed
 - [m4-agent-lifecycle.md](milestones/m4-agent-lifecycle.md) - M4 - Agent 生命周期与编排 - proposed
-- [m5-llm-backend.md](milestones/m5-llm-backend.md) - M5 - LLM Provider Layer - proposed
+- [m5-llm-backend.md](milestones/m5-llm-backend.md) - M5 - LLM Provider Layer - complete
 - [m6-permissions.md](milestones/m6-permissions.md) - M6 - 权限模型与执行钩子 - proposed
 - [m7-registries.md](milestones/m7-registries.md) - M7 - 任务与团队注册表 - proposed
 - [m8-cron-registry.md](milestones/m8-cron-registry.md) - M8 - 定时任务注册表 - proposed
