@@ -12,15 +12,25 @@ public class SimpleAgentContext implements AgentContext {
     private final Map<String, String> config;
     private final Map<String, Tool> toolRegistry;
     private final Conversation conversation;
+    private final SessionStore sessionStore;
 
     public SimpleAgentContext(String sessionId,
                               Map<String, String> config,
                               Map<String, Tool> toolRegistry,
                               Conversation conversation) {
+        this(sessionId, config, toolRegistry, conversation, null);
+    }
+
+    public SimpleAgentContext(String sessionId,
+                              Map<String, String> config,
+                              Map<String, Tool> toolRegistry,
+                              Conversation conversation,
+                              SessionStore sessionStore) {
         this.sessionId = sessionId;
         this.config = config;
         this.toolRegistry = toolRegistry;
         this.conversation = conversation;
+        this.sessionStore = sessionStore;
     }
 
     @Override
@@ -41,5 +51,9 @@ public class SimpleAgentContext implements AgentContext {
     @Override
     public Conversation conversation() {
         return conversation;
+    }
+
+    public SessionStore sessionStore() {
+        return sessionStore;
     }
 }

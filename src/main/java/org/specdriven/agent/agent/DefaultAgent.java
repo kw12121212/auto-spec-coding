@@ -2,6 +2,7 @@ package org.specdriven.agent.agent;
 
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Default implementation of the Agent interface with a state machine
@@ -73,13 +74,44 @@ public class DefaultAgent implements Agent {
     /**
      * Hook for subclasses to override execute behavior.
      * Default implementation delegates to the orchestrator loop.
+     * If the context carries a {@link SessionStore} and a non-null session ID,
+     * conversation history is restored before the orchestrator runs and
+     * persisted after it completes (or on error).
      */
     protected void doExecute(AgentContext context) {
+        SessionStore store = context instanceof SimpleAgentContext sac ? sac.sessionStore() : null;
+
+        long createdAt = System.currentTimeMillis();
+        long expiryAt = createdAt + Session.TTL_MS;
+
+        if (store != null && context.sessionId() != null) {
+            Optional<Session> stored = store.load(context.sessionId());
+            if (stored.isPresent()) {
+                Session existing = stored.get();
+                createdAt = existing.createdAt();
+                expiryAt = existing.expiryAt();
+                existing.conversation().history().forEach(context.conversation()::append);
+            }
+        }
+
         OrchestratorConfig orchestratorConfig = OrchestratorConfig.fromMap(config);
         Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, this::getState);
-
         LlmClient llmClient = createLlmClient(context);
-        orchestrator.run(context, llmClient);
+
+        final long sessionCreatedAt = createdAt;
+        final long sessionExpiryAt = expiryAt;
+        try {
+            orchestrator.run(context, llmClient);
+        } finally {
+            if (store != null && context.sessionId() != null) {
+                long now = System.currentTimeMillis();
+                Session toSave = new Session(
+                        context.sessionId(), state,
+                        sessionCreatedAt, now, sessionExpiryAt,
+                        context.conversation());
+                store.save(toSave);
+            }
+        }
     }
 
     /**
