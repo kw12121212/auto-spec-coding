@@ -37,6 +37,11 @@
             <artifactId>lealone-orm</artifactId>
             <version>${lealone.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.lealone</groupId>
+            <artifactId>lealone-http</artifactId>
+            <version>${lealone.version}</version>
+        </dependency>
 
         <!-- YAML parsing -->
         <dependency>

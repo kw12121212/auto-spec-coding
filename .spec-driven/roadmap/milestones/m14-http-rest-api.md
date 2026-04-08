@@ -25,8 +25,8 @@
 - 有端到端测试覆盖核心端点
 
 ## Planned Changes
-- `http-routes` - Declared: planned - REST API 路由定义与 handler 实现（基于 Lealone HTTP server）
-- `http-middleware` - Declared: planned - 认证与限流中间件实现
+- `http-routes` - Declared: complete - REST API 路由定义与 handler 实现（基于 Lealone HTTP server）
+- `http-middleware` - Declared: complete - 认证与限流中间件实现
 - `http-models` - Declared: complete - 请求/响应 JSON 模型定义
 - `http-e2e-tests` - Declared: planned - HTTP 层端到端测试实现
 
