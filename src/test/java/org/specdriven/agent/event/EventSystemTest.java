@@ -23,7 +23,7 @@ class EventSystemTest {
     @Test
     void eventTypeCoversAllValues() {
         EventType[] types = EventType.values();
-        assertEquals(8, types.length);
+        assertEquals(10, types.length);
         assertNotNull(EventType.valueOf("TOOL_EXECUTED"));
         assertNotNull(EventType.valueOf("AGENT_STATE_CHANGED"));
         assertNotNull(EventType.valueOf("TASK_CREATED"));
@@ -31,6 +31,8 @@ class EventSystemTest {
         assertNotNull(EventType.valueOf("TEAM_CREATED"));
         assertNotNull(EventType.valueOf("TEAM_DISSOLVED"));
         assertNotNull(EventType.valueOf("CRON_TRIGGERED"));
+        assertNotNull(EventType.valueOf("VAULT_SECRET_CREATED"));
+        assertNotNull(EventType.valueOf("VAULT_SECRET_DELETED"));
         assertNotNull(EventType.valueOf("ERROR"));
     }
 

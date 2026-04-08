@@ -19,3 +19,5 @@
 - [sdk-public-api.md](sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException, SdkConfigException, SdkVaultException, SdkLlmException, SdkToolException, SdkPermissionException, SdkEventListener — public SDK facade with builder pattern, auto-assembly, typed error handling, and event callbacks
 - [builtin-tool-manager.md](builtin-tool-manager.md) - BuiltinTool, BuiltinToolManager, DefaultBuiltinToolManager, Platform, BuiltinToolException — bundled external tool binary extraction and PATH detection
 - [jsonrpc-protocol.md](jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec, JsonRpcProtocolException — JSON-RPC 2.0 protocol types and encode/decode codec
+- [jsonrpc-transport.md](jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport — stdin/stdout framed transport with Content-Length header, daemon reader thread, and error recovery
+- [jsonrpc-handlers.md](jsonrpc-handlers.md) - JsonRpcDispatcher — request routing, SDK operation mapping, event forwarding, and error code translation

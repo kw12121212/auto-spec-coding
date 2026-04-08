@@ -54,6 +54,13 @@ public class SpecDriven implements AutoCloseable {
     }
 
     /**
+     * Returns the list of tools registered with this SDK instance.
+     */
+    public List<Tool> tools() {
+        return tools;
+    }
+
+    /**
      * Returns the shared event bus for this SDK instance.
      */
     EventBus eventBus() {

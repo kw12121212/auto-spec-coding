@@ -1,0 +1,293 @@
+package org.specdriven.agent.jsonrpc;
+
+import org.specdriven.agent.agent.AgentState;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.tool.Tool;
+import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.sdk.*;
+
+import java.nio.file.Path;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Implements {@link JsonRpcMessageHandler} to route inbound JSON-RPC 2.0
+ * requests to SDK operations and forward agent events as notifications.
+ */
+public class JsonRpcDispatcher implements JsonRpcMessageHandler {
+
+    private static final String VERSION = "0.1.0";
+
+    private final JsonRpcTransport transport;
+    private final ExecutorService executor;
+
+    private volatile SpecDriven sdk;
+    private volatile boolean shutdown;
+    private final Map<Object, SdkAgent> activeAgents = new ConcurrentHashMap<>();
+
+    public JsonRpcDispatcher(JsonRpcTransport transport) {
+        this.transport = transport;
+        this.executor = Executors.newVirtualThreadPerTaskExecutor();
+    }
+
+    // --- JsonRpcMessageHandler ---
+
+    @Override
+    public void onRequest(JsonRpcRequest request) {
+        try {
+            switch (request.method()) {
+                case "initialize" -> handleInitialize(request);
+                case "shutdown" -> handleShutdown(request);
+                case "agent/run" -> handleAgentRun(request);
+                case "agent/stop" -> handleAgentStop(request);
+                case "agent/state" -> handleAgentState(request);
+                case "tools/list" -> handleToolsList(request);
+                default -> sendError(request.id(), JsonRpcError.methodNotFound());
+            }
+        } catch (Exception e) {
+            sendError(request.id(), mapException(e));
+        }
+    }
+
+    @Override
+    public void onNotification(JsonRpcNotification notification) {
+        if ("$/cancel".equals(notification.method())) {
+            handleCancel(notification);
+        }
+    }
+
+    @Override
+    public void onError(Throwable error) {
+        // Best-effort: try to notify the client about the transport error
+        try {
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("type", "transportError");
+            params.put("message", error.getMessage() != null ? error.getMessage() : error.getClass().getName());
+            transport.send(new JsonRpcNotification("event", params));
+        } catch (Exception ignored) {
+            // Transport may be broken — nothing we can do
+        }
+    }
+
+    // --- Handlers ---
+
+    private void handleInitialize(JsonRpcRequest request) {
+        if (sdk != null) {
+            sendError(request.id(), JsonRpcError.invalidRequest());
+            return;
+        }
+
+        SdkBuilder builder = SpecDriven.builder();
+
+        Object params = request.params();
+        if (params instanceof Map<?, ?> map) {
+            Object configPath = map.get("configPath");
+            if (configPath instanceof String cp && !cp.isBlank()) {
+                builder.config(Path.of(cp));
+            }
+            Object systemPrompt = map.get("systemPrompt");
+            if (systemPrompt instanceof String sp && !sp.isBlank()) {
+                builder.systemPrompt(sp);
+            }
+        }
+
+        // Register event forwarding listener
+        builder.onEvent((SdkEventListener) this::forwardEvent);
+
+        this.sdk = builder.build();
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("version", VERSION);
+        result.put("capabilities", Map.of(
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list"),
+                "notifications", List.of("$/cancel", "event")
+        ));
+        sendSuccess(request.id(), result);
+    }
+
+    private void handleShutdown(JsonRpcRequest request) {
+        if (sdk != null) {
+            try {
+                sdk.close();
+            } catch (Exception ignored) {
+                // best-effort
+            }
+        }
+        shutdown = true;
+        executor.shutdownNow();
+        sendSuccess(request.id(), null);
+    }
+
+    private void handleAgentRun(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        String prompt = extractStringParam(request, "prompt");
+        if (prompt == null) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        SdkAgent agent = sdk.createAgent();
+        activeAgents.put(request.id(), agent);
+
+        executor.submit(() -> {
+            try {
+                String output = agent.run(prompt);
+                sendSuccess(request.id(), Map.of("output", output != null ? output : ""));
+            } catch (Exception e) {
+                sendError(request.id(), mapException(e));
+            } finally {
+                activeAgents.remove(request.id());
+            }
+        });
+    }
+
+    private void handleAgentStop(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        // Stop all active agents (single-agent-per-call model)
+        for (SdkAgent agent : activeAgents.values()) {
+            try {
+                agent.stop();
+            } catch (Exception ignored) {
+                // best-effort
+            }
+        }
+        sendSuccess(request.id(), null);
+    }
+
+    private void handleAgentState(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        // Return state of the most recently active agent, or IDLE if none
+        AgentState state = AgentState.IDLE;
+        for (SdkAgent agent : activeAgents.values()) {
+            AgentState s = agent.getState();
+            if (s == AgentState.RUNNING) {
+                state = s;
+                break;
+            }
+            state = s;
+        }
+        sendSuccess(request.id(), Map.of("state", state.name()));
+    }
+
+    private void handleToolsList(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        List<Map<String, Object>> toolList = new ArrayList<>();
+        for (Tool tool : sdk.tools()) {
+            Map<String, Object> toolInfo = new LinkedHashMap<>();
+            toolInfo.put("name", tool.getName());
+            toolInfo.put("description", tool.getDescription());
+            List<Map<String, Object>> params = new ArrayList<>();
+            for (ToolParameter p : tool.getParameters()) {
+                Map<String, Object> paramInfo = new LinkedHashMap<>();
+                paramInfo.put("name", p.name());
+                paramInfo.put("type", p.type());
+                paramInfo.put("description", p.description());
+                paramInfo.put("required", p.required());
+                params.add(paramInfo);
+            }
+            toolInfo.put("parameters", params);
+            toolList.add(toolInfo);
+        }
+        sendSuccess(request.id(), Map.of("tools", toolList));
+    }
+
+    private void handleCancel(JsonRpcNotification notification) {
+        Object params = notification.params();
+        if (!(params instanceof Map<?, ?> map)) return;
+
+        Object id = map.get("id");
+        if (id == null) return;
+
+        SdkAgent agent = activeAgents.remove(id);
+        if (agent != null) {
+            try {
+                agent.stop();
+            } catch (Exception ignored) {
+                // best-effort
+            }
+        }
+    }
+
+    // --- Event forwarding ---
+
+    private void forwardEvent(Event event) {
+        try {
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("type", event.type().name());
+            params.put("source", event.source());
+            params.put("timestamp", event.timestamp());
+            params.put("metadata", event.metadata());
+            transport.send(new JsonRpcNotification("event", params));
+        } catch (Exception ignored) {
+            // Transport may be closed — nothing we can do
+        }
+    }
+
+    // --- Error mapping ---
+
+    // Package-private for testing
+    JsonRpcError mapException(Exception e) {
+        if (e instanceof JsonRpcProtocolException proto) {
+            return new JsonRpcError(proto.getErrorCode(), proto.getMessage(), null);
+        }
+        if (e instanceof SdkLlmException) {
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("retryable", true);
+            return new JsonRpcError(-32603, e.getMessage(), data);
+        }
+        if (e instanceof SdkPermissionException) {
+            return new JsonRpcError(-32600, e.getMessage(), null);
+        }
+        if (e instanceof SdkToolException) {
+            return new JsonRpcError(-32602, e.getMessage(), null);
+        }
+        if (e instanceof SdkVaultException) {
+            return new JsonRpcError(-32603, e.getMessage(), null);
+        }
+        if (e instanceof SdkConfigException) {
+            return new JsonRpcError(-32603, e.getMessage(), null);
+        }
+        // Default: internal error
+        return new JsonRpcError(-32603,
+                e.getMessage() != null ? e.getMessage() : "Internal error", null);
+    }
+
+    // --- Helpers ---
+
+    private boolean requireInitialized(Object requestId) {
+        if (sdk == null || shutdown) {
+            sendError(requestId, JsonRpcError.invalidRequest());
+            return true;
+        }
+        return false;
+    }
+
+    private String extractStringParam(JsonRpcRequest request, String name) {
+        Object params = request.params();
+        if (!(params instanceof Map<?, ?> map)) return null;
+        Object value = map.get(name);
+        return value instanceof String s ? s : null;
+    }
+
+    private void sendSuccess(Object id, Object result) {
+        try {
+            transport.send(JsonRpcResponse.success(id, result));
+        } catch (Exception ignored) {
+            // Transport may be closed
+        }
+    }
+
+    private void sendError(Object id, JsonRpcError error) {
+        try {
+            transport.send(JsonRpcResponse.error(id, error));
+        } catch (Exception ignored) {
+            // Transport may be closed
+        }
+    }
+}
