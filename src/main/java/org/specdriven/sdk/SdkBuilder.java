@@ -7,6 +7,8 @@ import org.specdriven.agent.config.ConfigLoader;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
+import org.specdriven.agent.tool.builtin.BuiltinToolManager;
+import org.specdriven.agent.tool.builtin.DefaultBuiltinToolManager;
 import org.specdriven.agent.vault.VaultException;
 import org.specdriven.agent.vault.VaultFactory;
 
@@ -26,6 +28,7 @@ public class SdkBuilder {
     private SdkConfig sdkConfig = SdkConfig.defaults();
     private final List<SdkEventListener> globalListeners = new ArrayList<>();
     private final Map<EventType, List<SdkEventListener>> typedGlobalListeners = new HashMap<>();
+    private BuiltinToolManager builtinToolManager;
 
     SdkBuilder() {}
 
@@ -67,6 +70,14 @@ public class SdkBuilder {
      */
     public SdkBuilder onEvent(EventType type, SdkEventListener listener) {
         this.typedGlobalListeners.computeIfAbsent(type, k -> new ArrayList<>()).add(listener);
+        return this;
+    }
+
+    /**
+     * Sets the builtin tool manager. If not set, a default one will be created.
+     */
+    public SdkBuilder builtinToolManager(BuiltinToolManager manager) {
+        this.builtinToolManager = manager;
         return this;
     }
 

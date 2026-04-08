@@ -2,13 +2,12 @@
 
 ## Goal
 
-集成 ripgrep、GitHub CLI 等常用外部工具，通过内置工具管理器提供预编译二进制的自动检测、下载与安装能力。
+集成 ripgrep、fd 等常用外部工具，通过内置工具管理器提供预编译二进制的自动检测与提取能力。
 
 ## In Scope
 
-- 内置工具管理器（外部工具检测、预编译二进制下载与安装）
+- 内置工具管理器（外部工具检测、预编译二进制从 classpath 提取）
 - ripgrep 集成（供 M2 tool-grep 高性能模式使用）
-- GitHub CLI（gh）集成工具
 - fd 集成（替代 M2 GlobTool 纯 Java 实现，纯 Java 作为 fallback）
 
 ## Out of Scope
@@ -20,15 +19,12 @@
 ## Done Criteria
 
 - 内置工具管理器可检测系统已安装的外部工具
-- 缺失的外部工具可被自动下载预编译二进制并安装
+- 缺失的外部工具可被自动从 classpath 提取预编译二进制到缓存
 - ripgrep 可通过工具管理器获取并供 M2 tool-grep 使用
-- gh 工具可被 agent 调用执行基本 GitHub 操作
 - fd 可通过工具管理器获取并供 GlobTool 使用，fd 不可用时回退到纯 Java 实现
 
 ## Planned Changes
-
-- `builtin-tool-manager` - Declared: planned - 内置工具管理器，自动检测、下载预编译二进制并安装外部工具
-- `tool-gh` - Declared: planned - GitHub CLI 集成工具实现
+- `builtin-tool-manager` - Declared: complete - 内置工具管理器，自动检测、从 classpath 提取预编译二进制到本地缓存
 - `tool-fd` - Declared: planned - fd 集成工具，使用 fd 二进制提供高性能文件查找，GlobTool 纯 Java 实现作为 fallback
 
 ## Dependencies
@@ -51,3 +47,4 @@
 - 预编译二进制来源：ripgrep（GitHub Releases）、gh（GitHub Releases）、fd（GitHub Releases）
 - builtin-tool-manager 应作为此里程碑的基础设施先行完成，tool-gh 和 tool-fd 均依赖它
 - HTTP 下载使用 Lealone 的异步网络模块（lealone-net）
+
