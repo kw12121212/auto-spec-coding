@@ -25,8 +25,7 @@
 - 有单元测试覆盖（使用 mock SSE stream）
 
 ## Planned Changes
-- `llm-streaming` - Declared: complete - 统一流式响应处理（SSE 解析 + 回调机制）
-- `llm-token-counter` - Declared: complete - Token 计数与上下文窗口管理实现
+- `llm-streaming` - Declared: complete - 统一流式响应处理（SSE 解析 + 回调机制）与 Token 计数与上下文窗口管理
 
 ## Dependencies
 

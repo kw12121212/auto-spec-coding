@@ -129,7 +129,7 @@ public class DefaultAgent implements Agent {
     /**
      * Builds the OrchestratorConfig with permission check hook.
      */
-    private OrchestratorConfig buildOrchestratorConfig() {
+    protected OrchestratorConfig buildOrchestratorConfig() {
         OrchestratorConfig base = OrchestratorConfig.fromMap(config);
         List<ToolExecutionHook> hooks = List.of(new PermissionCheckHook());
         return new OrchestratorConfig(base.maxTurns(), base.toolTimeoutSeconds(), hooks);

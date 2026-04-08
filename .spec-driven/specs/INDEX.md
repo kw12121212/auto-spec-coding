@@ -16,3 +16,4 @@
 - [tool-lsp.md](tool-lsp.md) - LspTool, LspClient — LSP client tool for code intelligence (diagnostics, hover, definition, references, document symbols)
 - [tool-mcp.md](tool-mcp.md) - McpTransport, McpClient, McpServer, McpToolAdapter, McpClientRegistry — MCP protocol client/server, tool discovery and adaptation
 - [secret-vault.md](secret-vault.md) - SecretVault, VaultEntry, VaultResolver, VaultMasterKey, VaultException — encrypted secret storage interface and config resolution
+- [sdk-public-api.md](sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException, SdkEventListener — public SDK facade with builder pattern, auto-assembly, and event callbacks
