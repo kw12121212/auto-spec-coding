@@ -28,7 +28,7 @@
 - `http-routes` - Declared: complete - REST API 路由定义与 handler 实现（基于 Lealone HTTP server）
 - `http-middleware` - Declared: complete - 认证与限流中间件实现
 - `http-models` - Declared: complete - 请求/响应 JSON 模型定义
-- `http-e2e-tests` - Declared: planned - HTTP 层端到端测试实现
+- `http-e2e-tests` - Declared: complete - HTTP 层端到端测试实现
 
 ## Dependencies
 
@@ -44,12 +44,13 @@
 - Lealone HTTP server 的路由能力需确认是否满足 REST API 需求
 
 ## Status
-
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
 - REST API 设计参考 spec-coding-sdk 现有的 HTTP 接口模式
 - 使用 Lealone 内置 HTTP server，不引入 Spring / Javalin 等外部 Web 框架
 - 与 M12 可并行开发
+
+
 
