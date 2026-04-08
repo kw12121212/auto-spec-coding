@@ -27,7 +27,7 @@
 ## Planned Changes
 - `sdk-public-api` - Declared: complete - 公共 SDK facade 接口定义与实现 (archived 2026-04-08)
 - `sdk-events` - Declared: complete - 事件订阅与回调机制实现 (archived 2026-04-08)
-- `sdk-error-handling` - Declared: planned - 统一错误类型与处理模式实现
+- `sdk-error-handling` - Declared: complete - 统一错误类型与处理模式实现
 
 ## Dependencies
 
@@ -41,8 +41,7 @@
 - 需平衡易用性与灵活性——facade 不应过度隐藏底层能力
 
 ## Status
-
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -50,4 +49,6 @@
 - 参考 spec-coding-sdk 的 Go SDK 使用模式提炼常用操作为简洁的 Java SDK 调用
 - M7-M8（注册表）为可选依赖，SDK 可延迟初始化注册表功能
 - 发布为 Maven artifact，用户通过 pom.xml / build.gradle 引入
+
+
 

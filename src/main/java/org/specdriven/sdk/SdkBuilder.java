@@ -7,6 +7,7 @@ import org.specdriven.agent.config.ConfigLoader;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
+import org.specdriven.agent.vault.VaultException;
 import org.specdriven.agent.vault.VaultFactory;
 
 import java.nio.file.Path;
@@ -117,7 +118,9 @@ public class SdkBuilder {
                     eventBus
             );
         } catch (ConfigException e) {
-            throw new SdkException("Failed to load config: " + configPath, e);
+            throw new SdkConfigException("Failed to load config: " + configPath, e);
+        } catch (VaultException e) {
+            throw new SdkVaultException("Vault resolution failed: " + e.getMessage(), e);
         } catch (Exception e) {
             if (e instanceof SdkException) throw (SdkException) e;
             throw new SdkException("Failed to build SDK: " + e.getMessage(), e);

@@ -106,6 +106,9 @@ public class SdkAgent {
             return "";
         } catch (Exception e) {
             if (e instanceof SdkException) throw (SdkException) e;
+            if (isLlmError(e)) {
+                throw new SdkLlmException("LLM call failed: " + e.getMessage(), e);
+            }
             throw new SdkException("Agent execution failed: " + e.getMessage(), e);
         }
     }
@@ -132,6 +135,22 @@ public class SdkAgent {
         config.put("maxTurns", String.valueOf(sdkConfig.maxTurns()));
         config.put("toolTimeoutSeconds", String.valueOf(sdkConfig.toolTimeoutSeconds()));
         return config;
+    }
+
+    private static boolean isLlmError(Throwable e) {
+        Throwable current = e;
+        while (current != null) {
+            String className = current.getClass().getName();
+            String message = current.getMessage();
+            if (className.contains("OpenAi") || className.contains("Claude") || className.contains("Llm")) {
+                return true;
+            }
+            if (message != null && message.contains("API error")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

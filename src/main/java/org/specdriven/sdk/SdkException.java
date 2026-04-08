@@ -6,11 +6,24 @@ package org.specdriven.sdk;
  */
 public class SdkException extends RuntimeException {
 
+    private final boolean retryable;
+
     public SdkException(String message) {
         super(message);
+        this.retryable = false;
     }
 
     public SdkException(String message, Throwable cause) {
         super(message, cause);
+        this.retryable = false;
+    }
+
+    public SdkException(String message, Throwable cause, boolean retryable) {
+        super(message, cause);
+        this.retryable = retryable;
+    }
+
+    public boolean isRetryable() {
+        return retryable;
     }
 }

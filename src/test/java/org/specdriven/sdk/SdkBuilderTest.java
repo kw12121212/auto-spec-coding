@@ -100,7 +100,8 @@ class SdkBuilderTest {
     void invalidConfigPathThrowsSdkException() {
         SdkBuilder builder = SpecDriven.builder()
                 .config(tempDir.resolve("nonexistent.yaml"));
-        assertThrows(SdkException.class, builder::build);
+        SdkException ex = assertThrows(SdkException.class, builder::build);
+        assertInstanceOf(SdkConfigException.class, ex);
     }
 
     @Test
