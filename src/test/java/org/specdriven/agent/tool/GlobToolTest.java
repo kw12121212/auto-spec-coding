@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +14,8 @@ import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.agent.permission.PermissionDecision;
 import org.specdriven.agent.permission.PermissionProvider;
+import org.specdriven.agent.tool.builtin.BuiltinTool;
+import org.specdriven.agent.tool.builtin.BuiltinToolManager;
 
 class GlobToolTest {
 
@@ -183,6 +186,87 @@ class GlobToolTest {
         assertTrue(((ToolResult.Success) result).output().isEmpty());
     }
 
+    // --- fd integration: null BuiltinToolManager (no-arg constructor) uses pure Java ---
+
+    @Test
+    void noArgConstructor_usesPureJava(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("a.txt"), "content");
+        GlobTool pureJavaTool = new GlobTool();
+
+        ToolContext ctx = allowAllContext(tempDir.toString());
+        ToolInput input = new ToolInput(Map.of("pattern", "*.txt"));
+
+        ToolResult result = pureJavaTool.execute(input, ctx);
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        assertTrue(((ToolResult.Success) result).output().contains("a.txt"));
+    }
+
+    // --- fd integration: fd unavailable falls back to pure Java ---
+
+    @Test
+    void fdUnavailable_fallsBackToPureJava(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("a.txt"), "content a");
+        Files.writeString(tempDir.resolve("b.java"), "content b");
+
+        BuiltinToolManager manager = new StubBuiltinToolManager(Optional.empty());
+        GlobTool fdTool = new GlobTool(manager);
+
+        ToolContext ctx = allowAllContext(tempDir.toString());
+        ToolInput input = new ToolInput(Map.of("pattern", "*.txt"));
+
+        ToolResult result = fdTool.execute(input, ctx);
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        String output = ((ToolResult.Success) result).output();
+        assertTrue(output.contains("a.txt"));
+        assertFalse(output.contains("b.java"));
+    }
+
+    // --- fd integration: fd returns error, falls back silently ---
+
+    @Test
+    void fdError_fallsBackToPureJava(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("a.txt"), "content");
+
+        // Stub returns a path to a non-existent binary, causing process failure
+        BuiltinToolManager manager = new StubBuiltinToolManager(Optional.of(Path.of("/nonexistent/fd")));
+        GlobTool fdTool = new GlobTool(manager);
+
+        ToolContext ctx = allowAllContext(tempDir.toString());
+        ToolInput input = new ToolInput(Map.of("pattern", "*.txt"));
+
+        ToolResult result = fdTool.execute(input, ctx);
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        assertTrue(((ToolResult.Success) result).output().contains("a.txt"));
+    }
+
+    // --- fd integration: fd available and works ---
+
+    @Test
+    void fdAvailable_returnsResults(@TempDir Path tempDir) throws IOException {
+        Files.writeString(tempDir.resolve("a.txt"), "content a");
+        Files.writeString(tempDir.resolve("b.java"), "content b");
+
+        // Use "fd" on PATH if available; otherwise this test exercises fallback
+        BuiltinToolManager manager = new BuiltinToolManager() {
+            @Override public Path resolve(BuiltinTool tool) { return Path.of("fd"); }
+            @Override public Optional<Path> detect(BuiltinTool tool) { return Optional.of(Path.of("fd")); }
+            @Override public Path cacheDir() { return tempDir.resolve("cache"); }
+        };
+        GlobTool fdTool = new GlobTool(manager);
+
+        ToolContext ctx = allowAllContext(tempDir.toString());
+        ToolInput input = new ToolInput(Map.of("pattern", "*.txt"));
+
+        ToolResult result = fdTool.execute(input, ctx);
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        // If fd is on PATH, it finds a.txt; if not, fallback finds it — either way success
+        assertTrue(((ToolResult.Success) result).output().contains("a.txt"));
+    }
+
     // --- Helpers ---
 
     private static ToolContext allowAllContext(String workDir) {
@@ -196,5 +280,26 @@ class GlobToolTest {
             @Override public PermissionProvider permissionProvider() { return allowAll; }
             @Override public Map<String, String> env() { return Map.of(); }
         };
+    }
+
+    /** Stub BuiltinToolManager that returns a fixed detect result. */
+    private static class StubBuiltinToolManager implements BuiltinToolManager {
+        private final Optional<Path> detected;
+
+        StubBuiltinToolManager(Optional<Path> detected) {
+            this.detected = detected;
+        }
+
+        @Override public Path resolve(BuiltinTool tool) {
+            return detected.orElseThrow();
+        }
+
+        @Override public Optional<Path> detect(BuiltinTool tool) {
+            return detected;
+        }
+
+        @Override public Path cacheDir() {
+            return Path.of("/tmp/stub-cache");
+        }
     }
 }

@@ -5,15 +5,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.tool.builtin.BuiltinTool;
+import org.specdriven.agent.tool.builtin.BuiltinToolManager;
 
 /**
  * Tool that finds files matching glob patterns across directory trees.
+ * Uses fd binary via BuiltinToolManager when available for faster search,
+ * falling back to pure Java Files.walk otherwise.
  */
 public class GlobTool implements Tool {
 
@@ -24,6 +30,16 @@ public class GlobTool implements Tool {
             new ToolParameter("path", "string", "Root directory to search in (default: context workDir)", false),
             new ToolParameter("head_limit", "integer", "Maximum number of results to return", false)
     );
+
+    private final BuiltinToolManager builtinToolManager;
+
+    public GlobTool() {
+        this(null);
+    }
+
+    public GlobTool(BuiltinToolManager builtinToolManager) {
+        this.builtinToolManager = builtinToolManager;
+    }
 
     @Override
     public String getName() {
@@ -56,14 +72,6 @@ public class GlobTool implements Tool {
         }
         String patternStr = patternObj.toString();
 
-        // Compile glob pattern
-        PathMatcher matcher;
-        try {
-            matcher = Path.of("").getFileSystem().getPathMatcher("glob:" + patternStr);
-        } catch (Exception e) {
-            return new ToolResult.Error("Invalid glob pattern: " + e.getMessage());
-        }
-
         // Resolve search root
         String pathStr = stringParam(input, "path", context.workDir());
         Path searchRoot = resolvePath(pathStr, context.workDir());
@@ -73,12 +81,95 @@ public class GlobTool implements Tool {
 
         Integer headLimit = intParam(input, "head_limit");
 
-        // Execute search
+        // Try fd first, fall back to pure Java
+        String fdResult = searchWithFd(patternStr, searchRoot, headLimit);
+        if (fdResult != null) {
+            return new ToolResult.Success(fdResult);
+        }
+
+        // Fallback: pure Java traversal
+        PathMatcher matcher;
+        try {
+            matcher = Path.of("").getFileSystem().getPathMatcher("glob:" + patternStr);
+        } catch (Exception e) {
+            return new ToolResult.Error("Invalid glob pattern: " + e.getMessage());
+        }
+
         try {
             String result = search(searchRoot, matcher, headLimit);
             return new ToolResult.Success(result);
         } catch (IOException e) {
             return new ToolResult.Error("Search failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Attempts file search using fd binary. Returns null if fd is unavailable or fails,
+     * triggering silent fallback to pure Java.
+     */
+    String searchWithFd(String pattern, Path searchRoot, Integer headLimit) {
+        if (builtinToolManager == null) {
+            return null;
+        }
+
+        Optional<Path> fdBinary = builtinToolManager.detect(BuiltinTool.FD);
+        if (fdBinary.isEmpty()) {
+            return null;
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(fdBinary.get().toString());
+        command.add("--glob");
+        command.add(pattern);
+        command.add("--absolute-path");
+        if (headLimit != null) {
+            command.add("--max-results");
+            command.add(headLimit.toString());
+        }
+        command.add(searchRoot.toString());
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                return null;
+            }
+
+            List<Path> paths = output.lines()
+                    .filter(line -> !line.isBlank())
+                    .map(Path::of)
+                    .toList();
+
+            if (paths.isEmpty()) {
+                return "";
+            }
+
+            // Post-sort by modification time to match pure Java output ordering
+            List<Path> sorted = new ArrayList<>(paths);
+            sorted.sort(Comparator
+                    .<Path, FileTime>comparing(p -> {
+                        try {
+                            return Files.getLastModifiedTime(p);
+                        } catch (IOException e) {
+                            return FileTime.fromMillis(0);
+                        }
+                    }).reversed());
+
+            if (headLimit != null && sorted.size() > headLimit) {
+                sorted = sorted.subList(0, headLimit);
+            }
+
+            StringBuilder sb = new StringBuilder();
+            for (Path p : sorted) {
+                sb.append(p.toAbsolutePath()).append('\n');
+            }
+            sb.setLength(sb.length() - 1);
+            return sb.toString();
+        } catch (IOException | InterruptedException e) {
+            return null;
         }
     }
 

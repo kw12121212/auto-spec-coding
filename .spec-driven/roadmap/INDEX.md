@@ -15,7 +15,7 @@
 - [m2-tool-surface-basics.md](milestones/m2-tool-surface-basics.md) - M2 - Tool Surface 基础工具集 - complete
 - [m20-go-client-sdk.md](milestones/m20-go-client-sdk.md) - M20 - Go Client SDK - proposed
 - [m21-typescript-client-sdk.md](milestones/m21-typescript-client-sdk.md) - M21 - TypeScript Client SDK - proposed
-- [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - proposed
+- [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - complete
 - [m4-agent-lifecycle.md](milestones/m4-agent-lifecycle.md) - M4 - Agent 生命周期与编排 - complete
 - [m5-llm-backend.md](milestones/m5-llm-backend.md) - M5 - LLM Provider Layer - complete
 - [m6-permissions.md](milestones/m6-permissions.md) - M6 - 权限模型与执行钩子 - complete

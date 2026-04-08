@@ -1,12 +1,6 @@
-# Glob Tool Spec
+# Glob Tool Spec (Delta: tool-fd)
 
-## ADDED Requirements
-
-### Requirement: GlobTool identity
-
-- MUST return `"glob"` from `getName()`
-- MUST return a non-empty description from `getDescription()`
-- MUST declare parameters: `pattern` (string, required), `path` (string, optional), `head_limit` (integer, optional)
+## MODIFIED Requirements
 
 ### Requirement: GlobTool execution
 
@@ -30,17 +24,3 @@
 - MUST provide a no-arg constructor that uses pure Java file traversal (backward compatible)
 - MUST provide a constructor accepting `BuiltinToolManager` that attempts fd acceleration when available
 - MUST accept null `BuiltinToolManager` and treat it identically to the no-arg constructor
-
-### Requirement: GlobTool permission integration
-
-- MUST call `ToolContext.permissionProvider().check()` before execution
-- MUST construct the Permission with `action="search"`, `resource` set to the resolved search root path, and empty constraints
-- MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.DENY`
-- MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.CONFIRM`, and the error message MUST indicate that explicit confirmation is required
-
-### Requirement: GlobTool error handling
-
-- MUST return `ToolResult.Error` if `pattern` parameter is missing or empty
-- MUST return `ToolResult.Error` if `pattern` is not a valid glob pattern
-- MUST return `ToolResult.Error` if the search root path does not exist or is not a directory
-- MUST return `ToolResult.Error` if an I/O error occurs during file traversal
