@@ -25,7 +25,7 @@
 
 ## Planned Changes
 
-- `tool-mcp` - Declared: planned - Model Context Protocol 适配层实现
+- `tool-mcp` - Declared: complete - Model Context Protocol 适配层实现
 
 ## Dependencies
 
@@ -39,7 +39,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

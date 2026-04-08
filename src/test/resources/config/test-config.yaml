@@ -11,3 +11,8 @@ permissions:
   allowed:
     - "bash"
     - "file"
+mcp:
+  servers:
+    test-server:
+      command: "echo test"
+      timeout: 10

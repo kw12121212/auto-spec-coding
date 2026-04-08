@@ -14,3 +14,4 @@
 - [team-registry.md](team-registry.md) - Team, TeamStatus, TeamMember, TeamRole, TeamStore, LealoneTeamStore
 - [cron-registry.md](cron-registry.md) - CronEntry, CronStatus, CronExpression, CronStore, LealoneCronStore
 - [tool-lsp.md](tool-lsp.md) - LspTool, LspClient — LSP client tool for code intelligence (diagnostics, hover, definition, references, document symbols)
+- [tool-mcp.md](tool-mcp.md) - McpTransport, McpClient, McpServer, McpToolAdapter, McpClientRegistry — MCP protocol client/server, tool discovery and adaptation
