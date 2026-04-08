@@ -25,10 +25,9 @@
 - 有端到端测试覆盖核心端点
 
 ## Planned Changes
-
 - `http-routes` - Declared: planned - REST API 路由定义与 handler 实现（基于 Lealone HTTP server）
 - `http-middleware` - Declared: planned - 认证与限流中间件实现
-- `http-models` - Declared: planned - 请求/响应 JSON 模型定义
+- `http-models` - Declared: complete - 请求/响应 JSON 模型定义
 - `http-e2e-tests` - Declared: planned - HTTP 层端到端测试实现
 
 ## Dependencies
@@ -53,3 +52,4 @@
 - REST API 设计参考 spec-coding-sdk 现有的 HTTP 接口模式
 - 使用 Lealone 内置 HTTP server，不引入 Spring / Javalin 等外部 Web 框架
 - 与 M12 可并行开发
+

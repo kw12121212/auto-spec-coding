@@ -22,3 +22,4 @@
 - [jsonrpc-transport.md](jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport — stdin/stdout framed transport with Content-Length header, daemon reader thread, and error recovery
 - [jsonrpc-handlers.md](jsonrpc-handlers.md) - JsonRpcDispatcher — request routing, SDK operation mapping, event forwarding, and error code translation
 - [jsonrpc-e2e-tests.md](jsonrpc-e2e-tests.md) - End-to-end integration tests validating the full JSON-RPC pipeline from transport framing through SDK invocation
+- [http-api.md](http-api.md) - RunAgentRequest, RunAgentResponse, AgentStateResponse, ToolInfo, ToolsListResponse, HealthResponse, ErrorResponse, HttpApiException, HttpJsonCodec — HTTP REST API model types, JSON codec, and structured error handling
