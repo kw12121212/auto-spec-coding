@@ -27,7 +27,7 @@
 - `jsonrpc-protocol` - Declared: complete - JSON-RPC 2.0 协议类型与编解码实现
 - `jsonrpc-transport` - Declared: complete - stdin/stdout 传输层实现
 - `jsonrpc-handlers` - Declared: complete - 请求路由与 SDK 操作映射实现
-- `jsonrpc-e2e-tests` - Declared: planned - JSON-RPC 层端到端测试实现
+- `jsonrpc-e2e-tests` - Declared: complete - JSON-RPC 层端到端测试实现
 
 ## Dependencies
 
@@ -40,7 +40,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

@@ -21,3 +21,4 @@
 - [jsonrpc-protocol.md](jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec, JsonRpcProtocolException — JSON-RPC 2.0 protocol types and encode/decode codec
 - [jsonrpc-transport.md](jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport — stdin/stdout framed transport with Content-Length header, daemon reader thread, and error recovery
 - [jsonrpc-handlers.md](jsonrpc-handlers.md) - JsonRpcDispatcher — request routing, SDK operation mapping, event forwarding, and error code translation
+- [jsonrpc-e2e-tests.md](jsonrpc-e2e-tests.md) - End-to-end integration tests validating the full JSON-RPC pipeline from transport framing through SDK invocation
