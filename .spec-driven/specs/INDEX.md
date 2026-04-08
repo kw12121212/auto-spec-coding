@@ -18,3 +18,4 @@
 - [secret-vault.md](secret-vault.md) - SecretVault, VaultEntry, VaultResolver, VaultMasterKey, VaultException — encrypted secret storage interface and config resolution
 - [sdk-public-api.md](sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException, SdkConfigException, SdkVaultException, SdkLlmException, SdkToolException, SdkPermissionException, SdkEventListener — public SDK facade with builder pattern, auto-assembly, typed error handling, and event callbacks
 - [builtin-tool-manager.md](builtin-tool-manager.md) - BuiltinTool, BuiltinToolManager, DefaultBuiltinToolManager, Platform, BuiltinToolException — bundled external tool binary extraction and PATH detection
+- [jsonrpc-protocol.md](jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec, JsonRpcProtocolException — JSON-RPC 2.0 protocol types and encode/decode codec

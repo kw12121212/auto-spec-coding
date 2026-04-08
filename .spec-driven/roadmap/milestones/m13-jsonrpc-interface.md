@@ -24,8 +24,7 @@
 - 有端到端测试验证完整请求-响应流程
 
 ## Planned Changes
-
-- `jsonrpc-protocol` - Declared: planned - JSON-RPC 2.0 协议类型与编解码实现
+- `jsonrpc-protocol` - Declared: complete - JSON-RPC 2.0 协议类型与编解码实现
 - `jsonrpc-transport` - Declared: planned - stdin/stdout 传输层实现
 - `jsonrpc-handlers` - Declared: planned - 请求路由与 SDK 操作映射实现
 - `jsonrpc-e2e-tests` - Declared: planned - JSON-RPC 层端到端测试实现
@@ -48,3 +47,4 @@
 - JSON-RPC 接口是 CLI 嵌入场景的首选方式，需与 spec-coding-sdk 的 stdin 协议保持兼容
 - 批量请求暂不实现，但协议层需预留批量消息的解析能力
 - JSON 处理使用 Lealone 内置的 JSON 能力或 JDK 内置 API，不引入 Jackson/Gson
+
