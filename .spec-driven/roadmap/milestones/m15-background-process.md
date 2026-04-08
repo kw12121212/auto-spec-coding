@@ -30,7 +30,7 @@
 
 ## Planned Changes
 
-- `background-tool-interface` - Declared: planned - 定义 BackgroundTool 接口和 ProcessHandle 类型，扩展 tool surface 异步执行模型
+- `background-tool-interface` - Declared: complete - 定义 BackgroundTool 接口和 BackgroundProcessHandle 类型，扩展 tool surface 异步执行模型
 - `process-manager` - Declared: planned - 后台进程管理器实现，跟踪进程生命周期、输出收集、终止控制
 - `server-tool-lifecycle` - Declared: planned - Server 类工具的就绪探测和资源清理机制
 - `background-tool-integ` - Declared: planned - 与 Agent 生命周期集成，Agent Stop 时清理后台进程

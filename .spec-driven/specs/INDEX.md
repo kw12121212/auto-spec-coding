@@ -24,3 +24,4 @@
 - [jsonrpc-e2e-tests.md](jsonrpc-e2e-tests.md) - End-to-end integration tests validating the full JSON-RPC pipeline from transport framing through SDK invocation
 - [http-api.md](http-api.md) - RunAgentRequest, RunAgentResponse, AgentStateResponse, ToolInfo, ToolsListResponse, HealthResponse, ErrorResponse, HttpApiException, HttpJsonCodec, HttpApiServlet, AuthFilter, RateLimitFilter — HTTP REST API model types, JSON codec, route servlet, authentication and rate-limiting middleware, and structured error handling
 - [http-e2e-tests.md](http-e2e-tests.md) - End-to-end integration tests validating the full HTTP REST API pipeline from embedded Tomcat through filter chain to SDK invocation
+- [background-tool-interface.md](background-tool-interface.md) - BackgroundTool, BackgroundProcessHandle, ProcessState, ProcessOutput — async tool execution interface extending Tool surface
