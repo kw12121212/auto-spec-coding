@@ -10,7 +10,7 @@
 - [m15-background-process.md](milestones/m15-background-process.md) - M15 - 后台进程管理 - proposed
 - [m16-integration-release.md](milestones/m16-integration-release.md) - M16 - 集成与发布 - proposed
 - [m17-db-cache-layer.md](milestones/m17-db-cache-layer.md) - M17 - Lealone DB 缓存层 - proposed
-- [m18-secret-vault.md](milestones/m18-secret-vault.md) - M18 - 密钥保险库 - proposed
+- [m18-secret-vault.md](milestones/m18-secret-vault.md) - M18 - 密钥保险库 - complete
 - [m19-llm-streaming-token.md](milestones/m19-llm-streaming-token.md) - M19 - LLM Streaming & Token Management - complete
 - [m2-tool-surface-basics.md](milestones/m2-tool-surface-basics.md) - M2 - Tool Surface 基础工具集 - complete
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - proposed

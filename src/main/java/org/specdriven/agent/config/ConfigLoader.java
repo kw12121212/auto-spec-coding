@@ -1,5 +1,7 @@
 package org.specdriven.agent.config;
 
+import org.specdriven.agent.vault.SecretVault;
+import org.specdriven.agent.vault.VaultResolver;
 import org.yaml.snakeyaml.Yaml;
 
 import java.io.InputStream;
@@ -78,6 +80,38 @@ public final class ConfigLoader {
             data = substituteEnvVars(data);
         }
         return new Config(data, "classpath:" + resource);
+    }
+
+    // --- Vault-aware loading ---
+
+    /**
+     * Load config from a filesystem path and resolve {@code vault:} references.
+     */
+    public static Map<String, String> loadWithVault(Path path, SecretVault vault) {
+        return loadWithVault(path, vault, false);
+    }
+
+    /**
+     * Load config from a filesystem path with optional env-var substitution and vault resolution.
+     */
+    public static Map<String, String> loadWithVault(Path path, SecretVault vault, boolean substituteEnvVars) {
+        Config config = load(path, substituteEnvVars);
+        return VaultResolver.resolve(config.asMap(), vault);
+    }
+
+    /**
+     * Load config from a classpath resource and resolve {@code vault:} references.
+     */
+    public static Map<String, String> loadWithVaultClasspath(String resource, SecretVault vault) {
+        return loadWithVaultClasspath(resource, vault, false);
+    }
+
+    /**
+     * Load config from a classpath resource with optional env-var substitution and vault resolution.
+     */
+    public static Map<String, String> loadWithVaultClasspath(String resource, SecretVault vault, boolean substituteEnvVars) {
+        Config config = loadClasspath(resource, substituteEnvVars);
+        return VaultResolver.resolve(config.asMap(), vault);
     }
 
     @SuppressWarnings("unchecked")

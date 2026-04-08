@@ -1,0 +1,4 @@
+llm:
+  apiKey: vault:openai_key
+  provider: openai
+  model: gpt-4
