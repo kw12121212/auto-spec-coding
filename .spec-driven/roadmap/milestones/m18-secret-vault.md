@@ -29,7 +29,7 @@
 
 ## Planned Changes
 - `secret-vault-interface` - Declared: complete - SecretVault 接口定义与 VaultResolver（config map 中的 vault: 引用自动 resolve）
-- `lealone-vault-impl` - Declared: planned - LealoneVault 实现：AES-256-GCM 加密、Lealone 表存储、MASTER_KEY 环境变量解锁、审计日志
+- `lealone-vault-impl` - Declared: complete - LealoneVault 实现：AES-256-GCM 加密、Lealone 表存储、MASTER_KEY 环境变量解锁、审计日志
 - `vault-config-integration` - Declared: planned - 将 VaultResolver 集成到 AgentContext.config() 加载链，使所有模块透明使用 vault 密钥
 
 ## Dependencies
@@ -54,4 +54,5 @@
 - LlmConfig 保持简单——只接明文字符串，不感知 vault 存在
 - 解密发生在 config 加载链的最早层：vault resolve → config map → LlmConfig.fromMap()
 - 与 M6（权限模型）互补：M6 管行为权限，M18 管密钥安全
+
 
