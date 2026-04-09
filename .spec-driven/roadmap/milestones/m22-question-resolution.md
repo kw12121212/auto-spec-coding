@@ -36,8 +36,7 @@
 - 有单元测试覆盖 AI 代答、移动推送等待人工、原地等待人工、超时、恢复执行和审计落盘场景
 
 ## Planned Changes
-
-- `question-contract-audit` - Declared: planned - 定义 Question、Answer、AnswerSource、QuestionStatus、QuestionDecision、DeliveryMode 等核心类型、question payload 规范、事件模型以及审计字段
+- `question-contract-audit` - Declared: complete - 定义 Question、Answer、AnswerSource、QuestionStatus、QuestionDecision、DeliveryMode 等核心类型、question payload 规范、事件模型以及审计字段
 - `orchestrator-question-pause` - Declared: planned - 扩展 DefaultOrchestrator：支持提问、暂停等待、接收答复、超时与恢复执行
 - `answer-agent-runtime` - Declared: planned - 实现副 AI agent 的创建、上下文裁剪、答复生成与结构化返回链路
 - `question-routing-policy` - Declared: planned - 定义问题分类、默认回复模式与升级策略，明确哪些问题可 AI 代答，哪些问题需推送移动端等待人工，哪些问题必须原地人工答复
@@ -71,3 +70,4 @@
 - 问题分类至少应区分：澄清型问题、方案选择建议、权限确认、不可逆操作批准
 - 移动推送首期只定义抽象接口和回流契约，不绑定具体移动平台或推送厂商
 - M11 的 skill 执行引擎后续可复用该能力，但 M22 不依赖 M11 才能成立
+

@@ -3,6 +3,7 @@
 - [tool-interface.md](tool-interface.md) - Tool, ToolInput, ToolResult, ToolContext, ToolParameter
 - [agent-interface.md](agent-interface.md) - Agent, AgentState, AgentContext, Message, Conversation
 - [event-system.md](event-system.md) - Event, EventType, EventBus
+- [question-resolution.md](question-resolution.md) - Question, Answer, AnswerSource, QuestionStatus, QuestionDecision, DeliveryMode, QuestionEvents
 - [permission-interface.md](permission-interface.md) - PermissionProvider, Permission, PermissionContext
 - [config-loader.md](config-loader.md) - ConfigLoader, Config, ConfigException
 - [bash-tool.md](bash-tool.md) - BashTool, shell command execution with timeout and permission checks
