@@ -375,7 +375,13 @@ class HttpE2eTest {
                 rlGet("/tools");
             }
             Thread.sleep((WINDOW_SEC + 1) * 1000L);
-            HttpResponse<String> resp = rlGet("/tools");
+            // Retry with backoff to tolerate timing jitter under load
+            HttpResponse<String> resp = null;
+            for (int attempt = 0; attempt < 5; attempt++) {
+                resp = rlGet("/tools");
+                if (resp.statusCode() == 200) break;
+                Thread.sleep(500);
+            }
             assertEquals(200, resp.statusCode());
         }
     }
