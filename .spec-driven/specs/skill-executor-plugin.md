@@ -1,4 +1,4 @@
-# skill-executor-plugin
+# skill-executor-plugin.md
 
 ## ADDED Requirements
 
@@ -25,13 +25,7 @@
 
 ### Requirement: PARAMETERS parsing
 
-- The executor MUST parse `skill_id` and `skill_dir` from the SQL `PARAMETERS (key='value', ...)` block
+- The executor MUST parse `skill_id` and `skill_dir` from the SQL `PARAMETERS` clause in `service.getCreateSQL()`
+- Parsing MUST accept both `PARAMETERS (key='value', ...)` syntax and the quoted-pair format emitted by `SkillSqlConverter`
 - Parsing MUST handle single-quote-escaped values (doubled single quotes `''` → `'`)
 - Parsing MUST be case-insensitive for key names
-
-## MODIFIED Requirements
-
-### Requirement: SkillSqlConverter LANGUAGE clause (modifies skill-sql-converter.md)
-
-- MUST emit `LANGUAGE 'skill'` instead of `LANGUAGE 'java'`
-- All other SQL generation requirements remain unchanged

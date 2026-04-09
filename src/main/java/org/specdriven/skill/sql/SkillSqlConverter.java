@@ -31,7 +31,7 @@ public final class SkillSqlConverter {
             sb.append(" COMMENT '").append(escapeSql(frontmatter.description())).append("'");
         }
         sb.append("\n");
-        sb.append("LANGUAGE 'java'\n");
+        sb.append("LANGUAGE 'skill'\n");
         sb.append("PACKAGE '").append(PACKAGE_NAME).append("'\n");
         sb.append("IMPLEMENT BY '").append(EXECUTOR_PACKAGE).append(".").append(className).append("'\n");
         sb.append("PARAMETERS ");

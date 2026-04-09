@@ -23,7 +23,7 @@ class SkillSqlConverterTest {
         assertTrue(sql.startsWith("CREATE SERVICE IF NOT EXISTS `spec-driven-propose`"));
         assertTrue(sql.contains("execute(prompt varchar) varchar"));
         assertTrue(sql.contains("COMMENT 'Propose a new change.'"));
-        assertTrue(sql.contains("LANGUAGE 'java'"));
+        assertTrue(sql.contains("LANGUAGE 'skill'"));
         assertTrue(sql.contains("PACKAGE 'org.specdriven.skill'"));
         assertTrue(sql.contains("IMPLEMENT BY 'org.specdriven.skill.executor.SpecDrivenProposeExecutor'"));
     }

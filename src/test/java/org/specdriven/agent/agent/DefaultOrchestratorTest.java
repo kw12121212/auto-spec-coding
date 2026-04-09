@@ -2,11 +2,17 @@ package org.specdriven.agent.agent;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.hook.*;
+import org.specdriven.agent.permission.AuditEntry;
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.permission.PolicyStore;
+import org.specdriven.agent.permission.StoredPolicy;
 import org.specdriven.agent.tool.*;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -45,6 +51,18 @@ class DefaultOrchestratorTest {
         };
     }
 
+    private static PolicyStore allowingStore() {
+        return new PolicyStore() {
+            @Override public void grant(Permission permission, PermissionContext context) {}
+            @Override public void revoke(Permission permission, PermissionContext context) {}
+            @Override public Optional<PermissionDecision> find(Permission permission, PermissionContext context) {
+                return Optional.of(PermissionDecision.ALLOW);
+            }
+            @Override public List<StoredPolicy> listPolicies() { return List.of(); }
+            @Override public List<AuditEntry> auditLog() { return List.of(); }
+        };
+    }
+
     // --- tests ---
 
     @Test
@@ -59,6 +77,70 @@ class DefaultOrchestratorTest {
         assertEquals(1, conv.size());
         assertInstanceOf(AssistantMessage.class, conv.get(0));
         assertEquals("done", ((AssistantMessage) conv.get(0)).content());
+    }
+
+    @Test
+    void textOnlyRun_doesNotInitializePolicyStore() {
+        Conversation conv = new Conversation();
+        AtomicInteger initCount = new AtomicInteger(0);
+        Supplier<PolicyStore> factory = () -> {
+            initCount.incrementAndGet();
+            return allowingStore();
+        };
+
+        Orchestrator orch = new DefaultOrchestrator(
+                OrchestratorConfig.defaults(), () -> AgentState.RUNNING, factory);
+        orch.run(ctx(Map.of(), conv), msgs -> new LlmResponse.TextResponse("done"));
+
+        assertEquals(0, initCount.get(), "Policy store should not initialize when no tool execution occurs");
+        assertEquals(1, conv.size());
+    }
+
+    @Test
+    void emptyToolCallResponse_doesNotInitializePolicyStore() {
+        Conversation conv = new Conversation();
+        AtomicInteger initCount = new AtomicInteger(0);
+        Supplier<PolicyStore> factory = () -> {
+            initCount.incrementAndGet();
+            return allowingStore();
+        };
+        OrchestratorConfig config = new OrchestratorConfig(1, 10, List.of(new PermissionCheckHook()));
+
+        Orchestrator orch = new DefaultOrchestrator(config, () -> AgentState.RUNNING, factory);
+        orch.run(ctx(Map.of(), conv), msgs -> new LlmResponse.ToolCallResponse(List.of()));
+
+        assertEquals(0, initCount.get(), "Policy store should not initialize when tool call list is empty");
+        assertEquals(1, conv.size());
+        assertInstanceOf(AssistantMessage.class, conv.get(0));
+    }
+
+    @Test
+    void permissionStoreInitializesLazilyOnFirstToolExecution() {
+        Conversation conv = new Conversation();
+        AtomicInteger initCount = new AtomicInteger(0);
+        Supplier<PolicyStore> factory = () -> {
+            initCount.incrementAndGet();
+            return allowingStore();
+        };
+        Tool bash = stubTool("bash", "file.txt");
+        LlmClient llm = new LlmClient() {
+            private int callCount = 0;
+            @Override public LlmResponse chat(List<Message> msgs) {
+                callCount++;
+                if (callCount == 1) {
+                    return new LlmResponse.ToolCallResponse(
+                            List.of(new ToolCall("bash", Map.of("command", "ls"), null)));
+                }
+                return new LlmResponse.TextResponse("all done");
+            }
+        };
+        OrchestratorConfig config = new OrchestratorConfig(5, 10, List.of(new PermissionCheckHook()));
+
+        Orchestrator orch = new DefaultOrchestrator(config, () -> AgentState.RUNNING, factory);
+        orch.run(ctx(Map.of("bash", bash), conv), llm);
+
+        assertEquals(1, initCount.get(), "Policy store should initialize exactly once on first permission check");
+        assertEquals("file.txt", ((ToolMessage) conv.get(1)).content());
     }
 
     @Test

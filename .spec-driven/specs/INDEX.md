@@ -30,3 +30,5 @@
 - [skill-sql-converter.md](skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter, SkillSqlException — SKILL.md YAML frontmatter parsing and CREATE SERVICE SQL generation
 - [skill-auto-discovery.md](skill-auto-discovery.md) - SkillAutoDiscovery, DiscoveryResult, SkillDiscoveryError — skills/ directory scanning, bulk CREATE SERVICE DDL registration via Lealone JDBC
 - [skill-instructions-store.md](skill-instructions-store.md) - SkillInstructionStore, FileSystemInstructionStore, SkillInstructionStoreException — 3-level progressive loading of skill instruction bodies and resource files
+- [skill-executor-plugin.md](skill-executor-plugin.md) - SkillServiceExecutorFactory, SkillServiceExecutor, PARAMETERS parsing — Lealone ServiceExecutor SPI plugin for executable skill services
+- [release-preparation.md](release-preparation.md) - Repository release overview, three-surface examples, and repo-local Maven release metadata requirements

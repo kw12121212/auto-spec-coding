@@ -11,6 +11,29 @@
 
     <name>auto-spec-coding</name>
     <description>Java SDK reimplementation of spec-coding-sdk, exposing agent capabilities through multiple interface layers</description>
+    <url>https://github.com/kw12121212/auto-spec-coding</url>
+
+    <licenses>
+        <license>
+            <name>Apache License 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>kw12121212</id>
+            <name>kw12121212</name>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/kw12121212/auto-spec-coding.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/kw12121212/auto-spec-coding.git</developerConnection>
+        <url>https://github.com/kw12121212/auto-spec-coding</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <properties>
         <maven.compiler.source>25</maven.compiler.source>

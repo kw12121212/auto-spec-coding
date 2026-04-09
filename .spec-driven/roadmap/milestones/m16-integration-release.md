@@ -25,7 +25,7 @@
 
 ## Planned Changes
 - `integration-testing` - Declared: complete - 端到端集成测试与接口层一致性验证
-- `release-prep` - Declared: planned - 文档完善、Maven 发布配置、示例代码
+- `release-prep` - Declared: complete - 文档完善、Maven 发布配置、示例代码
 
 ## Dependencies
 
@@ -39,11 +39,12 @@
 - Maven 中央仓库发布流程可能需要额外配置
 
 ## Status
-
-- Declared: active
+- Declared: complete
 
 ## Notes
 
 - 此里程碑是整个项目的收尾阶段
 - 发布为 Maven artifact，支持通过 pom.xml / build.gradle 引入
+
+
 

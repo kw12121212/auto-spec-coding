@@ -1,6 +1,9 @@
 package org.specdriven.agent.agent;
 
 import org.specdriven.agent.hook.ToolExecutionHook;
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
@@ -13,6 +16,7 @@ import org.specdriven.agent.permission.PolicyStore;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Default implementation of the orchestrator loop:
@@ -27,7 +31,8 @@ public class DefaultOrchestrator implements Orchestrator {
 
     private final OrchestratorConfig config;
     private final AgentStateAccessor stateAccessor;
-    private final PolicyStore policyStore;
+    private final Supplier<PolicyStore> policyStoreFactory;
+    private volatile PolicyStore policyStore;
 
     /**
      * Functional interface to check the agent's current state without
@@ -39,9 +44,15 @@ public class DefaultOrchestrator implements Orchestrator {
     }
 
     public DefaultOrchestrator(OrchestratorConfig config, AgentStateAccessor stateAccessor) {
+        this(config, stateAccessor, () -> new LealonePolicyStore("jdbc:lealone:embed:agent_db"));
+    }
+
+    DefaultOrchestrator(OrchestratorConfig config,
+                        AgentStateAccessor stateAccessor,
+                        Supplier<PolicyStore> policyStoreFactory) {
         this.config = config;
         this.stateAccessor = stateAccessor;
-        this.policyStore = new LealonePolicyStore("jdbc:lealone:embed:agent_db");
+        this.policyStoreFactory = policyStoreFactory;
     }
 
     @Override
@@ -95,7 +106,7 @@ public class DefaultOrchestrator implements Orchestrator {
             try {
                 ToolContext toolCtx = new SimpleToolContext(
                         context.config().getOrDefault("workDir", "."),
-                        new DefaultPermissionProvider(context.config().getOrDefault("workDir", "."), policyStore),
+                        new LazyPermissionProvider(context.config().getOrDefault("workDir", ".")),
                         Collections.emptyMap());
                 ToolInput input = new ToolInput(call.parameters());
 
@@ -142,6 +153,19 @@ public class DefaultOrchestrator implements Orchestrator {
         }
     }
 
+    private PolicyStore policyStore() {
+        PolicyStore local = policyStore;
+        if (local != null) {
+            return local;
+        }
+        synchronized (this) {
+            if (policyStore == null) {
+                policyStore = policyStoreFactory.get();
+            }
+            return policyStore;
+        }
+    }
+
     /**
      * Minimal ToolContext implementation for orchestrator use.
      */
@@ -150,4 +174,41 @@ public class DefaultOrchestrator implements Orchestrator {
             PermissionProvider permissionProvider,
             Map<String, String> env
     ) implements ToolContext {}
+
+    private final class LazyPermissionProvider implements PermissionProvider {
+        private final String workDir;
+        private volatile PermissionProvider delegate;
+
+        private LazyPermissionProvider(String workDir) {
+            this.workDir = workDir;
+        }
+
+        @Override
+        public PermissionDecision check(Permission permission, PermissionContext context) {
+            return delegate().check(permission, context);
+        }
+
+        @Override
+        public void grant(Permission permission, PermissionContext context) {
+            delegate().grant(permission, context);
+        }
+
+        @Override
+        public void revoke(Permission permission, PermissionContext context) {
+            delegate().revoke(permission, context);
+        }
+
+        private PermissionProvider delegate() {
+            PermissionProvider local = delegate;
+            if (local != null) {
+                return local;
+            }
+            synchronized (this) {
+                if (delegate == null) {
+                    delegate = new DefaultPermissionProvider(workDir, policyStore());
+                }
+                return delegate;
+            }
+        }
+    }
 }

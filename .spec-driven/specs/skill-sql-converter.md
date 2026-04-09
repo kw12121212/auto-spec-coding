@@ -23,7 +23,7 @@
 - MUST generate a single method `execute(prompt varchar) varchar` in the service body
 - MUST include `COMMENT` clause with the `description` value when description is non-null and non-empty
 - MUST omit `COMMENT` clause when description is null or empty
-- MUST include `LANGUAGE 'java'` clause
+- MUST include `LANGUAGE 'skill'` clause
 - MUST include `PACKAGE 'org.specdriven.skill'` clause
 - MUST include `IMPLEMENT BY` clause with the name converted to PascalCase + `Executor` suffix under the `org.specdriven.skill.executor` package
 - MUST include `PARAMETERS` clause with key-value pairs for: `skill_id`, `type`, `version`, `author`, `skill_dir`
