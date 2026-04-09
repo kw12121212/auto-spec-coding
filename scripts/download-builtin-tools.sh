@@ -13,6 +13,14 @@ download_and_extract() {
     local platform_dir="$2"
     local binary_name="$3"
 
+    local target="$platform_dir/$binary_name"
+
+    # Skip if binary already exists and is executable
+    if [ -x "$target" ]; then
+        echo "  SKIP $target (already exists)"
+        return 0
+    fi
+
     echo "  Downloading $url"
     local tmpdir
     tmpdir=$(mktemp -d)
@@ -36,9 +44,9 @@ download_and_extract() {
     fi
 
     mkdir -p "$platform_dir"
-    cp "$found" "$platform_dir/$binary_name"
-    chmod +x "$platform_dir/$binary_name"
-    echo "  -> $platform_dir/$binary_name"
+    cp "$found" "$target"
+    chmod +x "$target"
+    echo "  -> $target"
 }
 
 echo "=== Downloading builtin tools ==="
