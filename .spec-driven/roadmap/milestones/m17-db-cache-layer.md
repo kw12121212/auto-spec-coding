@@ -27,7 +27,7 @@
 
 ## Planned Changes
 - `llm-response-cache` - Declared: complete - LLM 响应缓存与 token 用量统计持久化，基于 Lealone DB
-- `tool-execution-cache` - Declared: planned - Tool 执行结果缓存（带 TTL 自动失效），基于 Lealone DB
+- `tool-execution-cache` - Declared: complete - Tool 执行结果缓存（带 TTL 自动失效），基于 Lealone DB
 
 ## Dependencies
 
@@ -44,7 +44,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

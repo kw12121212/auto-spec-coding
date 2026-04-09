@@ -9,7 +9,7 @@
 - [m14-http-rest-api.md](milestones/m14-http-rest-api.md) - M14 - HTTP REST API - complete
 - [m15-background-process.md](milestones/m15-background-process.md) - M15 - 后台进程管理 - complete
 - [m16-integration-release.md](milestones/m16-integration-release.md) - M16 - 集成与发布 - proposed
-- [m17-db-cache-layer.md](milestones/m17-db-cache-layer.md) - M17 - Lealone DB 缓存层 - proposed
+- [m17-db-cache-layer.md](milestones/m17-db-cache-layer.md) - M17 - Lealone DB 缓存层 - complete
 - [m18-secret-vault.md](milestones/m18-secret-vault.md) - M18 - 密钥保险库 - complete
 - [m19-llm-streaming-token.md](milestones/m19-llm-streaming-token.md) - M19 - LLM Streaming & Token Management - complete
 - [m2-tool-surface-basics.md](milestones/m2-tool-surface-basics.md) - M2 - Tool Surface 基础工具集 - complete
