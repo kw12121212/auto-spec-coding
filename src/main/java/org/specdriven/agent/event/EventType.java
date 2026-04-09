@@ -17,5 +17,7 @@ public enum EventType {
     SERVER_TOOL_FAILED,
     VAULT_SECRET_CREATED,
     VAULT_SECRET_DELETED,
+    LLM_CACHE_HIT,
+    LLM_CACHE_MISS,
     ERROR
 }

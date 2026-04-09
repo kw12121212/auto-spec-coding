@@ -26,8 +26,7 @@
 - 有单元测试覆盖缓存命中、失效、并发访问场景
 
 ## Planned Changes
-
-- `llm-response-cache` - Declared: planned - LLM 响应缓存与 token 用量统计持久化，基于 Lealone DB
+- `llm-response-cache` - Declared: complete - LLM 响应缓存与 token 用量统计持久化，基于 Lealone DB
 - `tool-execution-cache` - Declared: planned - Tool 执行结果缓存（带 TTL 自动失效），基于 Lealone DB
 
 ## Dependencies
@@ -52,3 +51,4 @@
 - 与 M5、M7 可并行开发；缓存作为中间层插入 LLM provider 和 Tool 实现之间
 - TTL 默认值建议按工具类型区分：文件内容缓存较短（秒级），LLM 响应缓存可较长（分钟级）
 - 后续可扩展为语义级匹配（embedding 相似度），首期不做
+

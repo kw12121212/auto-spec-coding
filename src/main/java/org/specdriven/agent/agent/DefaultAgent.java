@@ -18,6 +18,7 @@ public class DefaultAgent implements Agent {
     private volatile AgentState state = null;
     private volatile Map<String, String> config = Collections.emptyMap();
     private volatile AgentContext lastContext = null;
+    private volatile ProcessManager processManagerRef = null;
 
     @Override
     public void init(Map<String, String> config) {
@@ -88,6 +89,7 @@ public class DefaultAgent implements Agent {
      */
     protected void doExecute(AgentContext context) {
         this.lastContext = context;
+        context.processManager().ifPresent(pm -> this.processManagerRef = pm);
         try {
             doExecuteInternal(context);
         } finally {
@@ -185,18 +187,24 @@ public class DefaultAgent implements Agent {
      * Best-effort cleanup that does not throw exceptions.
      */
     private void cleanupBackgroundProcesses() {
-        AgentContext context = this.lastContext;
-        if (context == null) {
-            return;
+        ProcessManager pm = this.processManagerRef;
+        if (pm == null) {
+            // Fallback: check lastContext if processManagerRef was never set
+            AgentContext context = this.lastContext;
+            if (context == null) {
+                return;
+            }
+            Optional<ProcessManager> pmOpt = context.processManager();
+            if (pmOpt.isEmpty()) {
+                return;
+            }
+            pm = pmOpt.get();
         }
         try {
-            Optional<ProcessManager> pmOpt = context.processManager();
-            if (pmOpt.isPresent()) {
-                ProcessManager pm = pmOpt.get();
-                pm.stopAll();
-            }
+            pm.stopAll();
         } catch (Exception e) {
             // Best-effort cleanup: swallow exceptions to ensure state transition completes
         }
+        this.processManagerRef = null;
     }
 }
