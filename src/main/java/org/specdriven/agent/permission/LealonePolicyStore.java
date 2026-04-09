@@ -37,11 +37,13 @@ public class LealonePolicyStore implements PolicyStore {
                 requester    VARCHAR(255) NOT NULL,
                 performed_by VARCHAR(255) NOT NULL,
                 ts           BIGINT       NOT NULL,
-                metadata     CLOB
+                metadata     CLOB,
+                seq          BIGINT       NOT NULL DEFAULT 0
             )
             """;
 
     private final String jdbcUrl;
+    private long seqCounter = 0;
 
     public LealonePolicyStore(String jdbcUrl) {
         this.jdbcUrl = jdbcUrl;
@@ -143,7 +145,7 @@ public class LealonePolicyStore implements PolicyStore {
 
     @Override
     public List<AuditEntry> auditLog() {
-        String select = "SELECT id, operation, action, resource, requester, performed_by, ts, metadata FROM permission_audit_log ORDER BY ts DESC";
+        String select = "SELECT id, operation, action, resource, requester, performed_by, ts, metadata FROM permission_audit_log ORDER BY seq DESC";
         List<AuditEntry> result = new ArrayList<>();
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
@@ -169,10 +171,15 @@ public class LealonePolicyStore implements PolicyStore {
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    private synchronized long nextSeq() {
+        return ++seqCounter;
+    }
+
     private void insertAuditEntry(String operation, Permission permission, PermissionContext context, long timestamp) {
+        long seq = nextSeq();
         String insert = """
-                INSERT INTO permission_audit_log (id, operation, action, resource, requester, performed_by, ts, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO permission_audit_log (id, operation, action, resource, requester, performed_by, ts, metadata, seq)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(insert)) {
@@ -184,6 +191,7 @@ public class LealonePolicyStore implements PolicyStore {
             ps.setString(6, context.requester());
             ps.setLong(7, timestamp);
             ps.setString(8, mapToJson(permission.constraints()));
+            ps.setLong(9, seq);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to insert audit entry", e);
