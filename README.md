@@ -111,7 +111,13 @@ Specs and roadmap live under:
 - [`.spec-driven/specs/INDEX.md`](.spec-driven/specs/INDEX.md)
 - [`.spec-driven/roadmap/INDEX.md`](.spec-driven/roadmap/INDEX.md)
 
-Use the spec-driven workflow to propose, apply, verify, review, and archive changes.
+Use the shared Java spec-driven CLI to propose, apply, verify, review, and archive changes without Node.js:
+
+```bash
+mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="list" exec:java
+mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="propose my-change" exec:java
+mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="verify my-change" exec:java
+```
 
 ## License
 
