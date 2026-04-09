@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,11 @@ public class DefaultProcessManager implements ProcessManager {
 
     @Override
     public BackgroundProcessHandle register(Process process, String toolName, String command) {
+        return registerWithProbe(process, toolName, command, null);
+    }
+
+    @Override
+    public BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command, ReadyProbe probe) {
         long pid = process.pid();
         long startTime = System.currentTimeMillis();
         String id = java.util.UUID.randomUUID().toString();
@@ -51,7 +57,7 @@ public class DefaultProcessManager implements ProcessManager {
         OutputRingBuffer stderrBuffer = new OutputRingBuffer(maxOutputBytes);
         ProcessStateHolder stateHolder = new ProcessStateHolder(ProcessState.STARTING);
 
-        ManagedProcess managed = new ManagedProcess(process, handle, stdoutBuffer, stderrBuffer, stateHolder);
+        ManagedProcess managed = new ManagedProcess(process, handle, stdoutBuffer, stderrBuffer, stateHolder, probe);
         processes.put(id, managed);
 
         // Start output reader virtual threads
@@ -98,6 +104,53 @@ public class DefaultProcessManager implements ProcessManager {
         ));
 
         return handle;
+    }
+
+    @Override
+    public boolean waitForReady(String processId, Duration timeout) {
+        ManagedProcess managed = processes.get(processId);
+        if (managed == null) return false;
+        ReadyProbe probe = managed.probe;
+        if (probe == null) return false;
+
+        ProbeStrategy strategy = createStrategy(probe.type());
+        String toolName = managed.handle.toolName();
+        long deadline = System.currentTimeMillis() + timeout.toMillis();
+        int attempts = 0;
+
+        while (System.currentTimeMillis() < deadline && attempts < probe.maxRetries()) {
+            if (strategy.probe(probe)) {
+                eventBus.publish(new Event(
+                        EventType.SERVER_TOOL_READY,
+                        System.currentTimeMillis(),
+                        toolName,
+                        Map.of("processId", processId, "toolName", toolName, "probeType", probe.type().name())
+                ));
+                return true;
+            }
+            attempts++;
+            try {
+                Thread.sleep(Math.min(probe.retryInterval().toMillis(),
+                        Math.max(1, deadline - System.currentTimeMillis())));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+
+        eventBus.publish(new Event(
+                EventType.SERVER_TOOL_FAILED,
+                System.currentTimeMillis(),
+                toolName,
+                Map.of("processId", processId, "toolName", toolName,
+                        "probeType", probe.type().name(), "reason", "probe timeout")
+        ));
+        return false;
+    }
+
+    @Override
+    public boolean cleanup(String processId) {
+        return stop(processId);
     }
 
     @Override
@@ -190,6 +243,13 @@ public class DefaultProcessManager implements ProcessManager {
         }
     }
 
+    private static ProbeStrategy createStrategy(ProbeType type) {
+        return switch (type) {
+            case TCP -> new TcpProbeStrategy();
+            case HTTP -> new HttpProbeStrategy();
+        };
+    }
+
     // --- Internal state holders ---
 
     static final class ManagedProcess {
@@ -198,16 +258,18 @@ public class DefaultProcessManager implements ProcessManager {
         final OutputRingBuffer stdoutBuffer;
         final OutputRingBuffer stderrBuffer;
         final ProcessStateHolder stateHolder;
+        final ReadyProbe probe;
         volatile int exitCode = -1;
 
         ManagedProcess(Process process, BackgroundProcessHandle handle,
                        OutputRingBuffer stdoutBuffer, OutputRingBuffer stderrBuffer,
-                       ProcessStateHolder stateHolder) {
+                       ProcessStateHolder stateHolder, ReadyProbe probe) {
             this.process = process;
             this.handle = handle;
             this.stdoutBuffer = stdoutBuffer;
             this.stderrBuffer = stderrBuffer;
             this.stateHolder = stateHolder;
+            this.probe = probe;
         }
     }
 

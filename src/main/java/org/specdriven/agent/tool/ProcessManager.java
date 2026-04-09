@@ -1,5 +1,6 @@
 package org.specdriven.agent.tool;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -21,6 +22,37 @@ public interface ProcessManager {
      * @return a handle containing the process metadata
      */
     BackgroundProcessHandle register(Process process, String toolName, String command);
+
+    /**
+     * Registers an already-launched process with an associated readiness probe.
+     * Behaves identically to {@link #register(Process, String, String)} but stores
+     * the probe for later use by {@link #waitForReady(String, Duration)}.
+     *
+     * @param process  the running process to manage
+     * @param toolName name of the tool that launched the process
+     * @param command  the command that started the process
+     * @param probe    readiness probe configuration, may be null
+     * @return a handle containing the process metadata
+     */
+    BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command, ReadyProbe probe);
+
+    /**
+     * Waits for a server tool to become ready by running its readiness probe.
+     *
+     * @param processId the process ID
+     * @param timeout   maximum time to wait
+     * @return true if the probe succeeds within the timeout, false otherwise
+     */
+    boolean waitForReady(String processId, Duration timeout);
+
+    /**
+     * Stops the process and releases any server-specific resources.
+     * Currently equivalent to {@link #stop(String)} but reserved for future extensions.
+     *
+     * @param processId the process ID
+     * @return true if the process was found and cleaned up, false otherwise
+     */
+    boolean cleanup(String processId);
 
     /**
      * Returns the current state of a managed process.

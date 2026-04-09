@@ -46,6 +46,9 @@
 - MUST define `listActive()` returning `List<BackgroundProcessHandle>` — all processes in `STARTING` or `RUNNING` state
 - MUST define `stop(String processId)` returning `boolean` — true if the process was found and a stop signal was sent; false if the process ID is unknown or already terminated
 - MUST define `stopAll()` returning `int` — the count of processes that were successfully stopped
+- MUST define `registerWithProbe(Process process, String toolName, String command, ReadyProbe probe)` returning `BackgroundProcessHandle` — behaves identically to `register()` but additionally stores the `ReadyProbe` for later use by `waitForReady()`
+- MUST define `waitForReady(String processId, Duration timeout)` returning `boolean` — returns false immediately if the process ID is unknown or no probe is associated; retries the probe at `retryInterval` until success, `maxRetries`, or `timeout`; returns true if probe succeeds
+- MUST define `cleanup(String processId)` returning `boolean` — calls `stop()` internally, reserved for future resource cleanup
 
 ### Requirement: DefaultProcessManager implementation
 
@@ -85,3 +88,68 @@
 
 - All `ProcessManager` methods MUST be safe for concurrent access from multiple threads
 - `listActive()` MUST return a snapshot list — modifications to the returned list MUST NOT affect internal state
+
+### Requirement: ServerTool interface
+
+- MUST be a public interface in `org.specdriven.agent.tool` that extends `BackgroundTool`
+- MUST define `getReadyProbe()` returning `ReadyProbe`
+- A tool implementing `ServerTool` indicates it launches a server-class process that requires readiness probing before use
+
+### Requirement: ReadyProbe record
+
+- MUST be a Java record in `org.specdriven.agent.tool` with fields: `type` (ProbeType), `host` (String, default "localhost"), `port` (int), `path` (String, nullable, used only for HTTP probes), `expectedStatus` (int, default 200, used only for HTTP probes), `timeout` (Duration, default PT30S), `retryInterval` (Duration, default PT1S), `maxRetries` (int, default 30)
+- MUST be immutable
+- `type` MUST NOT be null
+
+### Requirement: ProbeType enum
+
+- MUST be an enum in `org.specdriven.agent.tool` with values: `TCP`, `HTTP`
+- `TCP` represents a TCP connect probe
+- `HTTP` represents an HTTP GET probe
+
+### Requirement: ProbeStrategy interface
+
+- MUST be a public interface in `org.specdriven.agent.tool`
+- MUST define `probe(ReadyProbe probe)` returning `boolean` — true if the probe succeeds, false otherwise
+- MUST NOT throw checked exceptions — probe failures MUST return false
+
+### Requirement: TcpProbeStrategy implementation
+
+- MUST implement `ProbeStrategy` in `org.specdriven.agent.tool`
+- MUST attempt a TCP connection to `probe.host()`:`probe.port()` using `java.net.Socket`
+- MUST return true if the connection is established within `probe.retryInterval()`
+- MUST return false if the connection is refused or times out
+- MUST close the socket immediately after a successful connection
+
+### Requirement: HttpProbeStrategy implementation
+
+- MUST implement `ProbeStrategy` in `org.specdriven.agent.tool`
+- MUST send an HTTP GET to `http://<probe.host()>:<probe.port()><probe.path()>` (path defaults to "/" if null)
+- MUST return true if the HTTP response status code equals `probe.expectedStatus()`
+- MUST return false if the connection fails, times out, or returns a different status code
+- MUST use `java.net.HttpURLConnection` — no external HTTP client dependency
+
+### Requirement: ProcessManager readiness probing
+
+- `waitForReady(String processId, Duration timeout)` MUST return false immediately if the process ID is unknown
+- `waitForReady()` MUST return false immediately if no `ReadyProbe` is associated with the process
+- `waitForReady()` MUST retry the probe at `probe.retryInterval()` intervals until either the probe succeeds, `maxRetries` is exhausted, or `timeout` elapses
+- `waitForReady()` MUST return true if the probe succeeds within the timeout, false otherwise
+- `waitForReady()` MUST NOT block the calling thread beyond the specified `timeout`
+
+### Requirement: ProcessManager probe registration
+
+- `registerWithProbe(Process process, String toolName, String command, ReadyProbe probe)` MUST behave identically to `register()` but additionally store the `ReadyProbe` for later use by `waitForReady()`
+- `register()` MUST delegate to `registerWithProbe()` with a null probe
+
+### Requirement: ProcessManager cleanup
+
+- `cleanup(String processId)` MUST call `stop(processId)` internally
+- `cleanup()` MUST return the result of `stop(processId)`
+- Reserved for future resource cleanup extensions (temp files, port release, etc.)
+
+### Requirement: Server tool event types
+
+- `EventType` enum MUST include `SERVER_TOOL_READY` and `SERVER_TOOL_FAILED`
+- `SERVER_TOOL_READY` events MUST carry metadata with keys: `processId` (String), `toolName` (String), `probeType` (String)
+- `SERVER_TOOL_FAILED` events MUST carry metadata with keys: `processId` (String), `toolName` (String), `probeType` (String), `reason` (String)

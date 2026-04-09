@@ -29,10 +29,9 @@
 - 每项能力有独立单元测试覆盖
 
 ## Planned Changes
-
 - `background-tool-interface` - Declared: complete - 定义 BackgroundTool 接口和 BackgroundProcessHandle 类型，扩展 tool surface 异步执行模型
 - `process-manager` - Declared: complete - 后台进程管理器实现，跟踪进程生命周期、输出收集、终止控制
-- `server-tool-lifecycle` - Declared: planned - Server 类工具的就绪探测和资源清理机制
+- `server-tool-lifecycle` - Declared: complete - Server 类工具的就绪探测和资源清理机制
 - `background-tool-integ` - Declared: planned - 与 Agent 生命周期集成，Agent Stop 时清理后台进程
 
 ## Dependencies
@@ -56,3 +55,4 @@
 - 使用 JDK 25 ProcessHandle API 增强进程管理能力
 - Server 类工具的健康检查策略 SHOULD 可配置（超时、重试次数、探测方式）
 - 后台进程的生命周期严格绑定到 agent session，不做跨 session 持久化
+
