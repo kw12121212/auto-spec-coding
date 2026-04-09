@@ -1,5 +1,7 @@
 package org.specdriven.skill.sql;
 
+import java.nio.file.Path;
+
 /**
  * Converts parsed SKILL.md frontmatter into a Lealone CREATE SERVICE SQL statement.
  */
@@ -13,11 +15,11 @@ public final class SkillSqlConverter {
     /**
      * Convert a parsed skill to a CREATE SERVICE SQL statement.
      *
-     * @param frontmatter     parsed YAML frontmatter
-     * @param instructionBody instruction body text (may be empty)
+     * @param frontmatter parsed YAML frontmatter
+     * @param skillDir    directory containing the SKILL.md file
      * @return complete CREATE SERVICE SQL string
      */
-    public static String convert(SkillFrontmatter frontmatter, String instructionBody) {
+    public static String convert(SkillFrontmatter frontmatter, Path skillDir) {
         String serviceName = escapeSql(backtickWrap(frontmatter.name()));
         String className = toPascalCase(frontmatter.name()) + "Executor";
 
@@ -37,9 +39,7 @@ public final class SkillSqlConverter {
         sb.append(", 'type' '").append(escapeSql(nullToEmpty(frontmatter.type()))).append("'");
         sb.append(", 'version' '").append(escapeSql(nullToEmpty(frontmatter.version()))).append("'");
         sb.append(", 'author' '").append(escapeSql(nullToEmpty(frontmatter.author()))).append("'");
-        if (instructionBody != null && !instructionBody.isEmpty()) {
-            sb.append(", 'instructions' '").append(escapeSql(instructionBody)).append("'");
-        }
+        sb.append(", 'skill_dir' '").append(escapeSql(skillDir.toAbsolutePath().toString())).append("'");
 
         return sb.toString();
     }

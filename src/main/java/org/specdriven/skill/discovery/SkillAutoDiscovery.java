@@ -71,7 +71,7 @@ public final class SkillAutoDiscovery {
 
     private void registerSkill(Path skillMd) throws SQLException {
         ParsedSkill parsed = SkillMarkdownParser.parse(skillMd);
-        String sql = SkillSqlConverter.convert(parsed.frontmatter(), parsed.instructionBody());
+        String sql = SkillSqlConverter.convert(parsed.frontmatter(), skillMd.getParent());
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl);
              Statement stmt = conn.createStatement()) {

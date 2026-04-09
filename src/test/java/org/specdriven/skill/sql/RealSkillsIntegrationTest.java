@@ -36,7 +36,7 @@ class RealSkillsIntegrationTest {
                         assertFalse(result.frontmatter().name().isEmpty());
 
                         String sql = SkillSqlConverter.convert(
-                                result.frontmatter(), result.instructionBody());
+                                result.frontmatter(), skillMd.getParent());
                         assertTrue(sql.startsWith("CREATE SERVICE IF NOT EXISTS"));
                         assertTrue(sql.contains("execute(prompt varchar) varchar"));
                         assertTrue(sql.contains("PARAMETERS"));

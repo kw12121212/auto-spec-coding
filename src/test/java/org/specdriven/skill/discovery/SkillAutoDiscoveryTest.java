@@ -3,6 +3,8 @@ package org.specdriven.skill.discovery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.skill.sql.SkillMarkdownParser;
+import org.specdriven.skill.sql.SkillSqlConverter;
 import org.specdriven.skill.sql.SkillSqlException;
 
 import java.nio.file.Files;
@@ -99,5 +101,29 @@ class SkillAutoDiscoveryTest {
 
         assertThrows(UnsupportedOperationException.class,
                 () -> result.errors().add(new SkillDiscoveryError(skillsDir, "test")));
+    }
+
+    @Test
+    void generatedSqlContainsSkillDir() throws Exception {
+        Path skillDir = Files.createDirectory(skillsDir.resolve("my-skill"));
+        Files.writeString(skillDir.resolve("SKILL.md"), """
+                ---
+                skill_id: my_skill
+                name: my-skill
+                description: A test skill
+                author: test
+                type: agent_skill
+                version: 1.0.0
+                ---
+                Do something useful.
+                """);
+
+        SkillMarkdownParser.ParsedSkill parsed = SkillMarkdownParser.parse(skillDir.resolve("SKILL.md"));
+        String sql = SkillSqlConverter.convert(parsed.frontmatter(), skillDir);
+
+        assertTrue(sql.contains("'skill_dir' '" + skillDir.toAbsolutePath() + "'"),
+                "Expected skill_dir in SQL but got: " + sql);
+        assertFalse(sql.contains("'instructions'"),
+                "Expected no inline instructions in SQL but got: " + sql);
     }
 }

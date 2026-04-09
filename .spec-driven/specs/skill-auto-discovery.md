@@ -19,7 +19,7 @@
 - MUST provide a `discoverAndRegister()` method that returns `DiscoveryResult`
 - MUST scan only direct subdirectories of skillsDir (non-recursive)
 - MUST process only subdirectories that contain a `SKILL.md` file
-- MUST parse each SKILL.md using `SkillMarkdownParser` and generate DDL using `SkillSqlConverter`
+- MUST parse each SKILL.md using `SkillMarkdownParser` and generate DDL using `SkillSqlConverter.convert(frontmatter, skillDir)`
 - MUST execute each generated CREATE SERVICE SQL via JDBC `executeUpdate` using the provided JDBC URL
 - MUST continue processing remaining skills when one skill fails (partial success)
 - MUST collect per-skill `SkillSqlException` and `SQLException` failures into `DiscoveryResult.errors`

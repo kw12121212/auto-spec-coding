@@ -18,7 +18,7 @@
 
 ### Requirement: SkillSqlConverter SQL generation
 
-- MUST accept a `SkillFrontmatter` and an instruction body `String`, and return a `String` containing a complete CREATE SERVICE SQL statement
+- MUST accept a `SkillFrontmatter` and a `Path skillDir`, and return a `String` containing a complete CREATE SERVICE SQL statement
 - MUST generate `CREATE SERVICE IF NOT EXISTS` with the `name` field as the service name
 - MUST generate a single method `execute(prompt varchar) varchar` in the service body
 - MUST include `COMMENT` clause with the `description` value when description is non-null and non-empty
@@ -26,8 +26,9 @@
 - MUST include `LANGUAGE 'java'` clause
 - MUST include `PACKAGE 'org.specdriven.skill'` clause
 - MUST include `IMPLEMENT BY` clause with the name converted to PascalCase + `Executor` suffix under the `org.specdriven.skill.executor` package
-- MUST include `PARAMETERS` clause with key-value pairs for: `skill_id`, `type`, `version`, `author`, `instructions`
-- `instructions` value MUST be the instruction body extracted from the SKILL.md file (content after the second `---` marker)
+- MUST include `PARAMETERS` clause with key-value pairs for: `skill_id`, `type`, `version`, `author`, `skill_dir`
+- `skill_dir` value MUST be `skillDir.toAbsolutePath().toString()`
+- MUST NOT include an inline `instructions` parameter
 
 ### Requirement: SkillSqlException
 

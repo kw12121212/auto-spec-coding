@@ -35,7 +35,7 @@
 - `skill-sql-schema` - Declared: complete - SKILL.md → SQL 分解规范、参数映射规则、SQL 模板生成工具
 - `skill-executor-plugin` - Declared: planned - ServiceExecutorFactory SPI 实现：加载 PARAMETERS 配置、构建 agent 循环、绑定 allowed-tools 到 M1 Tool 实例
 - `skill-cli-java` - Declared: planned - 用 Java 改写 spec-driven.ts 全部 12 个子命令（propose/apply/verify/archive/cancel/init/list 等），实现全内置无外部依赖
-- `skill-instructions-store` - Declared: planned - 指令体外部文件管理，3 级渐进加载机制（元数据→指令体→脚本资源）
+- `skill-instructions-store` - Declared: complete - 指令体外部文件管理，3 级渐进加载机制（元数据→指令体→脚本资源）
 - `skill-auto-discovery` - Declared: complete - 扫描 skills/ 目录解析 SKILL.md frontmatter，批量生成 CREATE SERVICE DDL 并执行注册
 
 ## Dependencies
@@ -65,4 +65,5 @@
 - Lealone 已验证支持：COMMENT 多行无大小限制、PARAMETERS 任意 string 键值对、ServiceLoader 插件机制
 - 这是本 SDK 区别于 Go 版本的独有特性——利用 Lealone 原生 SQL + SPI 提供声明式 skill 定义
 - 可与 M10（MCP）并行开发，两者都是工具集成层但机制不同
+
 
