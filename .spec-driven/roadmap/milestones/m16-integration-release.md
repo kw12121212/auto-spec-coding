@@ -24,8 +24,7 @@
 - 三层接口（SDK / JSON-RPC / HTTP）行为一致
 
 ## Planned Changes
-
-- `integration-testing` - Declared: planned - 端到端集成测试与接口层一致性验证
+- `integration-testing` - Declared: complete - 端到端集成测试与接口层一致性验证
 - `release-prep` - Declared: planned - 文档完善、Maven 发布配置、示例代码
 
 ## Dependencies
@@ -41,9 +40,10 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: active
 
 ## Notes
 
 - 此里程碑是整个项目的收尾阶段
 - 发布为 Maven artifact，支持通过 pom.xml / build.gradle 引入
+
