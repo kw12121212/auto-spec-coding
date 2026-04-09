@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import org.specdriven.agent.hook.PermissionCheckHook;
 import org.specdriven.agent.hook.ToolExecutionHook;
+import org.specdriven.agent.tool.ProcessManager;
 
 /**
  * Default implementation of the Agent interface with a state machine
@@ -16,6 +17,7 @@ public class DefaultAgent implements Agent {
 
     private volatile AgentState state = null;
     private volatile Map<String, String> config = Collections.emptyMap();
+    private volatile AgentContext lastContext = null;
 
     @Override
     public void init(Map<String, String> config) {
@@ -55,11 +57,13 @@ public class DefaultAgent implements Agent {
                 "stop() requires RUNNING, PAUSED, or ERROR state, current: " + state);
         }
         state = AgentState.STOPPED;
+        cleanupBackgroundProcesses();
     }
 
     @Override
     public void close() {
         state = AgentState.STOPPED;
+        cleanupBackgroundProcesses();
         config = Collections.emptyMap();
     }
 
@@ -83,6 +87,15 @@ public class DefaultAgent implements Agent {
      * persisted after it completes (or on error).
      */
     protected void doExecute(AgentContext context) {
+        this.lastContext = context;
+        try {
+            doExecuteInternal(context);
+        } finally {
+            this.lastContext = null;
+        }
+    }
+
+    private void doExecuteInternal(AgentContext context) {
         SessionStore store = context instanceof SimpleAgentContext sac ? sac.sessionStore() : null;
 
         long createdAt = System.currentTimeMillis();
@@ -165,5 +178,25 @@ public class DefaultAgent implements Agent {
             case ERROR -> to == AgentState.STOPPED;
             case STOPPED -> false;
         };
+    }
+
+    /**
+     * Cleans up any background processes managed by the ProcessManager.
+     * Best-effort cleanup that does not throw exceptions.
+     */
+    private void cleanupBackgroundProcesses() {
+        AgentContext context = this.lastContext;
+        if (context == null) {
+            return;
+        }
+        try {
+            Optional<ProcessManager> pmOpt = context.processManager();
+            if (pmOpt.isPresent()) {
+                ProcessManager pm = pmOpt.get();
+                pm.stopAll();
+            }
+        } catch (Exception e) {
+            // Best-effort cleanup: swallow exceptions to ensure state transition completes
+        }
     }
 }

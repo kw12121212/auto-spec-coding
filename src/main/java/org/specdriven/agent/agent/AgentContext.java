@@ -1,6 +1,8 @@
 package org.specdriven.agent.agent;
 
 import java.util.Map;
+import java.util.Optional;
+import org.specdriven.agent.tool.ProcessManager;
 import org.specdriven.agent.tool.Tool;
 
 /**
@@ -30,5 +32,13 @@ public interface AgentContext {
      */
     default Conversation conversation() {
         return null;
+    }
+
+    /**
+     * Returns the process manager for background process lifecycle management.
+     * Default implementation returns empty for backward compatibility.
+     */
+    default Optional<ProcessManager> processManager() {
+        return Optional.empty();
     }
 }
