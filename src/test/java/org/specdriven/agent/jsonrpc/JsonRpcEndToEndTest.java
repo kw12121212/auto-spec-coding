@@ -2,6 +2,7 @@ package org.specdriven.agent.jsonrpc;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.json.JsonReader;
 
 import java.io.ByteArrayInputStream;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * End-to-end tests that exercise the full JSON-RPC stack:
  * framed stdin → transport decode → dispatcher route → SDK invocation → response → framed stdout.
  */
+@Isolated
 class JsonRpcEndToEndTest {
 
     // --- Frame helpers ---

@@ -1,6 +1,7 @@
 package org.specdriven.sdk;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.agent.AgentState;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
@@ -15,6 +16,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated
 class SdkAgentEventTest {
 
     private final SimpleEventBus globalBus = new SimpleEventBus();

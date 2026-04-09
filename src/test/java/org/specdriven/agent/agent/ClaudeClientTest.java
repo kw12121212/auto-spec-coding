@@ -1,55 +1,69 @@
 package org.specdriven.agent.agent;
 
-import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.specdriven.agent.json.JsonReader;
+import static org.junit.jupiter.api.Assertions.*;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.specdriven.agent.json.JsonReader;
 
 class ClaudeClientTest {
 
-    private HttpServer server;
-    private int port;
+    private static HttpServer server;
+    private static int port;
+    private static ExecutorService executor;
+    private static final AtomicReference<HttpHandler> handlerRef = new AtomicReference<>();
 
-    @BeforeEach
-    void startServer() throws IOException {
+    @BeforeAll
+    static void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.setExecutor(Executors.newSingleThreadExecutor());
-        port = server.getAddress().getPort();
+        executor = Executors.newSingleThreadExecutor();
+        server.setExecutor(executor);
+        server.createContext("/v1/messages", exchange -> handlerRef.get().handle(exchange));
         server.start();
+        port = server.getAddress().getPort();
     }
 
-    @AfterEach
-    void stopServer() {
+    @AfterAll
+    static void stopServer() {
         server.stop(0);
+        executor.shutdownNow();
+    }
+
+    @BeforeEach
+    void resetHandler() {
+        respond(200, textResponse("ok"));
     }
 
     private LlmConfig config(int maxRetries) {
-        return new LlmConfig("http://localhost:" + port + "/v1", "sk-ant-test",
-                "claude-sonnet-4-6", 10, maxRetries);
+        return new LlmConfig("http://localhost:" + port + "/v1", "sk-ant-test", "claude-sonnet-4-6", 10, maxRetries);
     }
 
     private void respond(int status, String body) {
-        server.createContext("/v1/messages", exchange -> {
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        });
+        handlerRef.set(exchange -> writeJson(exchange, status, body));
+    }
+
+    private static void writeJson(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
     }
 
     private static String textResponse(String text) {
@@ -65,13 +79,10 @@ class ClaudeClientTest {
                 + "\"usage\":{\"input_tokens\":8,\"output_tokens\":12}}";
     }
 
-    // --- tests ---
-
     @Test
     void textResponseParsed() {
         respond(200, textResponse("hello world"));
-        LlmClient client = new ClaudeClient(config(0));
-        LlmResponse resp = client.chat(List.of(new UserMessage("hi", 0)));
+        LlmResponse resp = new ClaudeClient(config(0)).chat(List.of(new UserMessage("hi", 0)));
 
         assertInstanceOf(LlmResponse.TextResponse.class, resp);
         assertEquals("hello world", ((LlmResponse.TextResponse) resp).content());
@@ -80,8 +91,7 @@ class ClaudeClientTest {
     @Test
     void toolCallResponseParsed() {
         respond(200, toolUseResponse("tool_abc", "bash", "{\"command\":\"ls\"}"));
-        LlmClient client = new ClaudeClient(config(0));
-        LlmResponse resp = client.chat(List.of(new UserMessage("run ls", 0)));
+        LlmResponse resp = new ClaudeClient(config(0)).chat(List.of(new UserMessage("run ls", 0)));
 
         assertInstanceOf(LlmResponse.ToolCallResponse.class, resp);
         LlmResponse.ToolCallResponse tcr = (LlmResponse.ToolCallResponse) resp;
@@ -95,8 +105,7 @@ class ClaudeClientTest {
     @Test
     void usageParsed() {
         respond(200, textResponse("ok"));
-        LlmClient client = new ClaudeClient(config(0));
-        LlmResponse resp = client.chat(List.of(new UserMessage("hi", 0)));
+        LlmResponse resp = new ClaudeClient(config(0)).chat(List.of(new UserMessage("hi", 0)));
 
         LlmUsage usage = ((LlmResponse.TextResponse) resp).usage();
         assertNotNull(usage);
@@ -108,28 +117,16 @@ class ClaudeClientTest {
     @Test
     void systemPromptAsTopLevelField() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("hi", 0)),
-                "You are helpful.",
-                null, 0.7, 100, null);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("hi", 0)), "You are helpful.", null, 0.7, 100, null);
         new ClaudeClient(config(0)).chat(req);
 
-        String body = captured.get();
-        Map<String, Object> parsed = JsonReader.parseObject(body);
-
-        // system MUST be top-level, NOT inside messages
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         assertEquals("You are helpful.", parsed.get("system"));
-
-        // messages must NOT contain a system-role entry
         List<Object> messages = JsonReader.getList(parsed, "messages");
         for (Object item : messages) {
             @SuppressWarnings("unchecked")
@@ -142,56 +139,40 @@ class ClaudeClientTest {
     @Test
     void toolSchemaUsesInputSchemaNoPyTypeWrapper() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         ToolSchema schema = new ToolSchema("bash", "Run bash", Map.of("type", "object"));
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("go", 0)), null, List.of(schema), 0.7, 100, null);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("go", 0)), null, List.of(schema), 0.7, 100, null);
         new ClaudeClient(config(0)).chat(req);
 
-        String body = captured.get();
-        Map<String, Object> parsed = JsonReader.parseObject(body);
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         List<Object> tools = JsonReader.getList(parsed, "tools");
         assertEquals(1, tools.size());
         @SuppressWarnings("unchecked")
         Map<String, Object> tool = (Map<String, Object>) tools.get(0);
-        // no "type": "function" wrapper
         assertNull(tool.get("type"));
         assertEquals("bash", tool.get("name"));
-        // input_schema must be present
         assertNotNull(tool.get("input_schema"));
-        // no "parameters" key
         assertNull(tool.get("parameters"));
     }
 
     @Test
     void toolMessageSerializedAsUserRoleWithToolResult() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         ToolMessage toolMsg = new ToolMessage("file.txt", 0, "bash", "tool_xyz");
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("go", 0), toolMsg), null, null, 0.7, 100, null);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("go", 0), toolMsg), null, null, 0.7, 100, null);
         new ClaudeClient(config(0)).chat(req);
 
-        String body = captured.get();
-        Map<String, Object> parsed = JsonReader.parseObject(body);
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         List<Object> messages = JsonReader.getList(parsed, "messages");
-
         boolean found = false;
         for (Object item : messages) {
             @SuppressWarnings("unchecked")
@@ -216,35 +197,22 @@ class ClaudeClientTest {
     @Test
     void maxTokensDefaultsTo4096() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
-        // LlmRequest requires maxTokens > 0, so use the minimum valid value
-        // and check that the ClaudeClient uses at least 4096 when built from messages only
-        // We test via LlmRequest.of() which uses DEFAULT_MAX_TOKENS=4096
         new ClaudeClient(config(0)).chat(List.of(new UserMessage("hi", 0)));
-
         Map<String, Object> parsed = JsonReader.parseObject(captured.get());
-        long maxTokens = JsonReader.getLong(parsed, "max_tokens");
-        assertEquals(4096, maxTokens);
+        assertEquals(4096, JsonReader.getLong(parsed, "max_tokens"));
     }
 
     @Test
     void requiredHeadersPresent() {
-        AtomicReference<com.sun.net.httpserver.HttpExchange> capturedExchange = new AtomicReference<>();
-        server.createContext("/v1/messages", exchange -> {
+        AtomicReference<HttpExchange> capturedExchange = new AtomicReference<>();
+        handlerRef.set(exchange -> {
             capturedExchange.set(exchange);
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         new ClaudeClient(config(0)).chat(List.of(new UserMessage("hi", 0)));
@@ -259,24 +227,18 @@ class ClaudeClientTest {
     @Test
     void retryOn429WithRetryAfterHeader() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             int c = callCount.incrementAndGet();
             if (c == 1) {
                 exchange.getResponseHeaders().set("Retry-After", "0");
                 exchange.sendResponseHeaders(429, 0);
                 exchange.getResponseBody().close();
             } else {
-                byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-                exchange.getResponseBody().close();
+                writeJson(exchange, 200, textResponse("ok"));
             }
         });
 
-        LlmClient client = new ClaudeClient(config(1));
-        LlmResponse resp = client.chat(List.of(new UserMessage("hi", 0)));
-
+        LlmResponse resp = new ClaudeClient(config(1)).chat(List.of(new UserMessage("hi", 0)));
         assertEquals(2, callCount.get());
         assertInstanceOf(LlmResponse.TextResponse.class, resp);
     }
@@ -284,24 +246,18 @@ class ClaudeClientTest {
     @Test
     void retryOn500WithExponentialBackoff() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             int c = callCount.incrementAndGet();
             if (c < 3) {
                 exchange.sendResponseHeaders(500, 0);
                 exchange.getResponseBody().close();
             } else {
-                byte[] bytes = textResponse("recovered").getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-                exchange.getResponseBody().close();
+                writeJson(exchange, 200, textResponse("recovered"));
             }
         });
 
-        LlmConfig cfg = new LlmConfig("http://localhost:" + port + "/v1", "key",
-                "claude-sonnet-4-6", 10, 3);
-        LlmResponse resp = new ClaudeClient(cfg).chat(List.of(new UserMessage("hi", 0)));
-
+        LlmResponse resp = new ClaudeClient(new LlmConfig("http://localhost:" + port + "/v1", "key", "claude-sonnet-4-6", 10, 3))
+                .chat(List.of(new UserMessage("hi", 0)));
         assertEquals(3, callCount.get());
         assertEquals("recovered", ((LlmResponse.TextResponse) resp).content());
     }
@@ -309,12 +265,9 @@ class ClaudeClientTest {
     @Test
     void noRetryOn401() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             callCount.incrementAndGet();
-            byte[] bytes = "{\"error\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(401, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 401, "{\"error\":\"unauthorized\"}");
         });
 
         LlmClient client = new ClaudeClient(config(3));
@@ -324,13 +277,12 @@ class ClaudeClientTest {
 
     @Test
     void exhaustedRetriesThrowsException() {
-        server.createContext("/v1/messages", exchange -> {
+        handlerRef.set(exchange -> {
             exchange.sendResponseHeaders(503, 0);
             exchange.getResponseBody().close();
         });
 
         LlmClient client = new ClaudeClient(config(2));
-        assertThrows(RuntimeException.class,
-                () -> client.chat(List.of(new UserMessage("hi", 0))));
+        assertThrows(RuntimeException.class, () -> client.chat(List.of(new UserMessage("hi", 0))));
     }
 }

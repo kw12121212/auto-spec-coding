@@ -78,11 +78,18 @@ The system MUST manage a local cache directory for extracted tool binaries.
 
 The system MUST extract precompiled binaries from classpath resources.
 
+- When `resolve(BuiltinTool.RG)` needs to extract from the classpath, the application MUST package the platform-specific resource path returned by `BuiltinTool.RG.resourcePath(platform)` for the current supported build platform
+
 #### Scenario: Extract and set executable
 - GIVEN a tool binary in the classpath resources
 - WHEN `resolve(tool)` triggers extraction
 - THEN the binary MUST be copied from the classpath to the cache directory
 - AND the binary MUST have executable permissions set
+
+#### Scenario: Current platform bundled `rg` resource is packaged
+- GIVEN the application resources for the current supported build platform
+- WHEN `BuiltinTool.RG.resourcePath(Platform.detect())` is computed
+- THEN the classpath MUST contain a readable resource at that exact path
 
 #### Scenario: Resource not found
 - GIVEN no bundled binary for the current platform on the classpath

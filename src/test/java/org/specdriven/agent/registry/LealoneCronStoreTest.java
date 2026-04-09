@@ -2,21 +2,27 @@ package org.specdriven.agent.registry;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
 
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated
 class LealoneCronStoreTest {
 
     private LealoneCronStore store;
     private CapturingEventBus eventBus;
     private AtomicInteger fireCount;
+    private CountDownLatch fireLatch;
+    private CountDownLatch eventLatch;
 
     @BeforeEach
     void setUp() {
@@ -24,7 +30,13 @@ class LealoneCronStoreTest {
         String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
         eventBus = new CapturingEventBus();
         fireCount = new AtomicInteger(0);
-        store = new LealoneCronStore(eventBus, jdbcUrl, fireCount::incrementAndGet);
+        fireLatch = new CountDownLatch(1);
+        eventLatch = new CountDownLatch(1);
+        eventBus.eventLatch = eventLatch;
+        store = new LealoneCronStore(eventBus, jdbcUrl, () -> {
+            fireCount.incrementAndGet();
+            fireLatch.countDown();
+        });
     }
 
     // -------------------------------------------------------------------------
@@ -82,13 +94,12 @@ class LealoneCronStoreTest {
 
     @Test
     void oneShot_firesAfterDelay() throws InterruptedException {
-        // 2-second delay
         CronEntry entry = new CronEntry(null, "Quick one-shot", null, 2000,
                 CronStatus.ACTIVE, "fired", null, 0, 0, 0, 0);
         store.create(entry);
 
-        // Wait for the scheduler to fire it (polls every 1s)
-        Thread.sleep(4000);
+        assertTrue(fireLatch.await(5, TimeUnit.SECONDS));
+        assertTrue(eventLatch.await(5, TimeUnit.SECONDS));
 
         assertEquals(1, fireCount.get());
         assertEquals(1, eventBus.captured.size());
@@ -181,11 +192,11 @@ class LealoneCronStoreTest {
 
     @Test
     void oneShot_publishesCronTriggered() throws InterruptedException {
-        // 1-second delay for fast test
         store.create(new CronEntry(null, "Quick job", null, 1000,
                 CronStatus.ACTIVE, "work", Map.of("tag", "test"), 0, 0, 0, 0));
 
-        Thread.sleep(3000);
+        assertTrue(fireLatch.await(5, TimeUnit.SECONDS));
+        assertTrue(eventLatch.await(5, TimeUnit.SECONDS));
 
         assertFalse(eventBus.captured.isEmpty());
         Event event = eventBus.captured.get(0);
@@ -250,10 +261,14 @@ class LealoneCronStoreTest {
 
     private static class CapturingEventBus implements EventBus {
         final List<Event> captured = new ArrayList<>();
+        private CountDownLatch eventLatch;
 
         @Override
         public void publish(Event event) {
             captured.add(event);
+            if (eventLatch != null) {
+                eventLatch.countDown();
+            }
         }
 
         @Override

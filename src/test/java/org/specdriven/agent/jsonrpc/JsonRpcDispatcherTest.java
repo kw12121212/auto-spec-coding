@@ -2,6 +2,7 @@ package org.specdriven.agent.jsonrpc;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.sdk.*;
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated
 class JsonRpcDispatcherTest {
 
     private CapturingTransport transport;

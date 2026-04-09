@@ -1,39 +1,52 @@
 package org.specdriven.agent.agent;
 
-import com.sun.net.httpserver.HttpServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.specdriven.agent.json.JsonReader;
+import static org.junit.jupiter.api.Assertions.*;
 
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.specdriven.agent.json.JsonReader;
 
 class OpenAiClientTest {
 
-    private HttpServer server;
-    private int port;
+    private static HttpServer server;
+    private static int port;
+    private static ExecutorService executor;
+    private static final AtomicReference<HttpHandler> handlerRef = new AtomicReference<>();
 
-    @BeforeEach
-    void startServer() throws IOException {
+    @BeforeAll
+    static void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.setExecutor(Executors.newSingleThreadExecutor());
-        port = server.getAddress().getPort();
+        executor = Executors.newSingleThreadExecutor();
+        server.setExecutor(executor);
+        server.createContext("/v1/chat/completions", exchange -> handlerRef.get().handle(exchange));
         server.start();
+        port = server.getAddress().getPort();
     }
 
-    @AfterEach
-    void stopServer() {
+    @AfterAll
+    static void stopServer() {
         server.stop(0);
+        executor.shutdownNow();
+    }
+
+    @BeforeEach
+    void resetHandler() {
+        respond(200, textResponse("ok"));
     }
 
     private LlmConfig config(int maxRetries) {
@@ -41,14 +54,16 @@ class OpenAiClientTest {
     }
 
     private void respond(int status, String body) {
-        server.createContext("/v1/chat/completions", exchange -> {
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        });
+        handlerRef.set(exchange -> writeJson(exchange, status, body));
+    }
+
+    private static void writeJson(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
     }
 
     private static String textResponse(String content) {
@@ -66,8 +81,6 @@ class OpenAiClientTest {
     private static String escapeJson(String s) {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
-
-    // --- tests ---
 
     @Test
     void textResponseParsed() {
@@ -110,25 +123,17 @@ class OpenAiClientTest {
     @Test
     void systemPromptInjectedFirst() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         LlmClient client = new OpenAiClient(config(0));
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("hello", 0)),
-                "You are helpful.",
-                null, 0.7, 100, null);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("hello", 0)), "You are helpful.", null, 0.7, 100, null);
         client.chat(req);
 
-        String body = captured.get();
-        assertNotNull(body);
-        Map<String, Object> parsed = JsonReader.parseObject(body);
+        assertNotNull(captured.get());
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         List<Object> messages = JsonReader.getList(parsed, "messages");
         assertFalse(messages.isEmpty());
         @SuppressWarnings("unchecked")
@@ -140,23 +145,16 @@ class OpenAiClientTest {
     @Test
     void toolSchemaSerializedCorrectly() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         ToolSchema schema = new ToolSchema("bash", "Run a bash command", Map.of("type", "object"));
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("go", 0)), null, List.of(schema), 0.7, 100, null);
-        LlmClient client = new OpenAiClient(config(0));
-        client.chat(req);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("go", 0)), null, List.of(schema), 0.7, 100, null);
+        new OpenAiClient(config(0)).chat(req);
 
-        String body = captured.get();
-        Map<String, Object> parsed = JsonReader.parseObject(body);
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         List<Object> tools = JsonReader.getList(parsed, "tools");
         assertEquals(1, tools.size());
         @SuppressWarnings("unchecked")
@@ -170,25 +168,17 @@ class OpenAiClientTest {
     @Test
     void toolMessageSerializedWithToolCallId() {
         AtomicReference<String> captured = new AtomicReference<>();
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         ToolMessage toolMsg = new ToolMessage("result", 0, "bash", "call_xyz");
-        LlmRequest req = new LlmRequest(
-                List.of(new UserMessage("go", 0), toolMsg), null, null, 0.7, 100, null);
-        LlmClient client = new OpenAiClient(config(0));
-        client.chat(req);
+        LlmRequest req = new LlmRequest(List.of(new UserMessage("go", 0), toolMsg), null, null, 0.7, 100, null);
+        new OpenAiClient(config(0)).chat(req);
 
-        String body = captured.get();
-        Map<String, Object> parsed = JsonReader.parseObject(body);
+        Map<String, Object> parsed = JsonReader.parseObject(captured.get());
         List<Object> messages = JsonReader.getList(parsed, "messages");
-        // find the tool message
         boolean found = false;
         for (Object item : messages) {
             @SuppressWarnings("unchecked")
@@ -203,14 +193,10 @@ class OpenAiClientTest {
 
     @Test
     void requiredHeadersPresent() {
-        AtomicReference<com.sun.net.httpserver.HttpExchange> captured = new AtomicReference<>();
-        server.createContext("/v1/chat/completions", exchange -> {
+        AtomicReference<HttpExchange> captured = new AtomicReference<>();
+        handlerRef.set(exchange -> {
             captured.set(exchange);
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
         new OpenAiClient(config(0)).chat(List.of(new UserMessage("hi", 0)));
@@ -224,24 +210,18 @@ class OpenAiClientTest {
     @Test
     void retryOn429WithRetryAfterHeader() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             int c = callCount.incrementAndGet();
             if (c == 1) {
                 exchange.getResponseHeaders().set("Retry-After", "0");
                 exchange.sendResponseHeaders(429, 0);
                 exchange.getResponseBody().close();
             } else {
-                byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-                exchange.getResponseBody().close();
+                writeJson(exchange, 200, textResponse("ok"));
             }
         });
 
-        LlmClient client = new OpenAiClient(config(1));
-        LlmResponse resp = client.chat(List.of(new UserMessage("hi", 0)));
-
+        LlmResponse resp = new OpenAiClient(config(1)).chat(List.of(new UserMessage("hi", 0)));
         assertEquals(2, callCount.get());
         assertInstanceOf(LlmResponse.TextResponse.class, resp);
     }
@@ -249,27 +229,18 @@ class OpenAiClientTest {
     @Test
     void retryOn500WithExponentialBackoff() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             int c = callCount.incrementAndGet();
             if (c < 3) {
                 exchange.sendResponseHeaders(500, 0);
                 exchange.getResponseBody().close();
             } else {
-                byte[] bytes = textResponse("recovered").getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, bytes.length);
-                exchange.getResponseBody().write(bytes);
-                exchange.getResponseBody().close();
+                writeJson(exchange, 200, textResponse("recovered"));
             }
         });
 
-        // Use a config with 0 timeout so backoff is forced to near-zero (still tests the path)
-        LlmConfig cfg = new LlmConfig("http://localhost:" + port + "/v1", "key", "gpt-4", 10, 3);
-        LlmClient client = new OpenAiClient(cfg);
-
-        // Override sleep by making the test quick — we just verify retries happened
-        // The real test is that we eventually get a response after retries
-        LlmResponse resp = client.chat(List.of(new UserMessage("hi", 0)));
+        LlmResponse resp = new OpenAiClient(new LlmConfig("http://localhost:" + port + "/v1", "key", "gpt-4", 10, 3))
+                .chat(List.of(new UserMessage("hi", 0)));
         assertEquals(3, callCount.get());
         assertEquals("recovered", ((LlmResponse.TextResponse) resp).content());
     }
@@ -277,12 +248,9 @@ class OpenAiClientTest {
     @Test
     void noRetryOn401() {
         AtomicInteger callCount = new AtomicInteger(0);
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             callCount.incrementAndGet();
-            byte[] bytes = "{\"error\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(401, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 401, "{\"error\":\"unauthorized\"}");
         });
 
         LlmClient client = new OpenAiClient(config(3));
@@ -292,7 +260,7 @@ class OpenAiClientTest {
 
     @Test
     void exhaustedRetriesThrowsException() {
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             exchange.sendResponseHeaders(503, 0);
             exchange.getResponseBody().close();
         });
@@ -300,23 +268,19 @@ class OpenAiClientTest {
         LlmClient client = new OpenAiClient(config(2));
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> client.chat(List.of(new UserMessage("hi", 0))));
-        assertTrue(ex.getMessage().contains("503") || ex.getMessage().contains("503"));
+        assertTrue(ex.getMessage().contains("503"));
     }
 
     @Test
     void customBaseUrlRoutesToCorrectEndpoint() {
         AtomicReference<String> path = new AtomicReference<>();
-        server.createContext("/v1/chat/completions", exchange -> {
+        handlerRef.set(exchange -> {
             path.set(exchange.getRequestURI().getPath());
-            byte[] bytes = textResponse("ok").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.getResponseBody().close();
+            writeJson(exchange, 200, textResponse("ok"));
         });
 
-        LlmConfig cfg = new LlmConfig("http://localhost:" + port + "/v1", "key", "gpt-4", 10, 0);
-        new OpenAiClient(cfg).chat(List.of(new UserMessage("hi", 0)));
+        new OpenAiClient(new LlmConfig("http://localhost:" + port + "/v1", "key", "gpt-4", 10, 0))
+                .chat(List.of(new UserMessage("hi", 0)));
 
         assertEquals("/v1/chat/completions", path.get());
     }

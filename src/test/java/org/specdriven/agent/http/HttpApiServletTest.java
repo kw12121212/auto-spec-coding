@@ -5,6 +5,7 @@ import jakarta.servlet.http.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.agent.AgentState;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
@@ -19,6 +20,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Isolated
 class HttpApiServletTest {
 
     private SpecDriven sdk;
