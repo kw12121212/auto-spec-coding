@@ -1,0 +1,91 @@
+package org.specdriven.skill.sql;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class SkillSqlConverterTest {
+
+    private final SkillFrontmatter sampleFrontmatter = new SkillFrontmatter(
+            "spec_driven_propose", "spec-driven-propose",
+            "Propose a new change.", "auto-spec-driven", "agent_skill", "1.0.0");
+
+    @Test
+    void generatesCompleteSql() {
+        String sql = SkillSqlConverter.convert(sampleFrontmatter, "Do the thing.");
+
+        assertTrue(sql.startsWith("CREATE SERVICE IF NOT EXISTS `spec-driven-propose`"));
+        assertTrue(sql.contains("execute(prompt varchar) varchar"));
+        assertTrue(sql.contains("COMMENT 'Propose a new change.'"));
+        assertTrue(sql.contains("LANGUAGE 'java'"));
+        assertTrue(sql.contains("PACKAGE 'org.specdriven.skill'"));
+        assertTrue(sql.contains("IMPLEMENT BY 'org.specdriven.skill.executor.SpecDrivenProposeExecutor'"));
+    }
+
+    @Test
+    void includesParameters() {
+        String sql = SkillSqlConverter.convert(sampleFrontmatter, "Do the thing.");
+
+        assertTrue(sql.contains("'skill_id' 'spec_driven_propose'"));
+        assertTrue(sql.contains("'type' 'agent_skill'"));
+        assertTrue(sql.contains("'version' '1.0.0'"));
+        assertTrue(sql.contains("'author' 'auto-spec-driven'"));
+        assertTrue(sql.contains("'instructions' 'Do the thing.'"));
+    }
+
+    @Test
+    void escapesSingleQuotesInDescription() {
+        SkillFrontmatter fm = new SkillFrontmatter(
+                "test_id", "test-name",
+                "It's a test", "author", "type", "1.0.0");
+        String sql = SkillSqlConverter.convert(fm, "body");
+
+        assertTrue(sql.contains("COMMENT 'It''s a test'"));
+    }
+
+    @Test
+    void escapesSingleQuotesInInstructionBody() {
+        String sql = SkillSqlConverter.convert(sampleFrontmatter, "Use it's feature.");
+
+        assertTrue(sql.contains("'instructions' 'Use it''s feature.'"));
+    }
+
+    @Test
+    void omitsCommentWhenDescriptionNull() {
+        SkillFrontmatter fm = new SkillFrontmatter(
+                "test_id", "test-name", null, "author", "type", "1.0.0");
+        String sql = SkillSqlConverter.convert(fm, "body");
+
+        assertFalse(sql.contains("COMMENT"));
+    }
+
+    @Test
+    void omitsCommentWhenDescriptionEmpty() {
+        SkillFrontmatter fm = new SkillFrontmatter(
+                "test_id", "test-name", "", "author", "type", "1.0.0");
+        String sql = SkillSqlConverter.convert(fm, "body");
+
+        assertFalse(sql.contains("COMMENT"));
+    }
+
+    @Test
+    void omitsInstructionsWhenBodyEmpty() {
+        String sql = SkillSqlConverter.convert(sampleFrontmatter, "");
+
+        assertFalse(sql.contains("'instructions'"));
+    }
+
+    @Test
+    void toPascalCase() {
+        assertEquals("SpecDrivenPropose", SkillSqlConverter.toPascalCase("spec-driven-propose"));
+        assertEquals("Init", SkillSqlConverter.toPascalCase("init"));
+        assertEquals("AB", SkillSqlConverter.toPascalCase("a-b"));
+    }
+
+    @Test
+    void escapeSql() {
+        assertEquals("it''s", SkillSqlConverter.escapeSql("it's"));
+        assertEquals("", SkillSqlConverter.escapeSql(null));
+        assertEquals("plain", SkillSqlConverter.escapeSql("plain"));
+    }
+}

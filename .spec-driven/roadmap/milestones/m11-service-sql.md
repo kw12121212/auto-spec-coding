@@ -33,7 +33,7 @@
 
 ## Planned Changes
 
-- `skill-sql-schema` - Declared: planned - SKILL.md → SQL 分解规范、参数映射规则、SQL 模板生成工具
+- `skill-sql-schema` - Declared: complete - SKILL.md → SQL 分解规范、参数映射规则、SQL 模板生成工具
 - `skill-executor-plugin` - Declared: planned - ServiceExecutorFactory SPI 实现：加载 PARAMETERS 配置、构建 agent 循环、绑定 allowed-tools 到 M1 Tool 实例
 - `skill-cli-java` - Declared: planned - 用 Java 改写 spec-driven.ts 全部 12 个子命令（propose/apply/verify/archive/cancel/init/list 等），实现全内置无外部依赖
 - `skill-instructions-store` - Declared: planned - 指令体外部文件管理，3 级渐进加载机制（元数据→指令体→脚本资源）

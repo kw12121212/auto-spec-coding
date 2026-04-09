@@ -27,3 +27,4 @@
 - [background-tool-interface.md](background-tool-interface.md) - BackgroundTool, BackgroundProcessHandle, ProcessState, ProcessOutput — async tool execution interface extending Tool surface
 - [llm-cache.md](llm-cache.md) - LlmCache, LealoneLlmCache, CacheKeyGenerator, CachingLlmClient, UsageRecord — LLM response caching with TTL, token usage persistence, and cache event publishing
 - [tool-execution-cache.md](tool-execution-cache.md) - ToolCache, CacheEntry, ToolCacheKey, LealoneToolCache, CachingTool — tool execution result caching with TTL, file-change invalidation, and cache event publishing
+- [skill-sql-converter.md](skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter, SkillSqlException — SKILL.md YAML frontmatter parsing and CREATE SERVICE SQL generation
