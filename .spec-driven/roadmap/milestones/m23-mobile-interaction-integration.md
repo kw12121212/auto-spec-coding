@@ -32,7 +32,7 @@
 - `builtin-mobile-adapters` - Declared: complete - 提供多种内置移动交互适配器，覆盖 push / webhook / 企业 IM 等主流渠道
 - `question-message-templating` - Declared: complete - 将 question payload 映射为渠道消息模板，支持字段裁剪、默认文案与安全脱敏
 - `mobile-reply-callbacks` - Declared: complete - 实现人工回复回流、签名校验、question correlation 与 agent 恢复执行链路
-- `mobile-delivery-observability` - Declared: planned - 提供渠道级重试、送达状态、失败原因、审计事件与运维观测能力
+- `mobile-delivery-observability` - Declared: complete - 提供渠道级重试、送达状态、失败原因、审计事件与运维观测能力
 
 ## Dependencies
 
@@ -50,7 +50,7 @@
 
 ## Status
 
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

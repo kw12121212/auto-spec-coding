@@ -16,7 +16,7 @@
 - [m20-go-client-sdk.md](milestones/m20-go-client-sdk.md) - M20 - Go Client SDK - proposed
 - [m21-typescript-client-sdk.md](milestones/m21-typescript-client-sdk.md) - M21 - TypeScript Client SDK - proposed
 - [m22-question-resolution.md](milestones/m22-question-resolution.md) - M22 - 交互问题解析与多通道回复 - complete
-- [m23-mobile-interaction-integration.md](milestones/m23-mobile-interaction-integration.md) - M23 - 配置化移动交互集成层 - proposed
+- [m23-mobile-interaction-integration.md](milestones/m23-mobile-interaction-integration.md) - M23 - 配置化移动交互集成层 - complete
 - [m24-autonomous-loop-driver.md](milestones/m24-autonomous-loop-driver.md) - M24 - 内置自主循环执行流水线 - proposed
 - [m25-production-install-repair.md](milestones/m25-production-install-repair.md) - M25 - 生产环境一键安装与修复 - proposed
 - [m26-autonomous-loop-recovery-escalation.md](milestones/m26-autonomous-loop-recovery-escalation.md) - M26 - 自主循环恢复与升级控制 - proposed

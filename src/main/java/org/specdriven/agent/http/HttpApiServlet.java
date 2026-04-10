@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.specdriven.agent.agent.AgentState;
+import org.specdriven.agent.question.DeliveryAttempt;
+import org.specdriven.agent.question.DeliveryLogStore;
 import org.specdriven.agent.question.ReplyCallbackRouter;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
@@ -24,6 +26,7 @@ public class HttpApiServlet extends HttpServlet {
 
     private SpecDriven sdk;
     private ReplyCallbackRouter callbackRouter;
+    private DeliveryLogStore deliveryLogStore;
     private final Map<String, TrackedAgent> agents = new ConcurrentHashMap<>();
 
     /** Default constructor — SDK is created in {@link #init()}. */
@@ -38,6 +41,13 @@ public class HttpApiServlet extends HttpServlet {
     public HttpApiServlet(SpecDriven sdk, ReplyCallbackRouter callbackRouter) {
         this.sdk = sdk;
         this.callbackRouter = callbackRouter;
+    }
+
+    /** Full dependency-injection constructor with callback router and delivery log store. */
+    public HttpApiServlet(SpecDriven sdk, ReplyCallbackRouter callbackRouter, DeliveryLogStore deliveryLogStore) {
+        this.sdk = sdk;
+        this.callbackRouter = callbackRouter;
+        this.deliveryLogStore = deliveryLogStore;
     }
 
     @Override
@@ -89,6 +99,11 @@ public class HttpApiServlet extends HttpServlet {
         if ("callbacks".equals(group) && route.length() >= 3) {
             requirePost(route.method(), "/callbacks/" + route.segment(2));
             return handleCallback(route.segment(2), req);
+        }
+        if ("delivery".equals(group) && route.length() >= 4
+                && "status".equals(route.segment(2))) {
+            requireGet(route.method(), "/delivery/status/" + route.segment(3));
+            return handleDeliveryStatus(route.segment(3));
         }
         throw new HttpApiException(404, "not_found", "Unknown route");
     }
@@ -206,6 +221,33 @@ public class HttpApiServlet extends HttpServlet {
         return null; // 200 empty
     }
 
+    private String handleDeliveryStatus(String questionId) {
+        if (deliveryLogStore == null) {
+            throw new HttpApiException(404, "not_found", "No delivery log store configured");
+        }
+        List<DeliveryAttempt> attempts = deliveryLogStore.findByQuestion(questionId);
+        return encodeDeliveryAttempts(attempts);
+    }
+
+    private String encodeDeliveryAttempts(List<DeliveryAttempt> attempts) {
+        if (attempts.isEmpty()) return "[]";
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < attempts.size(); i++) {
+            if (i > 0) sb.append(",");
+            DeliveryAttempt a = attempts.get(i);
+            sb.append("{\"questionId\":").append(escapeJson(a.questionId()));
+            sb.append(",\"channelType\":").append(escapeJson(a.channelType()));
+            sb.append(",\"attemptNumber\":").append(a.attemptNumber());
+            sb.append(",\"status\":").append(escapeJson(a.status().name()));
+            sb.append(",\"statusCode\":").append(a.statusCode() != null ? a.statusCode() : "null");
+            sb.append(",\"errorMessage\":").append(a.errorMessage() != null ? escapeJson(a.errorMessage()) : "null");
+            sb.append(",\"attemptedAt\":").append(a.attemptedAt());
+            sb.append("}");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
     private Map<String, String> extractCallbackHeaders(HttpServletRequest req) {
         Map<String, String> headers = new LinkedHashMap<>();
         String telegramSecret = req.getHeader("X-Telegram-Bot-Api-Secret-Token");
@@ -244,6 +286,24 @@ public class HttpApiServlet extends HttpServlet {
     }
 
     // --- Helpers ---
+
+    private static String escapeJson(String s) {
+        if (s == null) return "null";
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> sb.append(c);
+            }
+        }
+        sb.append("\"");
+        return sb.toString();
+    }
 
     private void requirePost(String method, String path) {
         if (!"POST".equals(method)) {

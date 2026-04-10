@@ -23,6 +23,11 @@ public class QuestionRuntime {
         this.eventBus = Objects.requireNonNull(eventBus, "eventBus");
     }
 
+    /** Returns the event bus used by this runtime. */
+    public EventBus eventBus() {
+        return eventBus;
+    }
+
     /**
      * Attaches a persistent store. When set, state changes are persisted to the store.
      */
