@@ -30,8 +30,7 @@
 - 有单元测试覆盖循环调度、recommend → auto 串联、进度持久化、循环控制接口和基础恢复场景
 
 ## Planned Changes
-
-- `loop-driver-core` - Declared: planned - 循环调度核心：读取 roadmap 状态机、选择下一个待执行 change、维护循环状态与迭代计数
+- `loop-driver-core` - Declared: complete - 循环调度核心：读取 roadmap 状态机、选择下一个待执行 change、维护循环状态与迭代计数
 - `loop-recommend-auto-pipeline` - Declared: planned - Recommend → Auto 执行流水线：串联调用 roadmap-recommend 和 spec-driven-auto skill，处理每轮结果与错误分类
 - `loop-progress-persistence` - Declared: planned - 循环进度持久化：记录执行历史、已完成的 change 链、失败/跳过原因、崩溃恢复点与审计日志
 
@@ -56,3 +55,4 @@
 - 循环不是简单的 while(true)，而是有明确的状态机：idle → recommending → auto-running → questioning → answering → escalating → paused/stopped
 - M26 再补充 context 切换、Answer Agent 自动回复与人工升级控制，避免本里程碑一次性过载
 - 首期 SHOULD 支持单线程串行循环，并行循环作为后续扩展
+
