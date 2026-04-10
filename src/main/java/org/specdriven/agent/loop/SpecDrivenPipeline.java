@@ -73,30 +73,32 @@ public class SpecDrivenPipeline implements LoopPipeline {
         List<PipelinePhase> completed = new ArrayList<>();
 
         try {
-            LlmClient llmClient = llmClientFactory.apply(config.projectRoot());
+            LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
+            TokenAccumulator tokenAccumulator = new TokenAccumulator(rawClient);
 
             for (PipelinePhase phase : PipelinePhase.ordered()) {
                 if (System.currentTimeMillis() > deadlineMs) {
                     return result(IterationStatus.TIMED_OUT,
                             "Timeout exceeded before " + phase.name() + " phase",
-                            startMs, completed);
+                            startMs, completed, tokenAccumulator.totalTokens());
                 }
 
-                executePhase(phase, candidate, config, llmClient);
+                executePhase(phase, candidate, config, tokenAccumulator);
                 completed.add(phase);
             }
 
-            return result(IterationStatus.SUCCESS, null, startMs, completed);
+            return result(IterationStatus.SUCCESS, null, startMs, completed,
+                    tokenAccumulator.totalTokens());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return result(IterationStatus.TIMED_OUT,
                     "Interrupted during pipeline execution",
-                    startMs, completed);
+                    startMs, completed, 0);
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Pipeline execution failed", e);
             return result(IterationStatus.FAILED,
                     e.getMessage() != null ? e.getMessage() : "unknown error",
-                    startMs, completed);
+                    startMs, completed, 0);
         }
     }
 
@@ -159,8 +161,9 @@ public class SpecDrivenPipeline implements LoopPipeline {
     private IterationResult result(IterationStatus status,
                                    String failureReason,
                                    long startMs,
-                                   List<PipelinePhase> completed) {
+                                   List<PipelinePhase> completed,
+                                   long tokenUsage) {
         return new IterationResult(status, failureReason,
-                System.currentTimeMillis() - startMs, completed);
+                System.currentTimeMillis() - startMs, completed, tokenUsage);
     }
 }

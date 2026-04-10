@@ -13,7 +13,8 @@ import java.util.Set;
 public record LoopProgress(
         LoopState loopState,
         Set<String> completedChangeNames,
-        int totalIterations
+        int totalIterations,
+        long tokenUsage
 ) {
     public LoopProgress {
         completedChangeNames = completedChangeNames == null
@@ -22,5 +23,15 @@ public record LoopProgress(
         if (totalIterations < 0) {
             throw new IllegalArgumentException("totalIterations must be non-negative");
         }
+        if (tokenUsage < 0) {
+            throw new IllegalArgumentException("tokenUsage must be non-negative");
+        }
+    }
+
+    /**
+     * Backward-compatible constructor without token usage (defaults to 0).
+     */
+    public LoopProgress(LoopState loopState, Set<String> completedChangeNames, int totalIterations) {
+        this(loopState, completedChangeNames, totalIterations, 0);
     }
 }

@@ -84,7 +84,7 @@ class LealoneLoopIterationStoreTest {
     @Test
     void saveAndLoadProgress() {
         LoopProgress progress = new LoopProgress(LoopState.RUNNING,
-                Set.of("change-a", "change-b"), 2);
+                Set.of("change-a", "change-b"), 2, 1500);
         store.saveProgress(progress);
 
         Optional<LoopProgress> loaded = store.loadProgress();
@@ -92,6 +92,7 @@ class LealoneLoopIterationStoreTest {
         assertEquals(LoopState.RUNNING, loaded.get().loopState());
         assertEquals(2, loaded.get().totalIterations());
         assertEquals(Set.of("change-a", "change-b"), loaded.get().completedChangeNames());
+        assertEquals(1500, loaded.get().tokenUsage());
     }
 
     @Test
@@ -101,13 +102,14 @@ class LealoneLoopIterationStoreTest {
 
     @Test
     void saveProgressOverwritesPrevious() {
-        store.saveProgress(new LoopProgress(LoopState.RUNNING, Set.of("a"), 1));
-        store.saveProgress(new LoopProgress(LoopState.STOPPED, Set.of("a", "b"), 2));
+        store.saveProgress(new LoopProgress(LoopState.RUNNING, Set.of("a"), 1, 100));
+        store.saveProgress(new LoopProgress(LoopState.STOPPED, Set.of("a", "b"), 2, 500));
 
         LoopProgress loaded = store.loadProgress().orElseThrow();
         assertEquals(LoopState.STOPPED, loaded.loopState());
         assertEquals(2, loaded.totalIterations());
         assertEquals(Set.of("a", "b"), loaded.completedChangeNames());
+        assertEquals(500, loaded.tokenUsage());
     }
 
     @Test
@@ -116,6 +118,18 @@ class LealoneLoopIterationStoreTest {
 
         LoopProgress loaded = store.loadProgress().orElseThrow();
         assertTrue(loaded.completedChangeNames().isEmpty());
+        assertEquals(0, loaded.tokenUsage());
+    }
+
+    @Test
+    void backwardCompatThreeArgConstructorDefaultsTokenUsageToZero() {
+        // Using old 3-arg constructor — tokenUsage should default to 0
+        LoopProgress progress = new LoopProgress(LoopState.RUNNING, Set.of("a"), 1);
+        assertEquals(0, progress.tokenUsage());
+        store.saveProgress(progress);
+
+        LoopProgress loaded = store.loadProgress().orElseThrow();
+        assertEquals(0, loaded.tokenUsage());
     }
 
     // --- clear ---

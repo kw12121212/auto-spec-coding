@@ -15,12 +15,22 @@ public record IterationResult(
         IterationStatus status,
         String failureReason,
         long durationMs,
-        List<PipelinePhase> phasesCompleted
+        List<PipelinePhase> phasesCompleted,
+        long tokenUsage
 ) {
     public IterationResult {
         phasesCompleted = phasesCompleted == null
                 ? List.of()
                 : Collections.unmodifiableList(List.copyOf(phasesCompleted));
         if (durationMs < 0) throw new IllegalArgumentException("durationMs must be non-negative");
+        if (tokenUsage < 0) throw new IllegalArgumentException("tokenUsage must be non-negative");
+    }
+
+    /**
+     * Backward-compatible constructor without token usage (defaults to 0).
+     */
+    public IterationResult(IterationStatus status, String failureReason,
+                           long durationMs, List<PipelinePhase> phasesCompleted) {
+        this(status, failureReason, durationMs, phasesCompleted, 0);
     }
 }

@@ -21,7 +21,8 @@ public record LoopConfig(
         int iterationTimeoutSeconds,
         List<String> targetMilestones,
         Path projectRoot,
-        EventBus eventBus
+        EventBus eventBus,
+        ContextBudget contextBudget
 ) {
     public LoopConfig {
         if (projectRoot == null) throw new NullPointerException("projectRoot must not be null");
@@ -32,9 +33,17 @@ public record LoopConfig(
     }
 
     /**
-     * Creates a LoopConfig with sensible defaults.
+     * Creates a LoopConfig with sensible defaults and no context budget.
      */
     public static LoopConfig defaults(Path projectRoot, EventBus eventBus) {
-        return new LoopConfig(10, 600, List.of(), projectRoot, eventBus);
+        return new LoopConfig(10, 600, List.of(), projectRoot, eventBus, null);
+    }
+
+    /**
+     * Backward-compatible 5-arg constructor (no context budget).
+     */
+    public LoopConfig(int maxIterations, int iterationTimeoutSeconds,
+                      List<String> targetMilestones, Path projectRoot, EventBus eventBus) {
+        this(maxIterations, iterationTimeoutSeconds, targetMilestones, projectRoot, eventBus, null);
     }
 }

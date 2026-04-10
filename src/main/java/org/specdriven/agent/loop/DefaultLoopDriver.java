@@ -1,5 +1,6 @@
 package org.specdriven.agent.loop;
 
+import org.specdriven.agent.agent.ContextWindowManager;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
@@ -34,6 +35,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private final Set<String> completedChangeNames = new LinkedHashSet<>();
     private volatile Thread loopThread;
     private volatile boolean stopRequested = false;
+    private volatile ContextWindowManager contextManager;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
         this(config, scheduler, new StubLoopPipeline(), null);
@@ -60,11 +62,23 @@ public class DefaultLoopDriver implements LoopDriver {
         stopRequested = false;
 
         // Recover progress from store if available
-        if (store != null) {
-            store.loadProgress().ifPresent(progress -> {
-                synchronized (stateLock) {
-                    completedChangeNames.addAll(progress.completedChangeNames());
-                    completedIterations.addAll(store.loadIterations());
+        Optional<LoopProgress> recovered = store != null ? store.loadProgress() : Optional.empty();
+        recovered.ifPresent(progress -> {
+            synchronized (stateLock) {
+                completedChangeNames.addAll(progress.completedChangeNames());
+                completedIterations.addAll(store.loadIterations());
+            }
+        });
+
+        // Initialize context window manager if budget is configured
+        if (config.contextBudget() != null) {
+            ContextBudget budget = config.contextBudget();
+            contextManager = new ContextWindowManager(budget.modelName(), budget.maxTokens());
+            // Recover accumulated token usage from prior session
+            recovered.ifPresent(progress -> {
+                if (progress.tokenUsage() > 0) {
+                    contextManager.addUsage(
+                            new org.specdriven.agent.agent.LlmUsage(0, 0, (int) Math.min(progress.tokenUsage(), Integer.MAX_VALUE)));
                 }
             });
         }
@@ -217,13 +231,25 @@ public class DefaultLoopDriver implements LoopDriver {
                 // Persist iteration and progress snapshot
                 if (store != null) {
                     store.saveIteration(completed);
-                    store.saveProgress(buildSnapshot());
+                    store.saveProgress(buildSnapshot(pipelineResult.tokenUsage()));
                 }
 
                 publishEvent(EventType.LOOP_ITERATION_COMPLETED, Map.of(
                         "iterationNumber", iterationCount,
                         "changeName", c.changeName()
                 ));
+
+                // Check context exhaustion
+                if (contextManager != null) {
+                    contextManager.addUsage(
+                            new org.specdriven.agent.agent.LlmUsage(0, 0, (int) Math.min(pipelineResult.tokenUsage(), Integer.MAX_VALUE)));
+                    ContextBudget budget = config.contextBudget();
+                    int threshold = budget.maxTokens() * budget.warningThresholdPercent() / 100;
+                    if (contextManager.remainingCapacity() < threshold) {
+                        stopWithContextExhaustion(iterationCount, contextManager);
+                        return;
+                    }
+                }
             }
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Loop error", e);
@@ -252,15 +278,45 @@ public class DefaultLoopDriver implements LoopDriver {
     }
 
     private LoopProgress buildSnapshot() {
+        return buildSnapshot(0);
+    }
+
+    private LoopProgress buildSnapshot(long tokenUsage) {
         synchronized (stateLock) {
-            return new LoopProgress(state, Set.copyOf(completedChangeNames), completedIterations.size());
+            return new LoopProgress(state, Set.copyOf(completedChangeNames),
+                    completedIterations.size(), tokenUsage);
         }
     }
 
+    private void stopWithContextExhaustion(int completedIterations,
+                                           ContextWindowManager ctxManager) {
+        long totalUsage = ctxManager.maxTokens() - ctxManager.remainingCapacity();
+        synchronized (stateLock) {
+            if (state == LoopState.STOPPED) return;
+            state = LoopState.STOPPED;
+        }
+        stopRequested = true;
+        persistSnapshot(totalUsage);
+        publishEvent(EventType.LOOP_CONTEXT_EXHAUSTED, Map.of(
+                "tokenUsage", totalUsage,
+                "maxTokens", ctxManager.maxTokens(),
+                "remainingTokens", ctxManager.remainingCapacity(),
+                "completedIterations", completedIterations
+        ));
+        publishEvent(EventType.LOOP_STOPPED, Map.of(
+                "totalIterations", completedIterations,
+                "reason", "context exhausted"
+        ));
+    }
+
     private void persistSnapshot() {
+        persistSnapshot(0);
+    }
+
+    private void persistSnapshot(long tokenUsage) {
         if (store != null) {
             try {
-                store.saveProgress(buildSnapshot());
+                store.saveProgress(buildSnapshot(tokenUsage));
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Failed to persist progress on stop", e);
             }

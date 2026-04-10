@@ -27,8 +27,7 @@
 - 有单元测试覆盖 context 切换、问题自动处理、人工升级门控和恢复执行场景
 
 ## Planned Changes
-
-- `context-lifecycle-manager` - Declared: planned - Context 生命周期管理：追踪 token 用量、阈值判断、session 切换与状态恢复
+- `context-lifecycle-manager` - Declared: complete - Context 生命周期管理：追踪 token 用量、阈值判断、session 切换与状态恢复
 - `loop-answer-agent-integration` - Declared: planned - 循环中 Question 自动处理：对接 M22 Answer Agent 运行时，自动回复循环中产生的 question 并恢复执行
 - `loop-escalation-gate` - Declared: planned - 人工升级门控：识别无法自动解决的问题、暂停循环状态机、触发人工通知机制
 
@@ -55,3 +54,4 @@
 - Context 重启应在每个 recommend → auto 周期结束后评估，而不是等到 context 被硬截断
 - Answer Agent 的上下文应裁剪为当前 change 相关的最小集合，避免把整个循环历史传入
 - 恢复逻辑应严格基于已持久化 checkpoint，而不是重新从头扫描 roadmap 状态
+

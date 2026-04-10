@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
@@ -386,5 +387,146 @@ class DefaultLoopDriverTest {
         assertTrue(done2.await(5, TimeUnit.SECONDS));
         Thread.sleep(200);
         assertEquals(LoopState.STOPPED, driver2.getState());
+    }
+
+    // -------------------------------------------------------------------------
+    // Context exhaustion tests
+    // -------------------------------------------------------------------------
+
+    /**
+     * Pipeline that simulates token usage by returning a configurable
+     * tokenUsage value in its IterationResult.
+     */
+    private static class TokenSimulatingPipeline implements LoopPipeline {
+        private final AtomicLong tokensPerIteration;
+
+        TokenSimulatingPipeline(long tokensPerIteration) {
+            this.tokensPerIteration = new AtomicLong(tokensPerIteration);
+        }
+
+        void setTokensPerIteration(long value) {
+            tokensPerIteration.set(value);
+        }
+
+        @Override
+        public IterationResult execute(LoopCandidate candidate, LoopConfig config) {
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
+                            PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
+                    tokensPerIteration.get());
+        }
+    }
+
+    @Test
+    void contextExhaustionStopsLoopAndPublishesEvent() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> exhaustedEvents = new ArrayList<>();
+        List<Event> stoppedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_CONTEXT_EXHAUSTED, exhaustedEvents::add);
+        bus.subscribe(EventType.LOOP_STOPPED, stoppedEvents::add);
+
+        // Budget: 1000 tokens, 20% threshold → exhausts when remaining < 200
+        ContextBudget budget = ContextBudget.of(1000, 20);
+        LoopConfig cfg = new LoopConfig(10, 60, List.of(), Path.of("/tmp"), bus, budget);
+
+        // Each iteration uses 300 tokens → after 3 iterations = 900 used, remaining = 100 < 200
+        TokenSimulatingPipeline pipeline = new TokenSimulatingPipeline(300);
+
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("change-" + ctx.completedChangeNames().size(), "m.md", "g"));
+
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline);
+        driver.start();
+
+        Thread.sleep(2000);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertFalse(exhaustedEvents.isEmpty());
+        assertEquals(EventType.LOOP_CONTEXT_EXHAUSTED, exhaustedEvents.get(0).type());
+
+        Event stopEvent = stoppedEvents.stream()
+                .filter(e -> "context exhausted".equals(e.metadata().get("reason")))
+                .findFirst().orElse(null);
+        assertNotNull(stopEvent);
+    }
+
+    @Test
+    void contextExhaustionSavesProgressWithTokenUsage() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        ContextBudget budget = ContextBudget.of(1000, 20);
+        LoopConfig cfg = new LoopConfig(10, 60, List.of(), Path.of("/tmp"), bus, budget);
+
+        TokenSimulatingPipeline pipeline = new TokenSimulatingPipeline(300);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("change-" + ctx.completedChangeNames().size(), "m.md", "g"));
+
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
+        driver.start();
+
+        Thread.sleep(2000);
+
+        Optional<LoopProgress> progress = store.loadProgress();
+        assertTrue(progress.isPresent());
+        assertTrue(progress.get().tokenUsage() > 0);
+        assertEquals(LoopState.STOPPED, progress.get().loopState());
+    }
+
+    @Test
+    void contextResumeRestoresTokenUsage() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        // Pre-populate store with prior progress that has token usage
+        store.saveProgress(new LoopProgress(LoopState.STOPPED, Set.of("already-done"), 1, 500));
+        store.saveIteration(new LoopIteration(1, "already-done", "m.md",
+                100L, 200L, IterationStatus.SUCCESS, null));
+
+        // Budget: 1000 tokens, 20% threshold → 500 already used, remaining = 500
+        // One iteration of 400 tokens → 900 used, remaining = 100 < 200 → exhaustion
+        ContextBudget budget = ContextBudget.of(1000, 20);
+        LoopConfig cfg = new LoopConfig(10, 60, List.of(), Path.of("/tmp"), bus, budget);
+
+        TokenSimulatingPipeline pipeline = new TokenSimulatingPipeline(400);
+        CountDownLatch done = new CountDownLatch(1);
+        LoopScheduler scheduler = ctx -> {
+            assertTrue(ctx.completedChangeNames().contains("already-done"));
+            done.countDown();
+            return Optional.of(new LoopCandidate("new-change", "m.md", "goal"));
+        };
+
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
+        driver.start();
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        Thread.sleep(1000);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(2, driver.getCompletedIterations().size());
+    }
+
+    @Test
+    void nullBudgetProducesIdenticalBehaviorToPreChange() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> exhaustedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_CONTEXT_EXHAUSTED, exhaustedEvents::add);
+
+        // null budget = no context tracking
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus, null);
+
+        // Pipeline that uses lots of tokens — but shouldn't matter without budget
+        TokenSimulatingPipeline pipeline = new TokenSimulatingPipeline(999999);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("change-" + ctx.completedChangeNames().size(), "m.md", "g"));
+
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline);
+        driver.start();
+
+        Thread.sleep(1000);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(2, driver.getCompletedIterations().size());
+        assertTrue(exhaustedEvents.isEmpty()); // no exhaustion event
     }
 }

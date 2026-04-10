@@ -35,6 +35,7 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
                 loop_state             VARCHAR(20) NOT NULL,
                 completed_change_names CLOB,
                 total_iterations       INT    NOT NULL DEFAULT 0,
+                token_usage            BIGINT NOT NULL DEFAULT 0,
                 updated_at             BIGINT NOT NULL
             )
             """;
@@ -94,14 +95,15 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
 
     @Override
     public void saveProgress(LoopProgress progress) {
-        String sql = "MERGE INTO loop_progress (id, loop_state, completed_change_names, total_iterations, updated_at) VALUES (?, ?, ?, ?, ?)";
+        String sql = "MERGE INTO loop_progress (id, loop_state, completed_change_names, total_iterations, token_usage, updated_at) VALUES (?, ?, ?, ?, ?, ?)";
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, 1);
             ps.setString(2, progress.loopState().name());
             ps.setString(3, setToJson(progress.completedChangeNames()));
             ps.setInt(4, progress.totalIterations());
-            ps.setLong(5, System.currentTimeMillis());
+            ps.setLong(5, progress.tokenUsage());
+            ps.setLong(6, System.currentTimeMillis());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to save progress", e);
@@ -112,17 +114,20 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
 
     @Override
     public Optional<LoopProgress> loadProgress() {
-        String sql = "SELECT loop_state, completed_change_names, total_iterations FROM loop_progress WHERE id = 1";
+        String sql = "SELECT loop_state, completed_change_names, total_iterations, token_usage FROM loop_progress WHERE id = 1";
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             if (!rs.next()) {
                 return Optional.empty();
             }
+            long tokenUsage = rs.getLong("token_usage");
+            boolean tokenUsageWasNull = rs.wasNull();
             return Optional.of(new LoopProgress(
                     LoopState.valueOf(rs.getString("loop_state")),
                     jsonToSet(rs.getString("completed_change_names")),
-                    rs.getInt("total_iterations")
+                    rs.getInt("total_iterations"),
+                    tokenUsageWasNull ? 0 : tokenUsage
             ));
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load progress", e);
