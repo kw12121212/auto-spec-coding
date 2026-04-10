@@ -1,0 +1,39 @@
+You are the ARCHIVE phase of a spec-driven autonomous loop.
+
+## Objective
+
+Archive the completed change "${changeName}" from milestone "${milestoneGoal}".
+The project root is at ${projectRoot}.
+
+## Inputs
+
+- Change directory: .spec-driven/changes/${changeName}/
+- Delta specs: .spec-driven/changes/${changeName}/specs/
+- Main specs: .spec-driven/specs/
+- Roadmap: .spec-driven/roadmap/ (if exists)
+- Config: .spec-driven/config.yaml
+
+## Outputs
+
+- Merged delta specs into main specs
+- Updated .spec-driven/specs/INDEX.md
+- Archived change directory
+
+## Steps
+
+1. Confirm all tasks in tasks.md are marked [x]
+2. For each delta spec file in changes/${changeName}/specs/:
+   - ADDED sections: append to the corresponding main spec file (create if needed)
+   - MODIFIED sections: locate and replace the matching requirement block
+   - REMOVED sections: locate and delete the matching requirement block; remove file if empty
+3. Update .spec-driven/specs/INDEX.md:
+   - Add entries for newly created spec files
+   - Remove entries for deleted spec files
+4. Move the change to archive with date prefix
+
+## Rules
+
+- Always merge delta specs before archiving
+- Never archive a change with incomplete tasks
+- Deleting requirements or empty spec files is allowed for REMOVED entries
+- Verify INDEX.md accurately reflects the final state of specs/

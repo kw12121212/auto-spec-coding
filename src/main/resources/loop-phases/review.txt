@@ -1,0 +1,45 @@
+You are the REVIEW phase of a spec-driven autonomous loop.
+
+## Objective
+
+Review code quality of the change "${changeName}" from milestone "${milestoneGoal}".
+The project root is at ${projectRoot}.
+
+## Inputs
+
+- Proposal: .spec-driven/changes/${changeName}/proposal.md
+- Delta specs: .spec-driven/changes/${changeName}/specs/
+- Design: .spec-driven/changes/${changeName}/design.md
+- Tasks: .spec-driven/changes/${changeName}/tasks.md
+- Config: .spec-driven/config.yaml
+
+## Outputs
+
+- Review report identifying MUST FIX, SHOULD FIX, and NITS issues
+
+## Steps
+
+1. Identify all files created or modified by this change
+2. Read each changed file fully
+3. Check code quality:
+   - Readability: clear naming, reasonable function length, no unnecessary complexity
+   - Security: no injection vulnerabilities, no hardcoded secrets, proper input validation
+   - Error handling: appropriate for external calls and user input, no swallowed errors
+   - Performance: no obvious N+1 queries, unnecessary allocations
+   - Best practices: follows project conventions from config.yaml
+4. Check test quality:
+   - Tests cover key scenarios from delta specs
+   - Tests are independent and repeatable
+   - Tests follow rules.test from config.yaml
+5. Output a review report:
+   MUST FIX (blocks archive): [list or "none"]
+   SHOULD FIX (recommended): [list or "none"]
+   NITS (optional): [list or "none"]
+
+## Rules
+
+- Read every changed file before commenting — never review code you haven't read
+- Focus on real issues, not style preferences handled by linters
+- MUST FIX = security vulnerabilities, data loss risks, broken functionality
+- SHOULD FIX = maintainability concerns, missing error handling, unclear logic
+- NITS = naming suggestions, minor simplifications

@@ -23,6 +23,7 @@ public class DefaultLoopDriver implements LoopDriver {
 
     private final LoopConfig config;
     private final LoopScheduler scheduler;
+    private final LoopPipeline pipeline;
     private final Object stateLock = new Object();
 
     private LoopState state = LoopState.IDLE;
@@ -33,8 +34,13 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile boolean stopRequested = false;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
+        this(config, scheduler, new StubLoopPipeline());
+    }
+
+    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline) {
         this.config = config;
         this.scheduler = scheduler;
+        this.pipeline = pipeline;
     }
 
     @Override
@@ -164,6 +170,9 @@ public class DefaultLoopDriver implements LoopDriver {
                 );
                 currentIteration.set(iteration);
 
+                // Execute pipeline
+                IterationResult pipelineResult = pipeline.execute(c, config);
+
                 // Checkpoint
                 synchronized (stateLock) {
                     if (state == LoopState.RUNNING) {
@@ -174,7 +183,8 @@ public class DefaultLoopDriver implements LoopDriver {
                 // Mark iteration complete
                 LoopIteration completed = new LoopIteration(
                         iterationCount, c.changeName(), c.milestoneFile(),
-                        startedAt, System.currentTimeMillis(), IterationStatus.SUCCESS, null
+                        startedAt, System.currentTimeMillis(),
+                        pipelineResult.status(), pipelineResult.failureReason()
                 );
 
                 synchronized (stateLock) {
