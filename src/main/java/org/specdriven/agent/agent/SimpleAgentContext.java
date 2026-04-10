@@ -2,6 +2,7 @@ package org.specdriven.agent.agent;
 
 import java.util.Map;
 import java.util.Optional;
+import org.specdriven.agent.answer.AnswerAgentRuntime;
 import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.tool.ProcessManager;
 import org.specdriven.agent.tool.Tool;
@@ -18,6 +19,7 @@ public class SimpleAgentContext implements AgentContext {
     private final SessionStore sessionStore;
     private final ProcessManager processManager;
     private final QuestionRuntime questionRuntime;
+    private final AnswerAgentRuntime answerAgentRuntime;
 
     public SimpleAgentContext(String sessionId,
                               Map<String, String> config,
@@ -50,6 +52,17 @@ public class SimpleAgentContext implements AgentContext {
                               SessionStore sessionStore,
                               ProcessManager processManager,
                               QuestionRuntime questionRuntime) {
+        this(sessionId, config, toolRegistry, conversation, sessionStore, processManager, questionRuntime, null);
+    }
+
+    public SimpleAgentContext(String sessionId,
+                              Map<String, String> config,
+                              Map<String, Tool> toolRegistry,
+                              Conversation conversation,
+                              SessionStore sessionStore,
+                              ProcessManager processManager,
+                              QuestionRuntime questionRuntime,
+                              AnswerAgentRuntime answerAgentRuntime) {
         this.sessionId = sessionId;
         this.config = config;
         this.toolRegistry = toolRegistry;
@@ -57,6 +70,7 @@ public class SimpleAgentContext implements AgentContext {
         this.sessionStore = sessionStore;
         this.processManager = processManager;
         this.questionRuntime = questionRuntime;
+        this.answerAgentRuntime = answerAgentRuntime;
     }
 
     @Override
@@ -85,6 +99,10 @@ public class SimpleAgentContext implements AgentContext {
 
     public QuestionRuntime questionRuntime() {
         return questionRuntime;
+    }
+
+    public AnswerAgentRuntime answerAgentRuntime() {
+        return answerAgentRuntime;
     }
 
     @Override

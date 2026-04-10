@@ -21,7 +21,7 @@ The repository already includes the core runtime, built-in tool surface, eventin
 ## Prerequisites
 
 - JDK 25+
-- Maven 3.3+
+- Maven 3.9+
 
 ## Local Verification
 

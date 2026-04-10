@@ -1,5 +1,6 @@
 package org.specdriven.agent.agent;
 
+import org.specdriven.agent.answer.AnswerAgentRuntime;
 import org.specdriven.agent.hook.ToolExecutionHook;
 import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
@@ -122,6 +123,15 @@ public class DefaultOrchestrator implements Orchestrator {
     }
 
     private QuestionWaitOutcome handleQuestionToolCall(ToolCall call, AgentContext context, Conversation conversation) {
+        Map<String, Object> parameters = call.parameters();
+        DeliveryMode deliveryMode = parseDeliveryMode(parameters.get("deliveryMode"));
+
+        // Handle AUTO_AI_REPLY mode using AnswerAgentRuntime
+        if (deliveryMode == DeliveryMode.AUTO_AI_REPLY) {
+            return handleAutoAiReply(call, context, conversation);
+        }
+
+        // Handle human-wait modes using QuestionRuntime
         QuestionRuntime questionRuntime = questionRuntime(context);
         if (questionRuntime == null) {
             appendQuestionError(conversation, call, "question runtime is not configured");
@@ -146,15 +156,54 @@ public class DefaultOrchestrator implements Orchestrator {
         }
     }
 
+    private QuestionWaitOutcome handleAutoAiReply(ToolCall call, AgentContext context, Conversation conversation) {
+        AnswerAgentRuntime answerAgentRuntime = answerAgentRuntime(context);
+        if (answerAgentRuntime == null) {
+            appendQuestionError(conversation, call, "answer agent runtime is not configured for AUTO_AI_REPLY");
+            return QuestionWaitOutcome.CONTINUE_CURRENT_TURN;
+        }
+
+        try {
+            Map<String, Object> parameters = call.parameters();
+            String questionId = stringParameter(parameters, "questionId");
+            if (questionId == null || questionId.isBlank()) {
+                questionId = UUID.randomUUID().toString();
+            }
+            String questionText = requiredParameter(parameters, "question");
+            String impact = requiredParameter(parameters, "impact");
+            String recommendation = requiredParameter(parameters, "recommendation");
+            QuestionCategory category = parseQuestionCategory(parameters.get("category"));
+
+            Question question = new Question(
+                    questionId,
+                    context.sessionId(),
+                    questionText,
+                    impact,
+                    recommendation,
+                    QuestionStatus.OPEN,
+                    category,
+                    DeliveryMode.AUTO_AI_REPLY);
+
+            Answer answer = answerAgentRuntime.resolve(question, conversation.history());
+
+            conversation.append(new SystemMessage(
+                    formatAcceptedAnswer(question, answer),
+                    System.currentTimeMillis()));
+
+            return QuestionWaitOutcome.RESUME_NEXT_TURN;
+        } catch (Exception e) {
+            appendQuestionError(conversation, call, e.getMessage());
+            return QuestionWaitOutcome.CONTINUE_CURRENT_TURN;
+        }
+    }
+
     private Question beginWaitingQuestion(ToolCall call,
                                           AgentContext context,
                                           QuestionRuntime questionRuntime,
                                           Conversation conversation) {
         Map<String, Object> parameters = call.parameters();
         DeliveryMode deliveryMode = parseDeliveryMode(parameters.get("deliveryMode"));
-        if (deliveryMode == DeliveryMode.AUTO_AI_REPLY) {
-            throw new IllegalArgumentException("AUTO_AI_REPLY is handled by answer-agent-runtime, not pause/wait");
-        }
+        // Note: AUTO_AI_REPLY is handled by handleAutoAiReply() before this method is called
 
         String questionId = stringParameter(parameters, "questionId");
         if (questionId == null || questionId.isBlank()) {
@@ -266,6 +315,13 @@ public class DefaultOrchestrator implements Orchestrator {
     private QuestionRuntime questionRuntime(AgentContext context) {
         if (context instanceof SimpleAgentContext simpleAgentContext) {
             return simpleAgentContext.questionRuntime();
+        }
+        return null;
+    }
+
+    private AnswerAgentRuntime answerAgentRuntime(AgentContext context) {
+        if (context instanceof SimpleAgentContext simpleAgentContext) {
+            return simpleAgentContext.answerAgentRuntime();
         }
         return null;
     }
