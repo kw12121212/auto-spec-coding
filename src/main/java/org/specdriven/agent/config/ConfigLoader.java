@@ -2,7 +2,9 @@ package org.specdriven.agent.config;
 
 import org.specdriven.agent.vault.SecretVault;
 import org.specdriven.agent.vault.VaultResolver;
-import org.yaml.snakeyaml.Yaml;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -18,6 +20,7 @@ import java.util.regex.Pattern;
 public final class ConfigLoader {
 
     private static final Pattern ENV_VAR_PATTERN = Pattern.compile("\\$\\{(\\w+)}");
+    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
 
     private ConfigLoader() {}
 
@@ -38,7 +41,7 @@ public final class ConfigLoader {
         }
         Map<String, Object> data;
         try (InputStream is = Files.newInputStream(path)) {
-            data = new Yaml().load(is);
+            data = YAML_MAPPER.readValue(is, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new ConfigException("Failed to read config file: " + path.toAbsolutePath(), e);
         }
@@ -69,7 +72,7 @@ public final class ConfigLoader {
         }
         Map<String, Object> data;
         try (is) {
-            data = new Yaml().load(is);
+            data = YAML_MAPPER.readValue(is, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new ConfigException("Failed to read classpath resource: " + resource, e);
         }

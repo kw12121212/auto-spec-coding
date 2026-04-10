@@ -1,6 +1,8 @@
 package org.specdriven.skill.sql;
 
-import org.yaml.snakeyaml.Yaml;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,6 +13,8 @@ import java.util.Map;
  * Parses a SKILL.md file, extracting YAML frontmatter and instruction body.
  */
 public final class SkillMarkdownParser {
+
+    private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
 
     private SkillMarkdownParser() {}
 
@@ -73,7 +77,7 @@ public final class SkillMarkdownParser {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseYaml(String yamlBlock, Path path) {
         try {
-            return new Yaml().loadAs(yamlBlock, Map.class);
+            return YAML_MAPPER.readValue(yamlBlock, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new SkillSqlException("Invalid YAML in SKILL.md: " + path.toAbsolutePath(), e);
         }
