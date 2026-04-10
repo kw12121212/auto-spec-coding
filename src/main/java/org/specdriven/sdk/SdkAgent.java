@@ -6,6 +6,7 @@ import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.hook.ToolExecutionHook;
+import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
@@ -25,18 +26,36 @@ public class SdkAgent {
     private final String systemPrompt;
     private final EventBus globalBus;
     private final SimpleEventBus agentBus;
+    private final DeliveryMode deliveryModeOverride;
+    private final QuestionDeliveryService deliveryService;
 
     SdkAgent(LlmProviderRegistry providerRegistry,
              Map<String, Tool> toolRegistry,
              SdkConfig sdkConfig,
              String systemPrompt,
-             EventBus globalBus) {
+             EventBus globalBus,
+             DeliveryMode deliveryModeOverride,
+             QuestionDeliveryService deliveryService) {
         this.globalBus = globalBus;
         this.agentBus = new SimpleEventBus();
-        this.agent = new SdkInternalAgent(providerRegistry, globalBus, agentBus);
+        this.agent = new SdkInternalAgent(providerRegistry, globalBus, agentBus,
+                deliveryModeOverride, deliveryService);
         this.toolRegistry = toolRegistry;
         this.sdkConfig = sdkConfig;
         this.systemPrompt = systemPrompt;
+        this.deliveryModeOverride = deliveryModeOverride;
+        this.deliveryService = deliveryService;
+    }
+
+    /**
+     * Backward-compatible constructor without delivery mode override.
+     */
+    SdkAgent(LlmProviderRegistry providerRegistry,
+             Map<String, Tool> toolRegistry,
+             SdkConfig sdkConfig,
+             String systemPrompt,
+             EventBus globalBus) {
+        this(providerRegistry, toolRegistry, sdkConfig, systemPrompt, globalBus, null, null);
     }
 
     /**
@@ -85,7 +104,11 @@ public class SdkAgent {
                     sessionId,
                     agentConfig,
                     toolRegistry,
-                    conversation
+                    conversation,
+                    null,
+                    null,
+                    deliveryService != null ? deliveryService.runtime() : null,
+                    null
             );
 
             try {
@@ -110,6 +133,42 @@ public class SdkAgent {
                 throw new SdkLlmException("LLM call failed: " + e.getMessage(), e);
             }
             throw new SdkException("Agent execution failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Returns pending (WAITING_FOR_ANSWER) questions for a session.
+     *
+     * @param sessionId the agent session to query
+     * @return list of pending questions, never null
+     */
+    public List<Question> pendingQuestions(String sessionId) {
+        if (deliveryService == null) {
+            return List.of();
+        }
+        Question pending = deliveryService.pendingQuestion(sessionId).orElse(null);
+        if (pending == null) {
+            return List.of();
+        }
+        return List.of(pending);
+    }
+
+    /**
+     * Submits a human reply to a waiting question.
+     *
+     * @param sessionId  the session that owns the question
+     * @param questionId the question being answered
+     * @param answer     the human-provided answer
+     * @throws SdkException if the session has no waiting question or the question is expired
+     */
+    public void submitHumanReply(String sessionId, String questionId, Answer answer) {
+        if (deliveryService == null) {
+            throw new SdkException("question delivery is not configured", false);
+        }
+        try {
+            deliveryService.submitReply(sessionId, questionId, answer);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new SdkException(e.getMessage(), false);
         }
     }
 
@@ -161,12 +220,18 @@ public class SdkAgent {
         private final LlmProviderRegistry providerRegistry;
         private final EventBus globalBus;
         private final SimpleEventBus agentBus;
+        private final DeliveryMode deliveryModeOverride;
+        private final QuestionDeliveryService deliveryService;
         private String sessionId;
 
-        SdkInternalAgent(LlmProviderRegistry providerRegistry, EventBus globalBus, SimpleEventBus agentBus) {
+        SdkInternalAgent(LlmProviderRegistry providerRegistry, EventBus globalBus,
+                         SimpleEventBus agentBus, DeliveryMode deliveryModeOverride,
+                         QuestionDeliveryService deliveryService) {
             this.providerRegistry = providerRegistry;
             this.globalBus = globalBus;
             this.agentBus = agentBus;
+            this.deliveryModeOverride = deliveryModeOverride;
+            this.deliveryService = deliveryService;
         }
 
         void setSessionId(String sessionId) {

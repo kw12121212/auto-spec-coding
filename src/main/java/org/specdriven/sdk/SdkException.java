@@ -23,6 +23,11 @@ public class SdkException extends RuntimeException {
         this.retryable = retryable;
     }
 
+    public SdkException(String message, boolean retryable) {
+        super(message);
+        this.retryable = retryable;
+    }
+
     public boolean isRetryable() {
         return retryable;
     }

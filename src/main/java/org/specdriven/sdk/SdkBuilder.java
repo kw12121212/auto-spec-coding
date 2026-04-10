@@ -4,6 +4,7 @@ import org.specdriven.agent.agent.*;
 import org.specdriven.agent.config.Config;
 import org.specdriven.agent.config.ConfigException;
 import org.specdriven.agent.config.ConfigLoader;
+import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
@@ -29,6 +30,7 @@ public class SdkBuilder {
     private final List<SdkEventListener> globalListeners = new ArrayList<>();
     private final Map<EventType, List<SdkEventListener>> typedGlobalListeners = new HashMap<>();
     private BuiltinToolManager builtinToolManager;
+    private DeliveryMode deliveryModeOverride;
 
     SdkBuilder() {}
 
@@ -81,6 +83,14 @@ public class SdkBuilder {
         return this;
     }
 
+    /**
+     * Sets a global delivery mode override applied to all agents.
+     */
+    public SdkBuilder deliveryModeOverride(DeliveryMode mode) {
+        this.deliveryModeOverride = mode;
+        return this;
+    }
+
     public SpecDriven build() {
         try {
             Map<String, String> configMap = Collections.emptyMap();
@@ -126,7 +136,8 @@ public class SdkBuilder {
                     effectiveSystemPrompt,
                     sdkConfig,
                     configMap,
-                    eventBus
+                    eventBus,
+                    deliveryModeOverride
             );
         } catch (ConfigException e) {
             throw new SdkConfigException("Failed to load config: " + configPath, e);

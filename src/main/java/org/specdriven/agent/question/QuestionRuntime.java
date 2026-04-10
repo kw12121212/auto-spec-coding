@@ -15,11 +15,19 @@ import java.util.concurrent.TimeUnit;
 public class QuestionRuntime {
 
     private final EventBus eventBus;
+    private volatile QuestionStore questionStore;
     private final ConcurrentMap<String, PendingQuestion> pendingBySession = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, QuestionStatus> terminalStatusByQuestionId = new ConcurrentHashMap<>();
 
     public QuestionRuntime(EventBus eventBus) {
         this.eventBus = Objects.requireNonNull(eventBus, "eventBus");
+    }
+
+    /**
+     * Attaches a persistent store. When set, state changes are persisted to the store.
+     */
+    public void setQuestionStore(QuestionStore store) {
+        this.questionStore = store;
     }
 
     /**
@@ -39,6 +47,7 @@ public class QuestionRuntime {
         }
 
         eventBus.publish(QuestionEvents.questionCreated(question, System.currentTimeMillis()));
+        persist(question);
         return question;
     }
 
@@ -106,6 +115,7 @@ public class QuestionRuntime {
                 waitingQuestion.deliveryMode());
         terminalStatusByQuestionId.put(answeredQuestion.questionId(), answeredQuestion.status());
         eventBus.publish(QuestionEvents.questionAnswered(answeredQuestion, answer, System.currentTimeMillis()));
+        persist(answeredQuestion);
         return answeredQuestion;
     }
 
@@ -127,6 +137,7 @@ public class QuestionRuntime {
                 waitingQuestion.deliveryMode());
         terminalStatusByQuestionId.put(expiredQuestion.questionId(), expiredQuestion.status());
         eventBus.publish(QuestionEvents.questionExpired(expiredQuestion, System.currentTimeMillis()));
+        persist(expiredQuestion);
         return expiredQuestion;
     }
 
@@ -153,6 +164,17 @@ public class QuestionRuntime {
     public Optional<Question> pendingQuestion(String sessionId) {
         PendingQuestion pending = pendingBySession.get(sessionId);
         return pending == null ? Optional.empty() : Optional.of(pending.question);
+    }
+
+    private void persist(Question question) {
+        QuestionStore store = questionStore;
+        if (store != null) {
+            try {
+                store.save(question);
+            } catch (Exception e) {
+                // Persistence is best-effort; do not break the runtime
+            }
+        }
     }
 
     private PendingQuestion requirePendingQuestion(String sessionId, String questionId) {
