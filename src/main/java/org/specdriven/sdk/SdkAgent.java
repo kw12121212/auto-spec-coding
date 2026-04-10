@@ -209,7 +209,11 @@ public class SdkAgent {
             OrchestratorConfig base = super.buildOrchestratorConfig();
             List<ToolExecutionHook> hooks = new ArrayList<>(base.hooks());
             hooks.add(new EventEmittingToolHook(globalBus, agentBus, sessionId));
-            return new OrchestratorConfig(base.maxTurns(), base.toolTimeoutSeconds(), hooks);
+            return new OrchestratorConfig(
+                    base.maxTurns(),
+                    base.toolTimeoutSeconds(),
+                    base.questionTimeoutSeconds(),
+                    hooks);
         }
 
         @Override

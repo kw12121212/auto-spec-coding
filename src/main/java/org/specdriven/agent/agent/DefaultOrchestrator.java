@@ -4,6 +4,11 @@ import org.specdriven.agent.hook.ToolExecutionHook;
 import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.question.Answer;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionRuntime;
+import org.specdriven.agent.question.QuestionStatus;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
@@ -16,6 +21,8 @@ import org.specdriven.agent.permission.PolicyStore;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
@@ -29,6 +36,9 @@ import java.util.function.Supplier;
  */
 public class DefaultOrchestrator implements Orchestrator {
 
+    static final String QUESTION_TOOL_NAME = "__ask_question__";
+    private static final long QUESTION_POLL_INTERVAL_MILLIS = 50L;
+
     private final OrchestratorConfig config;
     private final AgentStateAccessor stateAccessor;
     private final Supplier<PolicyStore> policyStoreFactory;
@@ -41,6 +51,10 @@ public class DefaultOrchestrator implements Orchestrator {
     @FunctionalInterface
     public interface AgentStateAccessor {
         AgentState getState();
+
+        default void transitionTo(AgentState target) {
+            throw new IllegalStateException("state transitions are not available");
+        }
     }
 
     public DefaultOrchestrator(OrchestratorConfig config, AgentStateAccessor stateAccessor) {
@@ -66,6 +80,7 @@ public class DefaultOrchestrator implements Orchestrator {
         }
 
         int turn = 0;
+        outer:
         while (turn < config.maxTurns() && stateAccessor.getState() == AgentState.RUNNING) {
             turn++;
 
@@ -88,11 +103,120 @@ public class DefaultOrchestrator implements Orchestrator {
                     if (stateAccessor.getState() != AgentState.RUNNING) {
                         return;
                     }
+                    if (QUESTION_TOOL_NAME.equals(call.toolName())) {
+                        QuestionWaitOutcome outcome = handleQuestionToolCall(call, context, conversation);
+                        if (outcome == QuestionWaitOutcome.END_RUN) {
+                            return;
+                        }
+                        if (outcome == QuestionWaitOutcome.RESUME_NEXT_TURN) {
+                            continue outer;
+                        }
+                        continue;
+                    }
                     executeToolCall(call, context, conversation);
                 }
                 // observe — loop continues, LLM sees all tool results
             }
         }
+    }
+
+    private QuestionWaitOutcome handleQuestionToolCall(ToolCall call, AgentContext context, Conversation conversation) {
+        QuestionRuntime questionRuntime = questionRuntime(context);
+        if (questionRuntime == null) {
+            appendQuestionError(conversation, call, "question runtime is not configured");
+            return QuestionWaitOutcome.CONTINUE_CURRENT_TURN;
+        }
+
+        Question waitingQuestion = null;
+        try {
+            waitingQuestion = beginWaitingQuestion(call, context, questionRuntime, conversation);
+            stateAccessor.transitionTo(AgentState.PAUSED);
+            return waitForAnswer(waitingQuestion, questionRuntime, conversation);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            if (waitingQuestion != null) {
+                try {
+                    questionRuntime.closeQuestion(waitingQuestion);
+                } catch (IllegalStateException ignored) {
+                    // Best effort: the question may already be expired or closed.
+                }
+            }
+            appendQuestionError(conversation, call, e.getMessage());
+            return QuestionWaitOutcome.CONTINUE_CURRENT_TURN;
+        }
+    }
+
+    private Question beginWaitingQuestion(ToolCall call,
+                                          AgentContext context,
+                                          QuestionRuntime questionRuntime,
+                                          Conversation conversation) {
+        Map<String, Object> parameters = call.parameters();
+        DeliveryMode deliveryMode = parseDeliveryMode(parameters.get("deliveryMode"));
+        if (deliveryMode == DeliveryMode.AUTO_AI_REPLY) {
+            throw new IllegalArgumentException("AUTO_AI_REPLY is handled by answer-agent-runtime, not pause/wait");
+        }
+
+        String questionId = stringParameter(parameters, "questionId");
+        if (questionId == null || questionId.isBlank()) {
+            questionId = UUID.randomUUID().toString();
+        }
+        String questionText = requiredParameter(parameters, "question");
+        String impact = requiredParameter(parameters, "impact");
+        String recommendation = requiredParameter(parameters, "recommendation");
+
+        Question openQuestion = new Question(
+                questionId,
+                context.sessionId(),
+                questionText,
+                impact,
+                recommendation,
+                QuestionStatus.OPEN,
+                deliveryMode);
+        Question waitingQuestion = new Question(
+                openQuestion.questionId(),
+                openQuestion.sessionId(),
+                openQuestion.question(),
+                openQuestion.impact(),
+                openQuestion.recommendation(),
+                QuestionStatus.WAITING_FOR_ANSWER,
+                openQuestion.deliveryMode());
+        questionRuntime.beginWaitingQuestion(waitingQuestion);
+        conversation.append(new SystemMessage(formatWaitingQuestion(waitingQuestion), System.currentTimeMillis()));
+        return waitingQuestion;
+    }
+
+    private QuestionWaitOutcome waitForAnswer(Question waitingQuestion,
+                                              QuestionRuntime questionRuntime,
+                                              Conversation conversation) {
+        long deadline = System.currentTimeMillis() + (config.questionTimeoutSeconds() * 1000L);
+
+        try {
+            while (stateAccessor.getState() == AgentState.PAUSED) {
+                long remainingMillis = deadline - System.currentTimeMillis();
+                if (remainingMillis <= 0L) {
+                    questionRuntime.expireQuestion(waitingQuestion);
+                    return QuestionWaitOutcome.END_RUN;
+                }
+
+                long pollMillis = Math.min(remainingMillis, QUESTION_POLL_INTERVAL_MILLIS);
+                Optional<Answer> answer = questionRuntime.pollAnswer(
+                        waitingQuestion.sessionId(),
+                        waitingQuestion.questionId(),
+                        pollMillis);
+                if (answer.isPresent()) {
+                    questionRuntime.acceptAnswer(waitingQuestion, answer.get());
+                    conversation.append(new SystemMessage(
+                            formatAcceptedAnswer(waitingQuestion, answer.get()),
+                            System.currentTimeMillis()));
+                    stateAccessor.transitionTo(AgentState.RUNNING);
+                    return QuestionWaitOutcome.RESUME_NEXT_TURN;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        questionRuntime.closeQuestion(waitingQuestion);
+        return QuestionWaitOutcome.END_RUN;
     }
 
     private void executeToolCall(ToolCall call, AgentContext context, Conversation conversation) {
@@ -133,6 +257,61 @@ public class DefaultOrchestrator implements Orchestrator {
         }
 
         conversation.append(new ToolMessage(resultContent, System.currentTimeMillis(), call.toolName(), call.callId()));
+    }
+
+    private QuestionRuntime questionRuntime(AgentContext context) {
+        if (context instanceof SimpleAgentContext simpleAgentContext) {
+            return simpleAgentContext.questionRuntime();
+        }
+        return null;
+    }
+
+    private void appendQuestionError(Conversation conversation, ToolCall call, String message) {
+        conversation.append(new ToolMessage(
+                "Error: " + message,
+                System.currentTimeMillis(),
+                call.toolName(),
+                call.callId()));
+    }
+
+    private static String requiredParameter(Map<String, Object> parameters, String key) {
+        String value = stringParameter(parameters, key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(key + " must not be blank");
+        }
+        return value;
+    }
+
+    private static String stringParameter(Map<String, Object> parameters, String key) {
+        Object value = parameters.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static DeliveryMode parseDeliveryMode(Object rawValue) {
+        if (rawValue == null) {
+            throw new IllegalArgumentException("deliveryMode must not be blank");
+        }
+        try {
+            return DeliveryMode.valueOf(String.valueOf(rawValue));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unsupported deliveryMode: " + rawValue);
+        }
+    }
+
+    private static String formatWaitingQuestion(Question question) {
+        return "Waiting question [" + question.questionId() + "]\n"
+                + "Question: " + question.question() + "\n"
+                + "Impact: " + question.impact() + "\n"
+                + "Recommendation: " + question.recommendation() + "\n"
+                + "DeliveryMode: " + question.deliveryMode().name();
+    }
+
+    private static String formatAcceptedAnswer(Question question, Answer answer) {
+        return "Accepted answer for question [" + question.questionId() + "]\n"
+                + "Content: " + answer.content() + "\n"
+                + "Basis: " + answer.basisSummary() + "\n"
+                + "Source: " + answer.source().name() + " (" + answer.sourceRef() + ")\n"
+                + "Decision: " + answer.decision().name();
     }
 
     private ToolResult runBeforeHooks(Tool tool, ToolInput input, ToolContext toolCtx) {
@@ -210,5 +389,11 @@ public class DefaultOrchestrator implements Orchestrator {
                 return delegate;
             }
         }
+    }
+
+    private enum QuestionWaitOutcome {
+        CONTINUE_CURRENT_TURN,
+        RESUME_NEXT_TURN,
+        END_RUN
     }
 }

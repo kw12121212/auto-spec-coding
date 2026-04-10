@@ -114,7 +114,17 @@ public class DefaultAgent implements Agent {
         }
 
         OrchestratorConfig orchestratorConfig = buildOrchestratorConfig();
-        Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, this::getState);
+        Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, new DefaultOrchestrator.AgentStateAccessor() {
+            @Override
+            public AgentState getState() {
+                return DefaultAgent.this.getState();
+            }
+
+            @Override
+            public void transitionTo(AgentState target) {
+                DefaultAgent.this.transitionFromOrchestrator(target);
+            }
+        });
         LlmClient llmClient = createLlmClient(context);
 
         final long sessionCreatedAt = createdAt;
@@ -147,7 +157,11 @@ public class DefaultAgent implements Agent {
     protected OrchestratorConfig buildOrchestratorConfig() {
         OrchestratorConfig base = OrchestratorConfig.fromMap(config);
         List<ToolExecutionHook> hooks = List.of(new PermissionCheckHook());
-        return new OrchestratorConfig(base.maxTurns(), base.toolTimeoutSeconds(), hooks);
+        return new OrchestratorConfig(
+                base.maxTurns(),
+                base.toolTimeoutSeconds(),
+                base.questionTimeoutSeconds(),
+                hooks);
     }
 
     /**
@@ -155,6 +169,10 @@ public class DefaultAgent implements Agent {
      * (pause/resume API is reserved for orchestrator).
      */
     void transitionToForTest(AgentState target) {
+        transitionTo(target);
+    }
+
+    void transitionFromOrchestrator(AgentState target) {
         transitionTo(target);
     }
 

@@ -37,7 +37,7 @@
 
 ## Planned Changes
 - `question-contract-audit` - Declared: complete - 定义 Question、Answer、AnswerSource、QuestionStatus、QuestionDecision、DeliveryMode 等核心类型、question payload 规范、事件模型以及审计字段
-- `orchestrator-question-pause` - Declared: planned - 扩展 DefaultOrchestrator：支持提问、暂停等待、接收答复、超时与恢复执行
+- `orchestrator-question-pause` - Declared: complete - 扩展 DefaultOrchestrator：支持提问、暂停等待、接收答复、超时与恢复执行
 - `answer-agent-runtime` - Declared: planned - 实现副 AI agent 的创建、上下文裁剪、答复生成与结构化返回链路
 - `question-routing-policy` - Declared: planned - 定义问题分类、默认回复模式与升级策略，明确哪些问题可 AI 代答，哪些问题需推送移动端等待人工，哪些问题必须原地人工答复
 - `question-delivery-surface` - Declared: planned - 定义移动推送抽象接口、人工回复回流机制，以及 Native Java SDK 层的模式配置、pending question 查询、人工答复提交与恢复执行接口
@@ -70,4 +70,5 @@
 - 问题分类至少应区分：澄清型问题、方案选择建议、权限确认、不可逆操作批准
 - 移动推送首期只定义抽象接口和回流契约，不绑定具体移动平台或推送厂商
 - M11 的 skill 执行引擎后续可复用该能力，但 M22 不依赖 M11 才能成立
+
 

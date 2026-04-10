@@ -2,6 +2,7 @@ package org.specdriven.agent.agent;
 
 import java.util.Map;
 import java.util.Optional;
+import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.tool.ProcessManager;
 import org.specdriven.agent.tool.Tool;
 
@@ -16,6 +17,7 @@ public class SimpleAgentContext implements AgentContext {
     private final Conversation conversation;
     private final SessionStore sessionStore;
     private final ProcessManager processManager;
+    private final QuestionRuntime questionRuntime;
 
     public SimpleAgentContext(String sessionId,
                               Map<String, String> config,
@@ -38,12 +40,23 @@ public class SimpleAgentContext implements AgentContext {
                               Conversation conversation,
                               SessionStore sessionStore,
                               ProcessManager processManager) {
+        this(sessionId, config, toolRegistry, conversation, sessionStore, processManager, null);
+    }
+
+    public SimpleAgentContext(String sessionId,
+                              Map<String, String> config,
+                              Map<String, Tool> toolRegistry,
+                              Conversation conversation,
+                              SessionStore sessionStore,
+                              ProcessManager processManager,
+                              QuestionRuntime questionRuntime) {
         this.sessionId = sessionId;
         this.config = config;
         this.toolRegistry = toolRegistry;
         this.conversation = conversation;
         this.sessionStore = sessionStore;
         this.processManager = processManager;
+        this.questionRuntime = questionRuntime;
     }
 
     @Override
@@ -68,6 +81,10 @@ public class SimpleAgentContext implements AgentContext {
 
     public SessionStore sessionStore() {
         return sessionStore;
+    }
+
+    public QuestionRuntime questionRuntime() {
+        return questionRuntime;
     }
 
     @Override

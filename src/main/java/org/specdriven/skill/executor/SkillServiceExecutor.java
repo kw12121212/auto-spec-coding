@@ -107,6 +107,7 @@ public class SkillServiceExecutor implements ServiceExecutor {
         OrchestratorConfig orchestratorConfig = new OrchestratorConfig(
                 baseConfig.maxTurns(),
                 baseConfig.toolTimeoutSeconds(),
+                baseConfig.questionTimeoutSeconds(),
                 List.of(new PermissionCheckHook())
         );
         Orchestrator orchestrator = new DefaultOrchestrator(orchestratorConfig, () -> AgentState.RUNNING);

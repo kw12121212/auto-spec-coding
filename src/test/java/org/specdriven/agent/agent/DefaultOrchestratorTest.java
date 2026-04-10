@@ -1,6 +1,9 @@
 package org.specdriven.agent.agent;
 
 import org.junit.jupiter.api.Test;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.hook.*;
 import org.specdriven.agent.permission.AuditEntry;
 import org.specdriven.agent.permission.Permission;
@@ -8,10 +11,18 @@ import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.agent.permission.PermissionDecision;
 import org.specdriven.agent.permission.PolicyStore;
 import org.specdriven.agent.permission.StoredPolicy;
+import org.specdriven.agent.question.Answer;
+import org.specdriven.agent.question.AnswerSource;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionDecision;
+import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.tool.*;
 
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -49,6 +60,20 @@ class DefaultOrchestratorTest {
             @Override public Map<String, Tool> toolRegistry() { return tools; }
             @Override public Conversation conversation() { return conv; }
         };
+    }
+
+    private static SimpleAgentContext questionCtx(Map<String, String> config,
+                                                  Conversation conv,
+                                                  QuestionRuntime questionRuntime) {
+        return new SimpleAgentContext(
+                "test-session",
+                config,
+                Map.of(),
+                conv,
+                null,
+                null,
+                questionRuntime
+        );
     }
 
     private static PolicyStore allowingStore() {
@@ -401,5 +426,271 @@ class DefaultOrchestratorTest {
         assertEquals(1, afterExecuteCount.get(), "afterExecute should be called once");
         ToolMessage toolMsg = (ToolMessage) conv.get(1);
         assertEquals("hello", toolMsg.content());
+    }
+
+    @Test
+    void questionToolPausesThenResumesNextTurn() throws Exception {
+        Conversation conv = new Conversation();
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = Collections.synchronizedList(new ArrayList<>());
+        eventBus.subscribe(EventType.QUESTION_CREATED, events::add);
+        eventBus.subscribe(EventType.QUESTION_ANSWERED, events::add);
+
+        QuestionRuntime questionRuntime = new QuestionRuntime(eventBus);
+        SimpleAgentContext context = questionCtx(
+                Map.of("workDir", ".", "questionTimeoutSeconds", "2"),
+                conv,
+                questionRuntime
+        );
+
+        AtomicInteger llmCalls = new AtomicInteger(0);
+        LlmClient llm = msgs -> {
+            if (llmCalls.incrementAndGet() == 1) {
+                return new LlmResponse.ToolCallResponse(List.of(new ToolCall(
+                        DefaultOrchestrator.QUESTION_TOOL_NAME,
+                        Map.of(
+                                "question", "Should we deploy now?",
+                                "impact", "A bad deploy could break production.",
+                                "recommendation", "Wait for human approval.",
+                                "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
+                        ),
+                        "call-q1"
+                )));
+            }
+            return new LlmResponse.TextResponse("deployment resumed");
+        };
+
+        AtomicReference<AgentState> state = new AtomicReference<>(AgentState.RUNNING);
+        DefaultOrchestrator.AgentStateAccessor accessor = new DefaultOrchestrator.AgentStateAccessor() {
+            @Override
+            public AgentState getState() {
+                return state.get();
+            }
+
+            @Override
+            public void transitionTo(AgentState target) {
+                state.set(target);
+            }
+        };
+
+        DefaultOrchestrator orchestrator = new DefaultOrchestrator(
+                new OrchestratorConfig(5, 10, 2, List.of()),
+                accessor
+        );
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> future = executor.submit(() -> orchestrator.run(context, llm));
+            waitUntil(() -> state.get() == AgentState.PAUSED, 1000);
+
+            assertEquals(1, llmCalls.get(), "LLM must not be called again while paused");
+            Question waitingQuestion = questionRuntime.pendingQuestion("test-session").orElseThrow();
+
+            Thread.sleep(150L);
+            assertEquals(1, llmCalls.get(), "LLM call count should stay stable during the wait");
+
+            questionRuntime.submitAnswer(
+                    "test-session",
+                    waitingQuestion.questionId(),
+                    new Answer(
+                            "Wait for CAB approval first.",
+                            "This deployment is high risk and needs a human gate.",
+                            "operator:alice",
+                            AnswerSource.HUMAN_INLINE,
+                            1.0d,
+                            QuestionDecision.ANSWER_ACCEPTED,
+                            DeliveryMode.PAUSE_WAIT_HUMAN,
+                            "Human approval required before deploy.",
+                            System.currentTimeMillis()
+                    ));
+
+            future.get(2, TimeUnit.SECONDS);
+            assertEquals(2, llmCalls.get());
+            assertTrue(conv.history().stream().anyMatch(message ->
+                    message instanceof SystemMessage sm && sm.content().contains("Accepted answer for question")));
+            assertInstanceOf(AssistantMessage.class, conv.get(conv.size() - 1));
+            assertEquals("deployment resumed", ((AssistantMessage) conv.get(conv.size() - 1)).content());
+            assertTrue(events.stream().anyMatch(event -> event.type() == EventType.QUESTION_CREATED));
+            assertTrue(events.stream().anyMatch(event -> event.type() == EventType.QUESTION_ANSWERED));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void questionTimeoutEndsRunAndRejectsLateAnswer() {
+        Conversation conv = new Conversation();
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = Collections.synchronizedList(new ArrayList<>());
+        eventBus.subscribe(EventType.QUESTION_EXPIRED, events::add);
+
+        QuestionRuntime questionRuntime = new QuestionRuntime(eventBus);
+        SimpleAgentContext context = questionCtx(
+                Map.of("workDir", ".", "questionTimeoutSeconds", "1"),
+                conv,
+                questionRuntime
+        );
+
+        AtomicInteger llmCalls = new AtomicInteger(0);
+        LlmClient llm = msgs -> {
+            llmCalls.incrementAndGet();
+            return new LlmResponse.ToolCallResponse(List.of(new ToolCall(
+                    DefaultOrchestrator.QUESTION_TOOL_NAME,
+                    Map.of(
+                            "question", "Need rollback approval?",
+                            "impact", "Rolling back too early may hide the real issue.",
+                            "recommendation", "Wait for operator input.",
+                            "deliveryMode", DeliveryMode.PUSH_MOBILE_WAIT_HUMAN.name(),
+                            "questionId", "timeout-q1"
+                    ),
+                    "call-timeout"
+            )));
+        };
+
+        AtomicReference<AgentState> state = new AtomicReference<>(AgentState.RUNNING);
+        DefaultOrchestrator orchestrator = new DefaultOrchestrator(
+                new OrchestratorConfig(2, 10, 1, List.of()),
+                new DefaultOrchestrator.AgentStateAccessor() {
+                    @Override
+                    public AgentState getState() {
+                        return state.get();
+                    }
+
+                    @Override
+                    public void transitionTo(AgentState target) {
+                        state.set(target);
+                    }
+                }
+        );
+
+        orchestrator.run(context, llm);
+
+        assertEquals(1, llmCalls.get(), "Timeout should end the run before the next LLM turn");
+        assertTrue(events.stream().anyMatch(event -> event.type() == EventType.QUESTION_EXPIRED));
+        assertThrows(IllegalStateException.class, () -> questionRuntime.submitAnswer(
+                "test-session",
+                "timeout-q1",
+                new Answer(
+                        "Reply arrived too late.",
+                        "The timeout already ended the wait.",
+                        "mobile:late",
+                        AnswerSource.HUMAN_MOBILE,
+                        1.0d,
+                        QuestionDecision.ANSWER_ACCEPTED,
+                        DeliveryMode.PUSH_MOBILE_WAIT_HUMAN,
+                        "Human reply arrived after timeout.",
+                        System.currentTimeMillis()
+                )));
+    }
+
+    @Test
+    void stopWhilePausedClosesWaitingQuestion() throws Exception {
+        Conversation conv = new Conversation();
+        QuestionRuntime questionRuntime = new QuestionRuntime(new SimpleEventBus());
+        SimpleAgentContext context = questionCtx(
+                Map.of("workDir", ".", "questionTimeoutSeconds", "5"),
+                conv,
+                questionRuntime
+        );
+
+        LlmClient llm = msgs -> new LlmResponse.ToolCallResponse(List.of(new ToolCall(
+                DefaultOrchestrator.QUESTION_TOOL_NAME,
+                Map.of(
+                        "question", "Delete the old backup?",
+                        "impact", "This action is irreversible.",
+                        "recommendation", "Require human approval.",
+                        "questionId", "close-q1",
+                        "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
+                ),
+                "call-close"
+        )));
+
+        AtomicReference<AgentState> state = new AtomicReference<>(AgentState.RUNNING);
+        DefaultOrchestrator orchestrator = new DefaultOrchestrator(
+                new OrchestratorConfig(2, 10, 5, List.of()),
+                new DefaultOrchestrator.AgentStateAccessor() {
+                    @Override
+                    public AgentState getState() {
+                        return state.get();
+                    }
+
+                    @Override
+                    public void transitionTo(AgentState target) {
+                        state.set(target);
+                    }
+                }
+        );
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> future = executor.submit(() -> orchestrator.run(context, llm));
+            waitUntil(() -> state.get() == AgentState.PAUSED, 1000);
+
+            state.set(AgentState.STOPPED);
+            future.get(2, TimeUnit.SECONDS);
+
+            assertTrue(questionRuntime.pendingQuestion("test-session").isEmpty());
+            assertThrows(IllegalStateException.class, () -> questionRuntime.submitAnswer(
+                    "test-session",
+                    "close-q1",
+                    new Answer(
+                            "Do not delete it yet.",
+                            "The run is already stopped.",
+                            "operator:bob",
+                            AnswerSource.HUMAN_INLINE,
+                            1.0d,
+                            QuestionDecision.ANSWER_ACCEPTED,
+                            DeliveryMode.PAUSE_WAIT_HUMAN,
+                            "Run already stopped.",
+                            System.currentTimeMillis()
+                    )));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void questionToolWithoutPauseTransitionLeavesNoPendingQuestion() {
+        Conversation conv = new Conversation();
+        QuestionRuntime questionRuntime = new QuestionRuntime(new SimpleEventBus());
+        SimpleAgentContext context = questionCtx(
+                Map.of("workDir", ".", "questionTimeoutSeconds", "1"),
+                conv,
+                questionRuntime
+        );
+
+        LlmClient llm = msgs -> new LlmResponse.ToolCallResponse(List.of(new ToolCall(
+                DefaultOrchestrator.QUESTION_TOOL_NAME,
+                Map.of(
+                        "question", "Need approval?",
+                        "impact", "This cannot continue without approval.",
+                        "recommendation", "Pause for a human answer.",
+                        "questionId", "transition-q1",
+                        "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
+                ),
+                "call-transition"
+        )));
+
+        DefaultOrchestrator orchestrator = new DefaultOrchestrator(
+                new OrchestratorConfig(2, 10, 1, List.of()),
+                () -> AgentState.RUNNING
+        );
+
+        orchestrator.run(context, llm);
+
+        assertTrue(questionRuntime.pendingQuestion("test-session").isEmpty());
+        assertInstanceOf(ToolMessage.class, conv.get(conv.size() - 1));
+        assertTrue(((ToolMessage) conv.get(conv.size() - 1)).content().contains("state transitions"));
+    }
+
+    private static void waitUntil(Callable<Boolean> condition, long timeoutMillis) throws Exception {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.call()) {
+                return;
+            }
+            Thread.sleep(25L);
+        }
+        fail("condition was not met within timeout");
     }
 }

@@ -12,21 +12,29 @@ import org.specdriven.agent.hook.ToolExecutionHook;
 public record OrchestratorConfig(
         int maxTurns,
         int toolTimeoutSeconds,
+        int questionTimeoutSeconds,
         List<ToolExecutionHook> hooks
 ) {
-    private static final OrchestratorConfig DEFAULTS = new OrchestratorConfig(50, 120, Collections.emptyList());
+    private static final OrchestratorConfig DEFAULTS = new OrchestratorConfig(50, 120, 300, Collections.emptyList());
 
     public OrchestratorConfig {
         if (maxTurns <= 0) throw new IllegalArgumentException("maxTurns must be positive");
         if (toolTimeoutSeconds <= 0) throw new IllegalArgumentException("toolTimeoutSeconds must be positive");
+        if (questionTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException("questionTimeoutSeconds must be positive");
+        }
         if (hooks == null) throw new IllegalArgumentException("hooks must not be null");
+    }
+
+    public OrchestratorConfig(int maxTurns, int toolTimeoutSeconds, List<ToolExecutionHook> hooks) {
+        this(maxTurns, toolTimeoutSeconds, DEFAULTS.questionTimeoutSeconds(), hooks);
     }
 
     /**
      * Convenience constructor without hooks (defaults to empty list).
      */
     public OrchestratorConfig(int maxTurns, int toolTimeoutSeconds) {
-        this(maxTurns, toolTimeoutSeconds, Collections.emptyList());
+        this(maxTurns, toolTimeoutSeconds, DEFAULTS.questionTimeoutSeconds(), Collections.emptyList());
     }
 
     /**
@@ -42,9 +50,13 @@ public record OrchestratorConfig(
      */
     public static OrchestratorConfig fromMap(Map<String, String> config) {
         if (config == null) return defaults();
-        int turns = parseInt(config, "orchestrator.maxTurns", DEFAULTS.maxTurns());
-        int timeout = parseInt(config, "orchestrator.toolTimeoutSeconds", DEFAULTS.toolTimeoutSeconds());
-        return new OrchestratorConfig(turns, timeout, Collections.emptyList());
+        int turns = parseInt(config, "maxTurns",
+                parseInt(config, "orchestrator.maxTurns", DEFAULTS.maxTurns()));
+        int timeout = parseInt(config, "toolTimeoutSeconds",
+                parseInt(config, "orchestrator.toolTimeoutSeconds", DEFAULTS.toolTimeoutSeconds()));
+        int questionTimeout = parseInt(config, "questionTimeoutSeconds",
+                parseInt(config, "orchestrator.questionTimeoutSeconds", DEFAULTS.questionTimeoutSeconds()));
+        return new OrchestratorConfig(turns, timeout, questionTimeout, Collections.emptyList());
     }
 
     private static int parseInt(Map<String, String> config, String key, int defaultValue) {
