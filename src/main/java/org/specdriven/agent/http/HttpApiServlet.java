@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.specdriven.agent.agent.AgentState;
+import org.specdriven.agent.question.ReplyCallbackRouter;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
 import org.specdriven.sdk.*;
@@ -22,6 +23,7 @@ public class HttpApiServlet extends HttpServlet {
     private static final String VERSION = "0.1.0";
 
     private SpecDriven sdk;
+    private ReplyCallbackRouter callbackRouter;
     private final Map<String, TrackedAgent> agents = new ConcurrentHashMap<>();
 
     /** Default constructor — SDK is created in {@link #init()}. */
@@ -30,6 +32,12 @@ public class HttpApiServlet extends HttpServlet {
     /** Dependency-injection constructor — used when SDK is assembled externally. */
     public HttpApiServlet(SpecDriven sdk) {
         this.sdk = sdk;
+    }
+
+    /** Full dependency-injection constructor with callback router. */
+    public HttpApiServlet(SpecDriven sdk, ReplyCallbackRouter callbackRouter) {
+        this.sdk = sdk;
+        this.callbackRouter = callbackRouter;
     }
 
     @Override
@@ -77,6 +85,10 @@ public class HttpApiServlet extends HttpServlet {
         if ("health".equals(group) && route.length() >= 2) {
             requireGet(route.method(), "/health");
             return handleHealth();
+        }
+        if ("callbacks".equals(group) && route.length() >= 3) {
+            requirePost(route.method(), "/callbacks/" + route.segment(2));
+            return handleCallback(route.segment(2), req);
         }
         throw new HttpApiException(404, "not_found", "Unknown route");
     }
@@ -170,6 +182,41 @@ public class HttpApiServlet extends HttpServlet {
 
     private String handleHealth() {
         return HttpJsonCodec.encode(new HealthResponse("ok", VERSION));
+    }
+
+    private String handleCallback(String channelType, HttpServletRequest req) {
+        if (callbackRouter == null) {
+            throw new HttpApiException(404, "not_found", "No callback router configured");
+        }
+        String body = readBody(req);
+        if (body == null || body.isBlank()) {
+            throw new HttpApiException(400, "invalid_params", "Request body required");
+        }
+        Map<String, String> headers = extractCallbackHeaders(req);
+        try {
+            callbackRouter.dispatch(channelType, body, headers);
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(404, "not_found", e.getMessage());
+        } catch (org.specdriven.agent.question.MobileAdapterException e) {
+            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("invalid")) {
+                throw new HttpApiException(401, "unauthorized", e.getMessage());
+            }
+            throw new HttpApiException(400, "callback_error", e.getMessage());
+        }
+        return null; // 200 empty
+    }
+
+    private Map<String, String> extractCallbackHeaders(HttpServletRequest req) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        String telegramSecret = req.getHeader("X-Telegram-Bot-Api-Secret-Token");
+        if (telegramSecret != null) {
+            headers.put("X-Telegram-Bot-Api-Secret-Token", telegramSecret);
+        }
+        String discordSignature = req.getHeader("X-Signature-256");
+        if (discordSignature != null) {
+            headers.put("X-Signature-256", discordSignature);
+        }
+        return headers;
     }
 
     // --- Error mapping ---

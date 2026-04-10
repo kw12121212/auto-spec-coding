@@ -41,7 +41,7 @@ public class AuthFilter extends HttpFilter {
     @Override
     protected void doFilter(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws IOException, ServletException {
-        if (isHealthRequest(req)) {
+        if (isHealthRequest(req) || isCallbackRequest(req)) {
             chain.doFilter(req, resp);
             return;
         }
@@ -58,6 +58,11 @@ public class AuthFilter extends HttpFilter {
     private boolean isHealthRequest(HttpServletRequest req) {
         String uri = req.getRequestURI();
         return uri != null && uri.endsWith("/health");
+    }
+
+    private boolean isCallbackRequest(HttpServletRequest req) {
+        String uri = req.getRequestURI();
+        return uri != null && uri.contains("/callbacks/");
     }
 
     private String extractApiKey(HttpServletRequest req) {

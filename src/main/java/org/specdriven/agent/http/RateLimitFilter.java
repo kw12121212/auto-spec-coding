@@ -46,6 +46,11 @@ public class RateLimitFilter extends HttpFilter {
     @Override
     protected void doFilter(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws IOException, ServletException {
+        if (isCallbackRequest(req)) {
+            chain.doFilter(req, resp);
+            return;
+        }
+
         String clientId = resolveClientId(req);
         RateLimitWindow window = windows.compute(clientId, (k, w) -> {
             long now = System.currentTimeMillis();
@@ -63,6 +68,11 @@ public class RateLimitFilter extends HttpFilter {
         }
 
         chain.doFilter(req, resp);
+    }
+
+    private boolean isCallbackRequest(HttpServletRequest req) {
+        String uri = req.getRequestURI();
+        return uri != null && uri.contains("/callbacks/");
     }
 
     private String resolveClientId(HttpServletRequest req) {
