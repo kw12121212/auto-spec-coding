@@ -26,10 +26,17 @@ public class DiscordDeliveryChannel implements QuestionDeliveryChannel {
     DiscordDeliveryChannel(String webhookUrl,
                            HttpClient httpClient,
                            ConcurrentMap<String, String> messageMap) {
+        this(webhookUrl, httpClient, messageMap, PlainTextFormatter.INSTANCE);
+    }
+
+    DiscordDeliveryChannel(String webhookUrl,
+                           HttpClient httpClient,
+                           ConcurrentMap<String, String> messageMap,
+                           RichMessageFormatter formatter) {
         this.webhookUrl = webhookUrl;
         this.httpClient = httpClient;
         this.messageMap = messageMap;
-        this.formatter = PlainTextFormatter.INSTANCE;
+        this.formatter = formatter;
     }
 
     @Override

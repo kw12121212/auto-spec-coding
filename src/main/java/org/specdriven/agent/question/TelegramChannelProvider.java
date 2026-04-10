@@ -40,7 +40,8 @@ public class TelegramChannelProvider implements MobileChannelProvider {
         TelegramReplyCollector collector = new TelegramReplyCollector(
                 runtime, botToken, callbackBaseUrl, messageMap);
         TelegramDeliveryChannel channel = new TelegramDeliveryChannel(
-                botToken, chatId, httpClient, messageMap);
+                TelegramDeliveryChannel.DEFAULT_BASE_URL, botToken, chatId,
+                httpClient, messageMap, new TelegramMessageTemplate());
 
         return new MobileChannelHandle(channel, collector);
     }

@@ -39,12 +39,21 @@ public class TelegramDeliveryChannel implements QuestionDeliveryChannel {
                             String chatId,
                             HttpClient httpClient,
                             ConcurrentMap<Long, String> messageMap) {
+        this(baseUrl, botToken, chatId, httpClient, messageMap, PlainTextFormatter.INSTANCE);
+    }
+
+    TelegramDeliveryChannel(String baseUrl,
+                            String botToken,
+                            String chatId,
+                            HttpClient httpClient,
+                            ConcurrentMap<Long, String> messageMap,
+                            RichMessageFormatter formatter) {
         this.baseUrl = baseUrl;
         this.botToken = botToken;
         this.chatId = chatId;
         this.httpClient = httpClient;
         this.messageMap = messageMap;
-        this.formatter = PlainTextFormatter.INSTANCE;
+        this.formatter = formatter;
     }
 
     @Override

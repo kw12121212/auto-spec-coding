@@ -39,7 +39,7 @@ public class DiscordChannelProvider implements MobileChannelProvider {
         DiscordReplyCollector collector = new DiscordReplyCollector(
                 runtime, webhookSecret, callbackBaseUrl, messageMap);
         DiscordDeliveryChannel channel = new DiscordDeliveryChannel(
-                webhookUrl, httpClient, messageMap);
+                webhookUrl, httpClient, messageMap, new DiscordMessageTemplate());
 
         return new MobileChannelHandle(channel, collector);
     }
