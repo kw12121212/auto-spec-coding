@@ -5,6 +5,9 @@ import org.specdriven.agent.config.Config;
 import org.specdriven.agent.config.ConfigException;
 import org.specdriven.agent.config.ConfigLoader;
 import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.MobileChannelConfig;
+import org.specdriven.agent.question.MobileChannelProvider;
+import org.specdriven.agent.question.MobileChannelRegistry;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
@@ -31,6 +34,8 @@ public class SdkBuilder {
     private final Map<EventType, List<SdkEventListener>> typedGlobalListeners = new HashMap<>();
     private BuiltinToolManager builtinToolManager;
     private DeliveryMode deliveryModeOverride;
+    private final MobileChannelRegistry channelRegistry = new MobileChannelRegistry();
+    private List<MobileChannelConfig> channelConfigs = Collections.emptyList();
 
     SdkBuilder() {}
 
@@ -91,6 +96,22 @@ public class SdkBuilder {
         return this;
     }
 
+    /**
+     * Registers a mobile channel provider by name.
+     */
+    public SdkBuilder registerChannelProvider(String name, MobileChannelProvider provider) {
+        this.channelRegistry.registerProvider(name, provider);
+        return this;
+    }
+
+    /**
+     * Sets mobile channel configurations for assembly at build time.
+     */
+    public SdkBuilder channelConfigs(List<MobileChannelConfig> configs) {
+        this.channelConfigs = configs;
+        return this;
+    }
+
     public SpecDriven build() {
         try {
             Map<String, String> configMap = Collections.emptyMap();
@@ -137,7 +158,9 @@ public class SdkBuilder {
                     sdkConfig,
                     configMap,
                     eventBus,
-                    deliveryModeOverride
+                    deliveryModeOverride,
+                    channelRegistry,
+                    channelConfigs
             );
         } catch (ConfigException e) {
             throw new SdkConfigException("Failed to load config: " + configPath, e);

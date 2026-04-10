@@ -22,6 +22,8 @@ public class SpecDriven implements AutoCloseable {
     private final Map<String, String> configMap;
     private final EventBus eventBus;
     private final DeliveryMode deliveryModeOverride;
+    private final MobileChannelRegistry channelRegistry;
+    private final List<MobileChannelConfig> channelConfigs;
     private volatile QuestionDeliveryService deliveryService;
 
     SpecDriven(LlmProviderRegistry providerRegistry,
@@ -30,7 +32,9 @@ public class SpecDriven implements AutoCloseable {
                SdkConfig sdkConfig,
                Map<String, String> configMap,
                EventBus eventBus,
-               DeliveryMode deliveryModeOverride) {
+               DeliveryMode deliveryModeOverride,
+               MobileChannelRegistry channelRegistry,
+               List<MobileChannelConfig> channelConfigs) {
         this.providerRegistry = providerRegistry;
         this.tools = tools;
         this.systemPrompt = systemPrompt;
@@ -38,6 +42,8 @@ public class SpecDriven implements AutoCloseable {
         this.configMap = configMap;
         this.eventBus = eventBus;
         this.deliveryModeOverride = deliveryModeOverride;
+        this.channelRegistry = channelRegistry;
+        this.channelConfigs = channelConfigs;
     }
 
     /**
@@ -86,8 +92,20 @@ public class SpecDriven implements AutoCloseable {
                         QuestionStore questionStore = new LealoneQuestionStore(eventBus,
                                 "jdbc:lealone:embed:agent_db");
                         questionRuntime.setQuestionStore(questionStore);
-                        QuestionDeliveryChannel channel = new LoggingDeliveryChannel();
-                        QuestionReplyCollector collector = new InMemoryReplyCollector(questionRuntime);
+
+                        QuestionDeliveryChannel channel;
+                        QuestionReplyCollector collector;
+
+                        if (channelConfigs != null && !channelConfigs.isEmpty()) {
+                            List<MobileChannelHandle> handles = channelRegistry.assembleAll(channelConfigs);
+                            MobileChannelHandle first = handles.get(0);
+                            channel = first.channel();
+                            collector = first.collector();
+                        } else {
+                            channel = new LoggingDeliveryChannel();
+                            collector = new InMemoryReplyCollector(questionRuntime);
+                        }
+
                         deliveryService = new QuestionDeliveryService(
                                 channel, collector, questionRuntime, questionStore);
                     } catch (Exception e) {
