@@ -15,7 +15,7 @@
 
 ## Testing
 
-- [ ] Run `mvn compile -q` to verify compilation
+- [ ] Run `mvn compile -q` — lint/validation: verify all new code compiles without errors
 - [ ] Run `mvn test -pl . -Dtest="DeliveryStatusTest,DeliveryAttemptTest,RetryConfigTest,RetryingDeliveryChannelTest,LealoneDeliveryLogStoreTest"` — unit tests covering enum/record construction, retry logic, persistence, and event emission
 - [ ] Run `mvn test -pl . -Dtest="HttpCallbackEndpointTest"` — verify existing callback tests still pass and new delivery status endpoint returns correct responses
 
