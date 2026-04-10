@@ -21,8 +21,6 @@
 - MUST accept a `SkillFrontmatter` and a `Path skillDir`, and return a `String` containing a complete CREATE SERVICE SQL statement
 - MUST generate `CREATE SERVICE IF NOT EXISTS` with the `name` field as the service name
 - MUST generate a single method `execute(prompt varchar) varchar` in the service body
-- MUST include `COMMENT` clause with the `description` value when description is non-null and non-empty
-- MUST omit `COMMENT` clause when description is null or empty
 - MUST include `LANGUAGE 'skill'` clause
 - MUST include `PACKAGE 'org.specdriven.skill'` clause
 - MUST include `IMPLEMENT BY` clause with the name converted to PascalCase + `Executor` suffix under the `org.specdriven.skill.executor` package
@@ -38,5 +36,5 @@
 
 ### Requirement: SQL string safety
 
-- MUST escape single quotes in description and parameter values by doubling them (`'` → `''`)
+- MUST escape single quotes in parameter values by doubling them (`'` → `''`)
 - MUST NOT produce malformed SQL for any valid frontmatter input

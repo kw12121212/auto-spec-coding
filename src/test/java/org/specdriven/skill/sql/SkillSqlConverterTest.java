@@ -22,7 +22,6 @@ class SkillSqlConverterTest {
 
         assertTrue(sql.startsWith("CREATE SERVICE IF NOT EXISTS `spec-driven-propose`"));
         assertTrue(sql.contains("execute(prompt varchar) varchar"));
-        assertTrue(sql.contains("COMMENT 'Propose a new change.'"));
         assertTrue(sql.contains("LANGUAGE 'skill'"));
         assertTrue(sql.contains("PACKAGE 'org.specdriven.skill'"));
         assertTrue(sql.contains("IMPLEMENT BY 'org.specdriven.skill.executor.SpecDrivenProposeExecutor'"));
@@ -32,11 +31,11 @@ class SkillSqlConverterTest {
     void includesParameters() {
         String sql = SkillSqlConverter.convert(sampleFrontmatter, skillDir);
 
-        assertTrue(sql.contains("'skill_id' 'spec_driven_propose'"));
-        assertTrue(sql.contains("'type' 'agent_skill'"));
-        assertTrue(sql.contains("'version' '1.0.0'"));
-        assertTrue(sql.contains("'author' 'auto-spec-driven'"));
-        assertTrue(sql.contains("'skill_dir' '" + skillDir.toAbsolutePath() + "'"));
+        assertTrue(sql.contains("skill_id = 'spec_driven_propose'"));
+        assertTrue(sql.contains("type = 'agent_skill'"));
+        assertTrue(sql.contains("version = '1.0.0'"));
+        assertTrue(sql.contains("author = 'auto-spec-driven'"));
+        assertTrue(sql.contains("skill_dir = '" + skillDir.toAbsolutePath() + "'"));
     }
 
     @Test
@@ -47,41 +46,13 @@ class SkillSqlConverterTest {
     }
 
     @Test
-    void escapesSingleQuotesInDescription() {
-        SkillFrontmatter fm = new SkillFrontmatter(
-                "test_id", "test-name",
-                "It's a test", "author", "type", "1.0.0");
-        String sql = SkillSqlConverter.convert(fm, skillDir);
-
-        assertTrue(sql.contains("COMMENT 'It''s a test'"));
-    }
-
-    @Test
     void escapesSingleQuotesInSkillDir() {
         Path pathWithQuote = Path.of("/some/it's/path");
         SkillFrontmatter fm = new SkillFrontmatter(
                 "test_id", "test-name", null, "author", "type", "1.0.0");
         String sql = SkillSqlConverter.convert(fm, pathWithQuote);
 
-        assertTrue(sql.contains("'skill_dir' '/some/it''s/path'"));
-    }
-
-    @Test
-    void omitsCommentWhenDescriptionNull() {
-        SkillFrontmatter fm = new SkillFrontmatter(
-                "test_id", "test-name", null, "author", "type", "1.0.0");
-        String sql = SkillSqlConverter.convert(fm, skillDir);
-
-        assertFalse(sql.contains("COMMENT"));
-    }
-
-    @Test
-    void omitsCommentWhenDescriptionEmpty() {
-        SkillFrontmatter fm = new SkillFrontmatter(
-                "test_id", "test-name", "", "author", "type", "1.0.0");
-        String sql = SkillSqlConverter.convert(fm, skillDir);
-
-        assertFalse(sql.contains("COMMENT"));
+        assertTrue(sql.contains("skill_dir = '/some/it''s/path'"));
     }
 
     @Test

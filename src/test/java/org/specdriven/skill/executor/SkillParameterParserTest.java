@@ -21,7 +21,7 @@ class SkillParameterParserTest {
                 LANGUAGE 'skill'
                 PACKAGE 'org.specdriven.skill'
                 IMPLEMENT BY 'org.specdriven.skill.executor.DemoExecutor'
-                PARAMETERS 'skill_id' 'demo_skill', 'type' 'agent_skill', 'skill_dir' '/tmp/demo'
+                PARAMETERS (skill_id = 'demo_skill', type = 'agent_skill', skill_dir = '/tmp/demo')
                 """);
 
         assertEquals("demo_skill", parameters.skillId());

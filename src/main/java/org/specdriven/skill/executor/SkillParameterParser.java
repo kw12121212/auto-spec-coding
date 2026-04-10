@@ -40,25 +40,38 @@ final class SkillParameterParser {
             if (index >= rawParameters.length()) {
                 break;
             }
-            if (rawParameters.charAt(index) != '\'') {
-                break;
+
+            String key;
+            if (rawParameters.charAt(index) == '\'') {
+                ParsedQuoted parsedKey = parseQuoted(rawParameters, index);
+                key = parsedKey.value();
+                index = skipWhitespace(rawParameters, parsedKey.nextIndex());
+            } else {
+                int keyStart = index;
+                while (index < rawParameters.length() && isIdentifierChar(rawParameters.charAt(index))) {
+                    index++;
+                }
+                key = rawParameters.substring(keyStart, index);
+                index = skipWhitespace(rawParameters, index);
             }
 
-            ParsedQuoted key = parseQuoted(rawParameters, index);
-            index = skipWhitespace(rawParameters, key.nextIndex());
             if (index < rawParameters.length() && rawParameters.charAt(index) == '=') {
                 index++;
                 index = skipWhitespace(rawParameters, index);
             }
             if (index >= rawParameters.length() || rawParameters.charAt(index) != '\'') {
-                throw new SkillSqlException("Malformed PARAMETERS clause: expected quoted value for key '" + key.value() + "'");
+                throw new SkillSqlException("Malformed PARAMETERS clause: expected quoted value for key '" + key + "'");
             }
 
             ParsedQuoted value = parseQuoted(rawParameters, index);
-            parsed.put(key.value().toLowerCase(Locale.ROOT), value.value());
+            parsed.put(key.toLowerCase(Locale.ROOT), value.value());
             index = value.nextIndex();
         }
         return parsed;
+    }
+
+    private static boolean isIdentifierChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
     }
 
     private static ParsedQuoted parseQuoted(String text, int startIndex) {
