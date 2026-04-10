@@ -6,6 +6,7 @@ import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.agent.permission.PermissionDecision;
 import org.specdriven.agent.question.Answer;
 import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.QuestionCategory;
 import org.specdriven.agent.question.Question;
 import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.question.QuestionStatus;
@@ -162,6 +163,7 @@ public class DefaultOrchestrator implements Orchestrator {
         String questionText = requiredParameter(parameters, "question");
         String impact = requiredParameter(parameters, "impact");
         String recommendation = requiredParameter(parameters, "recommendation");
+        QuestionCategory category = parseQuestionCategory(parameters.get("category"));
 
         Question openQuestion = new Question(
                 questionId,
@@ -170,6 +172,7 @@ public class DefaultOrchestrator implements Orchestrator {
                 impact,
                 recommendation,
                 QuestionStatus.OPEN,
+                category,
                 deliveryMode);
         Question waitingQuestion = new Question(
                 openQuestion.questionId(),
@@ -178,6 +181,7 @@ public class DefaultOrchestrator implements Orchestrator {
                 openQuestion.impact(),
                 openQuestion.recommendation(),
                 QuestionStatus.WAITING_FOR_ANSWER,
+                openQuestion.category(),
                 openQuestion.deliveryMode());
         questionRuntime.beginWaitingQuestion(waitingQuestion);
         conversation.append(new SystemMessage(formatWaitingQuestion(waitingQuestion), System.currentTimeMillis()));
@@ -298,11 +302,23 @@ public class DefaultOrchestrator implements Orchestrator {
         }
     }
 
+    private static QuestionCategory parseQuestionCategory(Object rawValue) {
+        if (rawValue == null) {
+            throw new IllegalArgumentException("category must not be blank");
+        }
+        try {
+            return QuestionCategory.valueOf(String.valueOf(rawValue));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("unsupported category: " + rawValue);
+        }
+    }
+
     private static String formatWaitingQuestion(Question question) {
         return "Waiting question [" + question.questionId() + "]\n"
                 + "Question: " + question.question() + "\n"
                 + "Impact: " + question.impact() + "\n"
                 + "Recommendation: " + question.recommendation() + "\n"
+                + "Category: " + question.category().name() + "\n"
                 + "DeliveryMode: " + question.deliveryMode().name();
     }
 

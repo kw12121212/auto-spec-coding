@@ -14,6 +14,7 @@ import java.util.Objects;
  * @param impact         impact of not answering or choosing incorrectly
  * @param recommendation suggested resolution or preferred answer
  * @param status         observable lifecycle state
+ * @param category       routing category used to choose a reply path
  * @param deliveryMode   configured answer path
  */
 public record Question(
@@ -23,6 +24,7 @@ public record Question(
         String impact,
         String recommendation,
         QuestionStatus status,
+        QuestionCategory category,
         DeliveryMode deliveryMode
 ) {
     public Question {
@@ -32,7 +34,9 @@ public record Question(
         impact = requireNonBlank(impact, "impact");
         recommendation = requireNonBlank(recommendation, "recommendation");
         status = Objects.requireNonNull(status, "status");
+        category = Objects.requireNonNull(category, "category");
         deliveryMode = Objects.requireNonNull(deliveryMode, "deliveryMode");
+        QuestionRoutingPolicy.validate(category, deliveryMode);
     }
 
     /**
@@ -46,7 +50,7 @@ public record Question(
         payload.put("impact", impact);
         payload.put("recommendation", recommendation);
         payload.put("status", status.name());
-        payload.put("deliveryMode", deliveryMode.name());
+        payload.putAll(QuestionRoutingPolicy.routingMetadata(category, deliveryMode));
         return Collections.unmodifiableMap(payload);
     }
 

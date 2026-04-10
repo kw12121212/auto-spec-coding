@@ -28,7 +28,7 @@ public final class QuestionEvents {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("questionId", question.questionId());
         metadata.put("sessionId", question.sessionId());
-        metadata.put("deliveryMode", question.deliveryMode().name());
+        metadata.putAll(QuestionRoutingPolicy.routingMetadata(question.category(), question.deliveryMode()));
         metadata.put("status", question.status().name());
         metadata.putAll(answer.toAuditMetadata());
         return new Event(EventType.QUESTION_ANSWERED, timestamp, question.sessionId(), metadata);
@@ -45,7 +45,7 @@ public final class QuestionEvents {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("questionId", question.questionId());
         metadata.put("sessionId", question.sessionId());
-        metadata.put("deliveryMode", question.deliveryMode().name());
+        metadata.putAll(QuestionRoutingPolicy.routingMetadata(question.category(), question.deliveryMode()));
         metadata.put("escalationReason", answer.escalationReason());
         metadata.put("decision", answer.decision().name());
         metadata.put("status", question.status().name());
@@ -57,7 +57,7 @@ public final class QuestionEvents {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("questionId", question.questionId());
         metadata.put("sessionId", question.sessionId());
-        metadata.put("deliveryMode", question.deliveryMode().name());
+        metadata.putAll(QuestionRoutingPolicy.routingMetadata(question.category(), question.deliveryMode()));
         metadata.put("status", QuestionStatus.EXPIRED.name());
         return new Event(EventType.QUESTION_EXPIRED, timestamp, question.sessionId(), metadata);
     }

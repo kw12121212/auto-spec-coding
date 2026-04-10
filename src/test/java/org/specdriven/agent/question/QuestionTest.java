@@ -17,6 +17,7 @@ class QuestionTest {
                 "Choosing the wrong branch will delay delivery.",
                 "Prefer the stable release branch.",
                 QuestionStatus.OPEN,
+                QuestionCategory.PLAN_SELECTION,
                 DeliveryMode.AUTO_AI_REPLY
         );
 
@@ -24,6 +25,7 @@ class QuestionTest {
         assertEquals("session-1", question.sessionId());
         assertEquals("Which branch should I take?", question.question());
         assertEquals(QuestionStatus.OPEN, question.status());
+        assertEquals(QuestionCategory.PLAN_SELECTION, question.category());
         assertEquals(DeliveryMode.AUTO_AI_REPLY, question.deliveryMode());
     }
 
@@ -36,6 +38,7 @@ class QuestionTest {
                 "Potential irreversible operation.",
                 "Ask a human before proceeding.",
                 QuestionStatus.WAITING_FOR_ANSWER,
+                QuestionCategory.IRREVERSIBLE_APPROVAL,
                 DeliveryMode.PAUSE_WAIT_HUMAN
         );
 
@@ -45,20 +48,38 @@ class QuestionTest {
         assertEquals("Potential irreversible operation.", payload.get("impact"));
         assertEquals("Ask a human before proceeding.", payload.get("recommendation"));
         assertEquals("WAITING_FOR_ANSWER", payload.get("status"));
+        assertEquals("IRREVERSIBLE_APPROVAL", payload.get("category"));
         assertEquals("PAUSE_WAIT_HUMAN", payload.get("deliveryMode"));
+        assertEquals("Category IRREVERSIBLE_APPROVAL requires human approval.", payload.get("routingReason"));
         assertThrows(UnsupportedOperationException.class, () -> payload.put("extra", "x"));
+    }
+
+    @Test
+    void humanOnlyCategory_rejectsAutoAiReply() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> new Question(
+                "q-3",
+                "session-3",
+                "Should we delete the backup?",
+                "Deletion is irreversible.",
+                "Require explicit approval.",
+                QuestionStatus.OPEN,
+                QuestionCategory.IRREVERSIBLE_APPROVAL,
+                DeliveryMode.AUTO_AI_REPLY
+        ));
+
+        assertTrue(error.getMessage().contains("requires human approval"));
     }
 
     @Test
     void blankRequiredFields_rejected() {
         assertThrows(IllegalArgumentException.class, () -> new Question(
                 " ", "session", "question", "impact", "recommendation",
-                QuestionStatus.OPEN, DeliveryMode.AUTO_AI_REPLY));
+                QuestionStatus.OPEN, QuestionCategory.CLARIFICATION, DeliveryMode.AUTO_AI_REPLY));
         assertThrows(IllegalArgumentException.class, () -> new Question(
                 "q", "", "question", "impact", "recommendation",
-                QuestionStatus.OPEN, DeliveryMode.AUTO_AI_REPLY));
+                QuestionStatus.OPEN, QuestionCategory.CLARIFICATION, DeliveryMode.AUTO_AI_REPLY));
         assertThrows(IllegalArgumentException.class, () -> new Question(
                 "q", "session", " ", "impact", "recommendation",
-                QuestionStatus.OPEN, DeliveryMode.AUTO_AI_REPLY));
+                QuestionStatus.OPEN, QuestionCategory.CLARIFICATION, DeliveryMode.AUTO_AI_REPLY));
     }
 }

@@ -90,6 +90,7 @@ class QuestionRuntimeTest {
                 "The workflow cannot proceed without a decision.",
                 "Use the safest documented option.",
                 QuestionStatus.WAITING_FOR_ANSWER,
+                QuestionCategory.PERMISSION_CONFIRMATION,
                 deliveryMode
         );
     }

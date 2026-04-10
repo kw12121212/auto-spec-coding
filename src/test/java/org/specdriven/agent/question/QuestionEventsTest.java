@@ -17,6 +17,7 @@ class QuestionEventsTest {
                 "A wrong timeout may break the rollout.",
                 "Use the existing production default.",
                 QuestionStatus.OPEN,
+                QuestionCategory.CLARIFICATION,
                 DeliveryMode.AUTO_AI_REPLY
         );
 
@@ -26,6 +27,7 @@ class QuestionEventsTest {
         assertEquals("session-10", event.source());
         assertEquals("q-10", event.metadata().get("questionId"));
         assertEquals("session-10", event.metadata().get("sessionId"));
+        assertEquals("CLARIFICATION", event.metadata().get("category"));
         assertEquals("AUTO_AI_REPLY", event.metadata().get("deliveryMode"));
         assertEquals("OPEN", event.metadata().get("status"));
         assertTrue(event.toJson().contains("\"deliveryMode\":\"AUTO_AI_REPLY\""));
@@ -40,6 +42,7 @@ class QuestionEventsTest {
                 "Skipping retry may leave the task incomplete.",
                 "Retry once with the known safe parameters.",
                 QuestionStatus.ANSWERED,
+                QuestionCategory.PLAN_SELECTION,
                 DeliveryMode.AUTO_AI_REPLY
         );
         Answer answer = new Answer(
@@ -59,6 +62,7 @@ class QuestionEventsTest {
         assertEquals(EventType.QUESTION_ANSWERED, event.type());
         assertEquals("q-11", event.metadata().get("questionId"));
         assertEquals("session-11", event.metadata().get("sessionId"));
+        assertEquals("PLAN_SELECTION", event.metadata().get("category"));
         assertEquals("ANSWER_ACCEPTED", event.metadata().get("decision"));
         assertEquals("AI_AGENT", event.metadata().get("source"));
         assertEquals(0.74d, (Double) event.metadata().get("confidence"));
@@ -75,6 +79,7 @@ class QuestionEventsTest {
                 "Immediate deploy may break production.",
                 "Escalate to a human approver.",
                 QuestionStatus.ESCALATED,
+                QuestionCategory.IRREVERSIBLE_APPROVAL,
                 DeliveryMode.PAUSE_WAIT_HUMAN
         );
         Answer answer = new Answer(
@@ -92,8 +97,10 @@ class QuestionEventsTest {
         Event event = QuestionEvents.questionEscalated(question, answer, 320L);
 
         assertEquals(EventType.QUESTION_ESCALATED, event.type());
+        assertEquals("IRREVERSIBLE_APPROVAL", event.metadata().get("category"));
         assertEquals("Irreversible production changes require human approval.",
                 event.metadata().get("escalationReason"));
+        assertEquals("Category IRREVERSIBLE_APPROVAL requires human approval.", event.metadata().get("routingReason"));
         assertEquals("PAUSE_WAIT_HUMAN", event.metadata().get("deliveryMode"));
     }
 
@@ -106,6 +113,7 @@ class QuestionEventsTest {
                 "Deploying without approval is unsafe.",
                 "Send to mobile approver.",
                 QuestionStatus.WAITING_FOR_ANSWER,
+                QuestionCategory.PERMISSION_CONFIRMATION,
                 DeliveryMode.PUSH_MOBILE_WAIT_HUMAN
         );
         Answer answer = new Answer(

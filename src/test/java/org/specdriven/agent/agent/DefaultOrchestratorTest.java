@@ -15,6 +15,7 @@ import org.specdriven.agent.question.Answer;
 import org.specdriven.agent.question.AnswerSource;
 import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionCategory;
 import org.specdriven.agent.question.QuestionDecision;
 import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.tool.*;
@@ -452,6 +453,7 @@ class DefaultOrchestratorTest {
                                 "question", "Should we deploy now?",
                                 "impact", "A bad deploy could break production.",
                                 "recommendation", "Wait for human approval.",
+                                "category", QuestionCategory.IRREVERSIBLE_APPROVAL.name(),
                                 "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
                         ),
                         "call-q1"
@@ -540,6 +542,7 @@ class DefaultOrchestratorTest {
                             "question", "Need rollback approval?",
                             "impact", "Rolling back too early may hide the real issue.",
                             "recommendation", "Wait for operator input.",
+                            "category", QuestionCategory.PERMISSION_CONFIRMATION.name(),
                             "deliveryMode", DeliveryMode.PUSH_MOBILE_WAIT_HUMAN.name(),
                             "questionId", "timeout-q1"
                     ),
@@ -599,6 +602,7 @@ class DefaultOrchestratorTest {
                         "question", "Delete the old backup?",
                         "impact", "This action is irreversible.",
                         "recommendation", "Require human approval.",
+                        "category", QuestionCategory.IRREVERSIBLE_APPROVAL.name(),
                         "questionId", "close-q1",
                         "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
                 ),
@@ -665,6 +669,7 @@ class DefaultOrchestratorTest {
                         "question", "Need approval?",
                         "impact", "This cannot continue without approval.",
                         "recommendation", "Pause for a human answer.",
+                        "category", QuestionCategory.PERMISSION_CONFIRMATION.name(),
                         "questionId", "transition-q1",
                         "deliveryMode", DeliveryMode.PAUSE_WAIT_HUMAN.name()
                 ),

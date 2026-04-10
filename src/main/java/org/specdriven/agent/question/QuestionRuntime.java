@@ -102,6 +102,7 @@ public class QuestionRuntime {
                 waitingQuestion.impact(),
                 waitingQuestion.recommendation(),
                 QuestionStatus.ANSWERED,
+                waitingQuestion.category(),
                 waitingQuestion.deliveryMode());
         terminalStatusByQuestionId.put(answeredQuestion.questionId(), answeredQuestion.status());
         eventBus.publish(QuestionEvents.questionAnswered(answeredQuestion, answer, System.currentTimeMillis()));
@@ -122,6 +123,7 @@ public class QuestionRuntime {
                 waitingQuestion.impact(),
                 waitingQuestion.recommendation(),
                 QuestionStatus.EXPIRED,
+                waitingQuestion.category(),
                 waitingQuestion.deliveryMode());
         terminalStatusByQuestionId.put(expiredQuestion.questionId(), expiredQuestion.status());
         eventBus.publish(QuestionEvents.questionExpired(expiredQuestion, System.currentTimeMillis()));
@@ -142,6 +144,7 @@ public class QuestionRuntime {
                 waitingQuestion.impact(),
                 waitingQuestion.recommendation(),
                 QuestionStatus.CLOSED,
+                waitingQuestion.category(),
                 waitingQuestion.deliveryMode());
         terminalStatusByQuestionId.put(closedQuestion.questionId(), closedQuestion.status());
         return closedQuestion;
