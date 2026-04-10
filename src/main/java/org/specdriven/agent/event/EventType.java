@@ -33,6 +33,7 @@ public enum EventType {
     LOOP_RESUMED,
     LOOP_STOPPED,
     LOOP_ITERATION_COMPLETED,
+    LOOP_PROGRESS_SAVED,
     LOOP_ERROR,
     ERROR
 }

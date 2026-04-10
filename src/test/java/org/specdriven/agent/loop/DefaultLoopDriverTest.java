@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -247,5 +248,143 @@ class DefaultLoopDriverTest {
         LoopState state = driver.getState();
         assertTrue(state == LoopState.ERROR || state == LoopState.STOPPED,
                 "Expected ERROR or STOPPED but got " + state);
+    }
+
+    // -------------------------------------------------------------------------
+    // Persistence integration tests
+    // -------------------------------------------------------------------------
+
+    private LealoneLoopIterationStore createStore(SimpleEventBus bus) {
+        String dbName = "test_driver_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        return new LealoneLoopIterationStore(bus, jdbcUrl);
+    }
+
+    @Test
+    void startWithPriorProgressRecoversCompletedChanges() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        // Pre-populate the store with prior progress
+        store.saveProgress(new LoopProgress(LoopState.STOPPED, Set.of("already-done"), 1));
+        store.saveIteration(new LoopIteration(1, "already-done", "m.md",
+                100L, 200L, IterationStatus.SUCCESS, null));
+
+        CountDownLatch done = new CountDownLatch(1);
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx -> {
+            // Verify that completedChangeNames contains the recovered name
+            assertTrue(ctx.completedChangeNames().contains("already-done"));
+            done.countDown();
+            return Optional.of(new LoopCandidate("new-change", "m.md", "goal"));
+        };
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, new StubLoopPipeline(), store);
+        driver.start();
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200);
+
+        assertEquals(2, driver.getCompletedIterations().size());
+        assertEquals("already-done", driver.getCompletedIterations().get(0).changeName());
+        assertEquals("new-change", driver.getCompletedIterations().get(1).changeName());
+    }
+
+    @Test
+    void iterationCompletionPersistsToStore() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        CountDownLatch done = new CountDownLatch(1);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx -> {
+            done.countDown();
+            return Optional.of(new LoopCandidate("persisted-change", "m.md", "goal"));
+        };
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, new StubLoopPipeline(), store);
+        driver.start();
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200);
+
+        // Check that the store has the iteration
+        List<LoopIteration> iterations = store.loadIterations();
+        assertEquals(1, iterations.size());
+        assertEquals("persisted-change", iterations.get(0).changeName());
+
+        // Check that progress was saved
+        Optional<LoopProgress> progress = store.loadProgress();
+        assertTrue(progress.isPresent());
+        assertTrue(progress.get().completedChangeNames().contains("persisted-change"));
+    }
+
+    @Test
+    void stopPersistsFinalSnapshot() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        CountDownLatch started = new CountDownLatch(1);
+        LoopConfig cfg = LoopConfig.defaults(Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx -> {
+            started.countDown();
+            try { Thread.sleep(10000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            return Optional.of(new LoopCandidate("c", "m.md", "g"));
+        };
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, new StubLoopPipeline(), store);
+        driver.start();
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+
+        driver.stop();
+        Thread.sleep(100);
+
+        Optional<LoopProgress> progress = store.loadProgress();
+        assertTrue(progress.isPresent());
+        assertEquals(LoopState.STOPPED, progress.get().loopState());
+    }
+
+    @Test
+    void nullStoreFallsBackToInMemoryBehavior() throws Exception {
+        SimpleEventBus bus = eventBus();
+        CountDownLatch done = new CountDownLatch(1);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx -> {
+            done.countDown();
+            return Optional.of(new LoopCandidate("c", "m.md", "g"));
+        };
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, new StubLoopPipeline(), null);
+        driver.start();
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(1, driver.getCompletedIterations().size());
+    }
+
+    @Test
+    void existingConstructorsWorkWithoutStore() throws Exception {
+        SimpleEventBus bus = eventBus();
+
+        // Two-arg constructor
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        CountDownLatch done1 = new CountDownLatch(1);
+        LoopDriver driver1 = new DefaultLoopDriver(cfg, ctx -> {
+            done1.countDown();
+            return Optional.of(new LoopCandidate("c", "m.md", "g"));
+        });
+        driver1.start();
+        assertTrue(done1.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200);
+        assertEquals(LoopState.STOPPED, driver1.getState());
+
+        // Three-arg constructor
+        CountDownLatch done2 = new CountDownLatch(1);
+        LoopDriver driver2 = new DefaultLoopDriver(cfg, ctx -> {
+            done2.countDown();
+            return Optional.of(new LoopCandidate("c", "m.md", "g"));
+        }, new StubLoopPipeline());
+        driver2.start();
+        assertTrue(done2.await(5, TimeUnit.SECONDS));
+        Thread.sleep(200);
+        assertEquals(LoopState.STOPPED, driver2.getState());
     }
 }

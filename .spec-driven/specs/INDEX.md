@@ -34,4 +34,4 @@
 - [skill-executor-plugin.md](skill-executor-plugin.md) - SkillServiceExecutorFactory, SkillServiceExecutor, PARAMETERS parsing — Lealone ServiceExecutor SPI plugin for executable skill services
 - [skill-cli-java.md](skill-cli-java.md) - Java-native shared spec-driven CLI for propose, apply, verify, roadmap reporting, maintenance, migration, and archive workflows
 - [release-preparation.md](release-preparation.md) - Repository release overview, three-surface examples, and repo-local Maven release metadata requirements
-- [autonomous-loop.md](autonomous-loop.md) - LoopState, LoopConfig, IterationStatus, LoopIteration, PlannedChange, LoopCandidate, LoopContext, LoopDriver, LoopScheduler, SequentialMilestoneScheduler, DefaultLoopDriver — autonomous loop state machine, scheduling, and event publication
+- [autonomous-loop.md](autonomous-loop.md) - LoopState, LoopConfig, IterationStatus, LoopIteration, PlannedChange, LoopCandidate, LoopContext, LoopDriver, LoopScheduler, SequentialMilestoneScheduler, DefaultLoopDriver, LoopProgress, LoopIterationStore, LealoneLoopIterationStore — autonomous loop state machine, scheduling, persistence, and event publication
