@@ -12,8 +12,6 @@ import java.util.Map;
  */
 public final class SkillMarkdownParser {
 
-    private static final Yaml YAML = new Yaml();
-
     private SkillMarkdownParser() {}
 
     /**
@@ -75,7 +73,7 @@ public final class SkillMarkdownParser {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> parseYaml(String yamlBlock, Path path) {
         try {
-            return YAML.loadAs(yamlBlock, Map.class);
+            return new Yaml().loadAs(yamlBlock, Map.class);
         } catch (Exception e) {
             throw new SkillSqlException("Invalid YAML in SKILL.md: " + path.toAbsolutePath(), e);
         }

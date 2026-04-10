@@ -121,7 +121,7 @@ class SkillAutoDiscoveryTest {
         SkillMarkdownParser.ParsedSkill parsed = SkillMarkdownParser.parse(skillDir.resolve("SKILL.md"));
         String sql = SkillSqlConverter.convert(parsed.frontmatter(), skillDir);
 
-        assertTrue(sql.contains("'skill_dir' '" + skillDir.toAbsolutePath() + "'"),
+        assertTrue(sql.contains("skill_dir = '" + skillDir.toAbsolutePath() + "'"),
                 "Expected skill_dir in SQL but got: " + sql);
         assertFalse(sql.contains("'instructions'"),
                 "Expected no inline instructions in SQL but got: " + sql);
