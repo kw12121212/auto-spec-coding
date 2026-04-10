@@ -29,7 +29,7 @@
 
 ## Planned Changes
 - `mobile-channel-config-registry` - Declared: complete - 定义移动交互渠道配置模型、provider registry 与按名称装配机制
-- `builtin-mobile-adapters` - Declared: planned - 提供多种内置移动交互适配器，覆盖 push / webhook / 企业 IM 等主流渠道
+- `builtin-mobile-adapters` - Declared: complete - 提供多种内置移动交互适配器，覆盖 push / webhook / 企业 IM 等主流渠道
 - `question-message-templating` - Declared: planned - 将 question payload 映射为渠道消息模板，支持字段裁剪、默认文案与安全脱敏
 - `mobile-reply-callbacks` - Declared: planned - 实现人工回复回流、签名校验、question correlation 与 agent 恢复执行链路
 - `mobile-delivery-observability` - Declared: planned - 提供渠道级重试、送达状态、失败原因、审计事件与运维观测能力
@@ -58,4 +58,5 @@
 - 首期 SHOULD 先支持两到三类代表性渠道，再通过 provider registry 扩展更多渠道
 - 渠道选择、凭据与回调地址应全部支持配置化，并与 vault 集成管理敏感信息
 - 如需支持具体厂商的深度能力，应在后续 change 中按渠道单独扩展，而不是在本里程碑一次性铺开
+
 
