@@ -11,7 +11,16 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.specdriven.agent.question.Answer;
+import org.specdriven.agent.question.AnswerSource;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionCategory;
+import org.specdriven.agent.question.QuestionDecision;
+import org.specdriven.agent.question.QuestionStatus;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
@@ -409,7 +418,7 @@ class DefaultLoopDriverTest {
         }
 
         @Override
-        public IterationResult execute(LoopCandidate candidate, LoopConfig config) {
+        public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
             return new IterationResult(IterationStatus.SUCCESS, null, 10,
                     List.of(PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
                             PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
@@ -528,5 +537,197 @@ class DefaultLoopDriverTest {
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
         assertTrue(exhaustedEvents.isEmpty()); // no exhaustion event
+    }
+
+    // -------------------------------------------------------------------------
+    // LoopAnswerAgent integration tests
+    // -------------------------------------------------------------------------
+
+    private static Question sampleQuestion() {
+        return new Question("q-test", "session-test",
+                "What should I do?", "Critical", "Use approach A",
+                QuestionStatus.WAITING_FOR_ANSWER, QuestionCategory.PERMISSION_CONFIRMATION,
+                DeliveryMode.PAUSE_WAIT_HUMAN);
+    }
+
+    private static Answer sampleAnswer() {
+        return new Answer("Use approach A", "AI analysis", "LoopAnswerAgent",
+                AnswerSource.AI_AGENT, 0.8, QuestionDecision.ANSWER_ACCEPTED,
+                DeliveryMode.AUTO_AI_REPLY, null, System.currentTimeMillis());
+    }
+
+    /**
+     * Pipeline that returns QUESTIONING on the first call,
+     * then SUCCESS on subsequent calls (for retry path).
+     */
+    private static class QuestioningThenSuccessPipeline implements LoopPipeline {
+        private final AtomicInteger callCount = new AtomicInteger();
+        private final Question question;
+
+        QuestioningThenSuccessPipeline(Question question) {
+            this.question = question;
+        }
+
+        @Override
+        public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
+            if (callCount.incrementAndGet() == 1) {
+                return new IterationResult(IterationStatus.QUESTIONING, null, 10,
+                        List.of(PipelinePhase.PROPOSE), 0, question);
+            }
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE));
+        }
+    }
+
+    @Test
+    void questioningWithResolvedAnswerAgentResumesAndSucceeds() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> routedEvents = new ArrayList<>();
+        List<Event> answeredEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ROUTED, routedEvents::add);
+        bus.subscribe(EventType.LOOP_QUESTION_ANSWERED, answeredEvents::add);
+
+        Question question = sampleQuestion();
+        Answer answer = sampleAnswer();
+
+        LoopAnswerAgent agentStub = (q, timeout) -> new AnswerResolution.Resolved(answer);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("my-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
+        driver.start();
+
+        Thread.sleep(1000);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        // Iteration completed with SUCCESS (from retry)
+        assertEquals(1, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.SUCCESS, driver.getCompletedIterations().get(0).status());
+
+        // Events published
+        assertFalse(routedEvents.isEmpty(), "LOOP_QUESTION_ROUTED should be published");
+        assertFalse(answeredEvents.isEmpty(), "LOOP_QUESTION_ANSWERED should be published");
+        assertEquals("q-test", routedEvents.get(0).metadata().get("questionId"));
+    }
+
+    @Test
+    void questioningWithEscalatedAnswerAgentPausesLoop() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> escalatedEvents = new ArrayList<>();
+        List<Event> pausedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ESCALATED, escalatedEvents::add);
+        bus.subscribe(EventType.LOOP_PAUSED, pausedEvents::add);
+
+        Question question = sampleQuestion();
+        LoopAnswerAgent agentStub = (q, timeout) -> new AnswerResolution.Escalated("too complex");
+
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("my-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertFalse(escalatedEvents.isEmpty(), "LOOP_QUESTION_ESCALATED should be published");
+        assertEquals("too complex", escalatedEvents.get(0).metadata().get("reason"));
+        // Partial iteration recorded
+        assertEquals(1, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
+        assertTrue(driver.getCompletedIterations().get(0).failureReason().contains("too complex"));
+
+        driver.stop();
+    }
+
+    @Test
+    void questioningWithNullAnswerAgentPausesWithConfiguredReason() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> escalatedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ESCALATED, escalatedEvents::add);
+
+        Question question = sampleQuestion();
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("my-change", "m.md", "goal"));
+
+        // No answer agent — pass null
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, null);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertEquals(1, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
+        assertTrue(driver.getCompletedIterations().get(0).failureReason()
+                .contains("no answer agent configured"));
+        assertFalse(escalatedEvents.isEmpty());
+
+        driver.stop();
+    }
+
+    @Test
+    void loopQuestionRoutedEventContainsRequiredMetadata() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> routedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ROUTED, routedEvents::add);
+
+        Question question = sampleQuestion();
+        Answer answer = sampleAnswer();
+        LoopAnswerAgent agentStub = (q, timeout) -> new AnswerResolution.Resolved(answer);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("routed-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
+        driver.start();
+
+        Thread.sleep(1000);
+
+        assertFalse(routedEvents.isEmpty());
+        Event routed = routedEvents.get(0);
+        assertEquals("q-test", routed.metadata().get("questionId"));
+        assertEquals("routed-change", routed.metadata().get("changeName"));
+        assertEquals("session-test", routed.metadata().get("sessionId"));
+
+        driver.stop();
+    }
+
+    @Test
+    void loopQuestionAnsweredEventContainsConfidence() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> answeredEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ANSWERED, answeredEvents::add);
+
+        Question question = sampleQuestion();
+        Answer answer = sampleAnswer();
+        LoopAnswerAgent agentStub = (q, timeout) -> new AnswerResolution.Resolved(answer);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("answered-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
+        driver.start();
+
+        Thread.sleep(1000);
+
+        assertFalse(answeredEvents.isEmpty());
+        Event answered = answeredEvents.get(0);
+        assertEquals("q-test", answered.metadata().get("questionId"));
+        assertEquals(0.8, (double) answered.metadata().get("confidence"), 0.001);
+
+        driver.stop();
     }
 }

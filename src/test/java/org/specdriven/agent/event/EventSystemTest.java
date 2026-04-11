@@ -23,7 +23,7 @@ class EventSystemTest {
     @Test
     void eventTypeCoversAllValues() {
         EventType[] types = EventType.values();
-        assertEquals(22, types.length);
+        assertEquals(36, types.length);
         assertNotNull(EventType.valueOf("TOOL_EXECUTED"));
         assertNotNull(EventType.valueOf("AGENT_STATE_CHANGED"));
         assertNotNull(EventType.valueOf("TASK_CREATED"));
@@ -46,6 +46,20 @@ class EventSystemTest {
         assertNotNull(EventType.valueOf("QUESTION_ANSWERED"));
         assertNotNull(EventType.valueOf("QUESTION_ESCALATED"));
         assertNotNull(EventType.valueOf("QUESTION_EXPIRED"));
+        assertNotNull(EventType.valueOf("DELIVERY_ATTEMPTED"));
+        assertNotNull(EventType.valueOf("DELIVERY_SUCCEEDED"));
+        assertNotNull(EventType.valueOf("DELIVERY_FAILED"));
+        assertNotNull(EventType.valueOf("LOOP_STARTED"));
+        assertNotNull(EventType.valueOf("LOOP_PAUSED"));
+        assertNotNull(EventType.valueOf("LOOP_RESUMED"));
+        assertNotNull(EventType.valueOf("LOOP_STOPPED"));
+        assertNotNull(EventType.valueOf("LOOP_ITERATION_COMPLETED"));
+        assertNotNull(EventType.valueOf("LOOP_PROGRESS_SAVED"));
+        assertNotNull(EventType.valueOf("LOOP_CONTEXT_EXHAUSTED"));
+        assertNotNull(EventType.valueOf("LOOP_QUESTION_ROUTED"));
+        assertNotNull(EventType.valueOf("LOOP_QUESTION_ANSWERED"));
+        assertNotNull(EventType.valueOf("LOOP_QUESTION_ESCALATED"));
+        assertNotNull(EventType.valueOf("LOOP_ERROR"));
     }
 
     @Test

@@ -27,6 +27,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private final LoopScheduler scheduler;
     private final LoopPipeline pipeline;
     private final LoopIterationStore store;
+    private final LoopAnswerAgent answerAgent;
     private final Object stateLock = new Object();
 
     private LoopState state = LoopState.IDLE;
@@ -38,18 +39,25 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile ContextWindowManager contextManager;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
-        this(config, scheduler, new StubLoopPipeline(), null);
+        this(config, scheduler, new StubLoopPipeline(), null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline) {
-        this(config, scheduler, pipeline, null);
+        this(config, scheduler, pipeline, null, null);
     }
 
-    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline, LoopIterationStore store) {
+    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
+                             LoopIterationStore store) {
+        this(config, scheduler, pipeline, store, null);
+    }
+
+    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
+                             LoopIterationStore store, LoopAnswerAgent answerAgent) {
         this.config = config;
         this.scheduler = scheduler;
         this.pipeline = pipeline;
         this.store = store;
+        this.answerAgent = answerAgent;
     }
 
     @Override
@@ -204,6 +212,76 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 // Execute pipeline
                 IterationResult pipelineResult = pipeline.execute(c, config);
+
+                // Handle QUESTIONING: route to answer agent or escalate
+                if (pipelineResult.status() == IterationStatus.QUESTIONING) {
+                    publishEvent(EventType.LOOP_QUESTION_ROUTED, Map.of(
+                            "questionId", pipelineResult.question().questionId(),
+                            "changeName", c.changeName(),
+                            "sessionId", pipelineResult.question().sessionId()
+                    ));
+                    synchronized (stateLock) {
+                        state.requireTransitionTo(LoopState.QUESTIONING);
+                        state = LoopState.QUESTIONING;
+                    }
+
+                    AnswerResolution resolution;
+                    if (answerAgent == null) {
+                        resolution = new AnswerResolution.Escalated("no answer agent configured");
+                    } else {
+                        resolution = answerAgent.resolve(
+                                pipelineResult.question(), config.iterationTimeoutSeconds());
+                    }
+
+                    if (resolution instanceof AnswerResolution.Resolved resolved) {
+                        publishEvent(EventType.LOOP_QUESTION_ANSWERED, Map.of(
+                                "questionId", pipelineResult.question().questionId(),
+                                "changeName", c.changeName(),
+                                "confidence", resolved.answer().confidence()
+                        ));
+                        synchronized (stateLock) {
+                            state.requireTransitionTo(LoopState.RUNNING);
+                            state = LoopState.RUNNING;
+                        }
+                        pipelineResult = pipeline.execute(
+                                c, config, Set.copyOf(pipelineResult.phasesCompleted()));
+                        // Fall through to checkpoint/complete handling below
+                    } else {
+                        AnswerResolution.Escalated escalated = (AnswerResolution.Escalated) resolution;
+                        publishEvent(EventType.LOOP_QUESTION_ESCALATED, Map.of(
+                                "questionId", pipelineResult.question().questionId(),
+                                "changeName", c.changeName(),
+                                "reason", escalated.reason()
+                        ));
+                        synchronized (stateLock) {
+                            state.requireTransitionTo(LoopState.PAUSED);
+                            state = LoopState.PAUSED;
+                        }
+                        LoopIteration partial = new LoopIteration(
+                                iterationCount, c.changeName(), c.milestoneFile(),
+                                startedAt, System.currentTimeMillis(),
+                                IterationStatus.QUESTIONING, escalated.reason()
+                        );
+                        synchronized (stateLock) {
+                            completedIterations.add(partial);
+                            currentIteration.set(null);
+                        }
+                        if (store != null) {
+                            store.saveIteration(partial);
+                            store.saveProgress(buildSnapshot(0));
+                        }
+                        synchronized (stateLock) {
+                            try {
+                                stateLock.wait();
+                            } catch (InterruptedException e) {
+                                if (stopRequested) return;
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
+                        continue;
+                    }
+                }
 
                 // Checkpoint
                 synchronized (stateLock) {

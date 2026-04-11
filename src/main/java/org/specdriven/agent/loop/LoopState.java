@@ -11,6 +11,7 @@ public enum LoopState {
     RECOMMENDING,
     RUNNING,
     CHECKPOINT,
+    QUESTIONING,
     PAUSED,
     STOPPED,
     ERROR;
@@ -18,8 +19,9 @@ public enum LoopState {
     private static final Map<LoopState, Set<LoopState>> VALID_TRANSITIONS = Map.of(
             IDLE, Set.of(RECOMMENDING),
             RECOMMENDING, Set.of(RUNNING, PAUSED, STOPPED, ERROR),
-            RUNNING, Set.of(CHECKPOINT, PAUSED, STOPPED, ERROR),
+            RUNNING, Set.of(CHECKPOINT, QUESTIONING, PAUSED, STOPPED, ERROR),
             CHECKPOINT, Set.of(RECOMMENDING, PAUSED, STOPPED, ERROR),
+            QUESTIONING, Set.of(RUNNING, PAUSED, ERROR),
             PAUSED, Set.of(RECOMMENDING),
             ERROR, Set.of(IDLE)
     );

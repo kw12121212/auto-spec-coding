@@ -8,6 +8,13 @@ import org.specdriven.agent.agent.OrchestratorConfig;
 import org.specdriven.agent.agent.SimpleAgentContext;
 import org.specdriven.agent.agent.SystemMessage;
 import org.specdriven.agent.agent.UserMessage;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionCategory;
+import org.specdriven.agent.question.QuestionRuntime;
+import org.specdriven.agent.question.QuestionStatus;
 import org.specdriven.agent.tool.BashTool;
 import org.specdriven.agent.tool.EditTool;
 import org.specdriven.agent.tool.GlobTool;
@@ -25,7 +32,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -67,7 +76,7 @@ public class SpecDrivenPipeline implements LoopPipeline {
     }
 
     @Override
-    public IterationResult execute(LoopCandidate candidate, LoopConfig config) {
+    public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
         long startMs = System.currentTimeMillis();
         long deadlineMs = startMs + config.iterationTimeoutSeconds() * 1000L;
         List<PipelinePhase> completed = new ArrayList<>();
@@ -77,35 +86,52 @@ public class SpecDrivenPipeline implements LoopPipeline {
             TokenAccumulator tokenAccumulator = new TokenAccumulator(rawClient);
 
             for (PipelinePhase phase : PipelinePhase.ordered()) {
+                if (skipPhases.contains(phase)) {
+                    continue;
+                }
+
                 if (System.currentTimeMillis() > deadlineMs) {
                     return result(IterationStatus.TIMED_OUT,
                             "Timeout exceeded before " + phase.name() + " phase",
-                            startMs, completed, tokenAccumulator.totalTokens());
+                            startMs, completed, tokenAccumulator.totalTokens(), null);
                 }
 
-                executePhase(phase, candidate, config, tokenAccumulator);
-                completed.add(phase);
+                QuestionRuntime questionRuntime = new QuestionRuntime(config.eventBus());
+                Consumer<Event> questionListener = event -> {
+                    throw new QuestionCaptureException(reconstructQuestion(event));
+                };
+                config.eventBus().subscribe(EventType.QUESTION_CREATED, questionListener);
+                try {
+                    executePhase(phase, candidate, config, tokenAccumulator, questionRuntime);
+                    completed.add(phase);
+                } catch (QuestionCaptureException e) {
+                    return result(IterationStatus.QUESTIONING, null, startMs, completed,
+                            tokenAccumulator.totalTokens(), e.question());
+                } finally {
+                    config.eventBus().unsubscribe(EventType.QUESTION_CREATED, questionListener);
+                }
             }
 
             return result(IterationStatus.SUCCESS, null, startMs, completed,
-                    tokenAccumulator.totalTokens());
+                    tokenAccumulator.totalTokens(), null);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return result(IterationStatus.TIMED_OUT,
                     "Interrupted during pipeline execution",
-                    startMs, completed, 0);
+                    startMs, completed, 0, null);
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Pipeline execution failed", e);
             return result(IterationStatus.FAILED,
                     e.getMessage() != null ? e.getMessage() : "unknown error",
-                    startMs, completed, 0);
+                    startMs, completed, 0, null);
         }
     }
 
     private void executePhase(PipelinePhase phase,
                               LoopCandidate candidate,
                               LoopConfig config,
-                              LlmClient llmClient) throws IOException, InterruptedException {
+                              LlmClient llmClient,
+                              QuestionRuntime questionRuntime) throws IOException, InterruptedException {
         String template = loadTemplate(phase);
         String systemPrompt = substituteVariables(template, candidate, config);
         String userPrompt = buildUserPrompt(phase, candidate, config);
@@ -122,7 +148,10 @@ public class SpecDrivenPipeline implements LoopPipeline {
                 UUID.randomUUID().toString(),
                 contextConfig,
                 toolRegistry,
-                conversation
+                conversation,
+                null,
+                null,
+                questionRuntime
         );
 
         OrchestratorConfig orchestratorConfig = OrchestratorConfig.defaults();
@@ -162,8 +191,37 @@ public class SpecDrivenPipeline implements LoopPipeline {
                                    String failureReason,
                                    long startMs,
                                    List<PipelinePhase> completed,
-                                   long tokenUsage) {
+                                   long tokenUsage,
+                                   Question question) {
         return new IterationResult(status, failureReason,
-                System.currentTimeMillis() - startMs, completed, tokenUsage);
+                System.currentTimeMillis() - startMs, completed, tokenUsage, question);
+    }
+
+    private static Question reconstructQuestion(Event event) {
+        Map<String, Object> md = event.metadata();
+        return new Question(
+                (String) md.get("questionId"),
+                (String) md.get("sessionId"),
+                (String) md.get("question"),
+                (String) md.get("impact"),
+                (String) md.get("recommendation"),
+                QuestionStatus.valueOf((String) md.get("status")),
+                QuestionCategory.valueOf((String) md.get("category")),
+                DeliveryMode.valueOf((String) md.get("deliveryMode"))
+        );
+    }
+
+    private static final class QuestionCaptureException extends RuntimeException {
+        private final Question question;
+
+        QuestionCaptureException(Question question) {
+            super("Question captured: " + (question != null ? question.questionId() : "null"),
+                    null, true, false);
+            this.question = question;
+        }
+
+        Question question() {
+            return question;
+        }
     }
 }

@@ -111,4 +111,50 @@ class LoopStateTest {
         assertThrows(IllegalStateException.class,
                 () -> LoopState.PAUSED.requireTransitionTo(LoopState.RUNNING));
     }
+
+    // --- QUESTIONING state ---
+
+    @Test
+    void runningToQuestioning() {
+        assertDoesNotThrow(() -> LoopState.RUNNING.requireTransitionTo(LoopState.QUESTIONING));
+    }
+
+    @Test
+    void questioningToRunning() {
+        assertDoesNotThrow(() -> LoopState.QUESTIONING.requireTransitionTo(LoopState.RUNNING));
+    }
+
+    @Test
+    void questioningToPaused() {
+        assertDoesNotThrow(() -> LoopState.QUESTIONING.requireTransitionTo(LoopState.PAUSED));
+    }
+
+    @Test
+    void questioningToError() {
+        assertDoesNotThrow(() -> LoopState.QUESTIONING.requireTransitionTo(LoopState.ERROR));
+    }
+
+    @Test
+    void questioningRejectsTransitionToIdle() {
+        assertThrows(IllegalStateException.class,
+                () -> LoopState.QUESTIONING.requireTransitionTo(LoopState.IDLE));
+    }
+
+    @Test
+    void questioningRejectsTransitionToRecommending() {
+        assertThrows(IllegalStateException.class,
+                () -> LoopState.QUESTIONING.requireTransitionTo(LoopState.RECOMMENDING));
+    }
+
+    @Test
+    void questioningRejectsTransitionToCheckpoint() {
+        assertThrows(IllegalStateException.class,
+                () -> LoopState.QUESTIONING.requireTransitionTo(LoopState.CHECKPOINT));
+    }
+
+    @Test
+    void questioningRejectsTransitionToStopped() {
+        assertThrows(IllegalStateException.class,
+                () -> LoopState.QUESTIONING.requireTransitionTo(LoopState.STOPPED));
+    }
 }

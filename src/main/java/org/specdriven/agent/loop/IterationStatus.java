@@ -7,5 +7,6 @@ public enum IterationStatus {
     SUCCESS,
     FAILED,
     SKIPPED,
-    TIMED_OUT
+    TIMED_OUT,
+    QUESTIONING
 }

@@ -4,12 +4,13 @@
 
 ### Requirement: LoopState enum
 
-- MUST be a public enum in `org.specdriven.agent.loop` with states: IDLE, RECOMMENDING, RUNNING, CHECKPOINT, PAUSED, STOPPED, ERROR
+- MUST be a public enum in `org.specdriven.agent.loop` with states: IDLE, RECOMMENDING, RUNNING, CHECKPOINT, QUESTIONING, PAUSED, STOPPED, ERROR
 - MUST enforce valid state transitions:
   - IDLE → RECOMMENDING
   - RECOMMENDING → RUNNING, PAUSED, STOPPED, ERROR
-  - RUNNING → CHECKPOINT, PAUSED, STOPPED, ERROR
+  - RUNNING → CHECKPOINT, QUESTIONING, PAUSED, STOPPED, ERROR
   - CHECKPOINT → RECOMMENDING, PAUSED, STOPPED, ERROR
+  - QUESTIONING → RUNNING, PAUSED, ERROR
   - PAUSED → RECOMMENDING
   - ERROR → IDLE
 - MUST reject any transition not listed above by throwing `IllegalStateException` with a descriptive message
@@ -28,7 +29,8 @@
 
 ### Requirement: IterationStatus enum
 
-- MUST be a public enum in `org.specdriven.agent.loop` with values: SUCCESS, FAILED, SKIPPED, TIMED_OUT
+- MUST be a public enum in `org.specdriven.agent.loop` with values: SUCCESS, FAILED, SKIPPED, TIMED_OUT, QUESTIONING
+- `QUESTIONING` indicates the iteration was interrupted because a Question was detected in the pipeline; answer routing is in progress
 - Each value MUST be independently testable
 
 ### Requirement: LoopIteration record
@@ -90,10 +92,18 @@
 - MUST implement LoopDriver in `org.specdriven.agent.loop`
 - Constructor MUST accept `LoopConfig` and `LoopScheduler`
 - Constructor MUST accept `LoopConfig`, `LoopScheduler`, and `LoopPipeline`
+- Constructor MUST accept `LoopConfig`, `LoopScheduler`, `LoopPipeline`, `LoopIterationStore`, and `LoopAnswerAgent` (where `LoopAnswerAgent` MAY be null)
 - A backward-compatible constructor `DefaultLoopDriver(LoopConfig, LoopScheduler)` MUST remain, using a `StubLoopPipeline` that returns `IterationResult` with `status=SUCCESS` and empty phases
 - `start()` MUST launch a VirtualThread running the scheduling loop
 - The scheduling loop MUST check `maxIterations` before each iteration; when reached, MUST call `stop()` with reason "max iterations reached"
 - The scheduling loop MUST call `pipeline.execute(candidate, config)` during the RUNNING state
+- When the pipeline returns `status=QUESTIONING`:
+  - MUST publish `LOOP_QUESTION_ROUTED` event with metadata: `questionId` (String), `changeName` (String), `sessionId` (String)
+  - MUST transition `RUNNING → QUESTIONING`
+  - When `loopAnswerAgent` is non-null: MUST call `loopAnswerAgent.resolve(result.question(), config.iterationTimeoutSeconds())`
+    - On `Resolved`: MUST publish `LOOP_QUESTION_ANSWERED` (metadata: questionId, changeName, confidence), transition `QUESTIONING → RUNNING`, then re-invoke `pipeline.execute(candidate, config, Set.copyOf(result.phasesCompleted()))` to resume from the interrupted phase
+    - On `Escalated`: MUST publish `LOOP_QUESTION_ESCALATED` (metadata: questionId, changeName, reason), transition `QUESTIONING → PAUSED`, record a partial `LoopIteration` with `status=QUESTIONING` and `failureReason=resolution.reason()`, wait for resume
+  - When `loopAnswerAgent` is null: treat as `Escalated("no answer agent configured")`
 - The completed `LoopIteration` MUST use the `IterationResult.status` for its `status` field
 - The completed `LoopIteration` MUST use the `IterationResult.failureReason` for its `failureReason` field when status is not SUCCESS
 - `completedAt` MUST be set to the current time after `pipeline.execute()` returns, not before
@@ -105,7 +115,10 @@
 
 ### Requirement: Loop EventType additions
 
-- MUST add the following values to the existing `EventType` enum in `org.specdriven.agent.event`: LOOP_STARTED, LOOP_PAUSED, LOOP_RESUMED, LOOP_STOPPED, LOOP_ITERATION_COMPLETED, LOOP_ERROR
+- MUST add the following values to the existing `EventType` enum in `org.specdriven.agent.event`: LOOP_STARTED, LOOP_PAUSED, LOOP_RESUMED, LOOP_STOPPED, LOOP_ITERATION_COMPLETED, LOOP_QUESTION_ROUTED, LOOP_QUESTION_ANSWERED, LOOP_QUESTION_ESCALATED, LOOP_ERROR
+- `LOOP_QUESTION_ROUTED` — published when a question is detected and routing begins; metadata: `questionId` (String), `changeName` (String), `sessionId` (String)
+- `LOOP_QUESTION_ANSWERED` — published when `LoopAnswerAgent` returns `Resolved`; metadata: `questionId` (String), `changeName` (String), `confidence` (double)
+- `LOOP_QUESTION_ESCALATED` — published when `LoopAnswerAgent` returns `Escalated` or is absent; metadata: `questionId` (String), `changeName` (String), `reason` (String)
 - Existing EventType values MUST NOT change
 
 ### Requirement: PipelinePhase enum
@@ -117,15 +130,22 @@
 
 ### Requirement: IterationResult record
 
-- MUST be a Java record in `org.specdriven.agent.loop` with fields: `status` (IterationStatus), `failureReason` (String, nullable), `durationMs` (long), `phasesCompleted` (List<PipelinePhase>)
+- MUST be a Java record in `org.specdriven.agent.loop` with fields: `status` (IterationStatus), `failureReason` (String, nullable), `durationMs` (long), `phasesCompleted` (List<PipelinePhase>), `tokenUsage` (long), `question` (Question, nullable)
 - MUST be immutable
 - Compact constructor MUST defensively copy `phasesCompleted`, normalizing null to empty list
 - `durationMs` MUST be non-negative
+- `tokenUsage` MUST be non-negative; compact constructor MUST reject negative values with `IllegalArgumentException`
+- `question` MUST be non-null when `status == QUESTIONING`; MUST be null for all other statuses
+- Backward-compatible 5-arg constructor `(status, failureReason, durationMs, phasesCompleted, tokenUsage)` defaults `question` to null
+- Backward-compatible 4-arg constructor `(status, failureReason, durationMs, phasesCompleted)` defaults `tokenUsage=0` and `question=null`
 
 ### Requirement: LoopPipeline interface
 
 - MUST be a public interface in `org.specdriven.agent.loop`
-- MUST define `execute(LoopCandidate candidate, LoopConfig config)` returning `IterationResult`
+- MUST define `execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases)` as the primary method returning `IterationResult`
+- When `skipPhases` is empty, behavior MUST be identical to the no-skipPhases invocation
+- When `skipPhases` is non-empty, the implementation MUST skip those phases and start from the first non-skipped phase in `PipelinePhase.ordered()`
+- `execute(LoopCandidate, LoopConfig)` MUST remain as a default method delegating to the new overload with an empty set
 - Implementations MUST NOT throw checked exceptions — all failures MUST be captured in the returned `IterationResult` with appropriate `IterationStatus`
 
 ### Requirement: SpecDrivenPipeline
@@ -134,9 +154,11 @@
 - Constructor MUST accept a `Function<Path, LlmClient>` factory for creating LLM clients
 - Constructor MUST accept a `Map<String, Tool>` tool registry
 - Constructor MUST provide a convenience overload with default tools (bash, read, write, edit, glob, grep)
-- `execute()` MUST iterate through `PipelinePhase.ordered()` sequentially
+- `execute(candidate, config, skipPhases)` MUST iterate through `PipelinePhase.ordered()` sequentially, skipping any phases in `skipPhases`
 - For each phase, MUST load the instruction template from classpath, build user prompt, create Conversation, assemble SimpleAgentContext, run Orchestrator, track the phase as completed only if the orchestrator finishes without exception
-- If any phase throws an exception, MUST stop execution and return an `IterationResult` with `status=FAILED` and `failureReason` describing which phase failed and why
+- For each phase, MUST subscribe to `QUESTION_CREATED` events on the EventBus before running the orchestrator, and unsubscribe after the phase completes or is aborted
+- When a `QUESTION_CREATED` event fires during a phase, MUST abort that phase and return `IterationResult(status=QUESTIONING, question=<captured question>, phasesCompleted=<phases completed before the interrupted phase>)`
+- If any phase throws an exception (other than a QUESTION_CREATED abort), MUST stop execution and return an `IterationResult` with `status=FAILED` and `failureReason` describing which phase failed and why
 - If timeout deadline is exceeded before a phase, MUST return `IterationResult` with `status=TIMED_OUT`
 - If all phases complete, MUST return `IterationResult` with `status=SUCCESS`
 - `durationMs` MUST reflect wall-clock time from start to finish of `execute()`
@@ -261,3 +283,29 @@
 - `saveProgress()` MUST serialize the `tokenUsage` field in the JSON progress snapshot
 - `loadProgress()` MUST deserialize `tokenUsage` from JSON when present, defaulting to 0 when the key is absent
 - This ensures forward compatibility: old snapshots without `tokenUsage` can be loaded by new code
+
+### Requirement: AnswerResolution sealed interface
+
+- MUST be a sealed interface in `org.specdriven.agent.loop` with two permitted implementations:
+  - `Resolved(Answer answer)` — record; `answer` MUST be non-null; indicates the LoopAnswerAgent successfully produced an answer
+  - `Escalated(String reason)` — record; `reason` MUST be non-null; indicates the question cannot be automatically resolved
+- MUST NOT expose any mutable state
+
+### Requirement: LoopAnswerAgent interface
+
+- MUST be a public interface in `org.specdriven.agent.loop`
+- MUST define `resolve(Question question, int timeoutSeconds)` returning `AnswerResolution`
+- MUST NOT throw checked exceptions — all failures MUST be captured in the returned `AnswerResolution`
+- When `timeoutSeconds` is exceeded, MUST return `Escalated("timeout")`
+- Implementations MUST NOT modify the Question object
+
+### Requirement: DefaultLoopAnswerAgent
+
+- MUST implement `LoopAnswerAgent` in `org.specdriven.agent.loop`
+- Constructor MUST accept `LlmClient llmClient` and `QuestionRuntime questionRuntime`; both MUST be non-null
+- `resolve()` MUST construct a prompt from `question.question()`, `question.impact()`, and `question.recommendation()`
+- MUST run a single-turn LLM call (no tools) with the prompt within the specified timeout using a virtual thread executor
+- MUST parse the LLM response and construct an `Answer` with `source=AI_AGENT`, `decision=ANSWER_ACCEPTED`, `deliveryMode=AUTO_AI_REPLY`, `confidence=0.8`, `basisSummary="AI agent single-turn analysis"`, `sourceRef="LoopAnswerAgent"`, `answeredAt=System.currentTimeMillis()`
+- MUST call `questionRuntime.submitAnswer(question.sessionId(), question.questionId(), answer)` after constructing the Answer
+- When the LLM call or `submitAnswer` throws, MUST return `Escalated("<exception message>")`
+- When timeout is exceeded, MUST interrupt the virtual thread and return `Escalated("timeout")`

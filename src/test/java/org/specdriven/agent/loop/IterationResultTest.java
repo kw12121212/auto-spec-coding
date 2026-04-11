@@ -5,8 +5,18 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionCategory;
+import org.specdriven.agent.question.QuestionStatus;
 
 class IterationResultTest {
+
+    private static Question sampleQuestion() {
+        return new Question("q1", "session1", "What approach?", "Critical", "Use A",
+                QuestionStatus.WAITING_FOR_ANSWER, QuestionCategory.PERMISSION_CONFIRMATION,
+                DeliveryMode.PAUSE_WAIT_HUMAN);
+    }
 
     @Test
     void createsSuccessResult() {
@@ -61,5 +71,48 @@ class IterationResultTest {
     void zeroDurationIsValid() {
         assertDoesNotThrow(
                 () -> new IterationResult(IterationStatus.SUCCESS, null, 0, List.of()));
+    }
+
+    // --- QUESTIONING status ---
+
+    @Test
+    void questioningRequiresNonNullQuestion() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IterationResult(IterationStatus.QUESTIONING, null, 100, List.of(), 0, null));
+    }
+
+    @Test
+    void questioningWithNonNullQuestionIsValid() {
+        Question q = sampleQuestion();
+        IterationResult result = new IterationResult(
+                IterationStatus.QUESTIONING, null, 100, List.of(PipelinePhase.PROPOSE), 0, q);
+        assertEquals(IterationStatus.QUESTIONING, result.status());
+        assertNotNull(result.question());
+        assertEquals("q1", result.question().questionId());
+    }
+
+    @Test
+    void successWithNonNullQuestionThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IterationResult(IterationStatus.SUCCESS, null, 100, List.of(), 0, sampleQuestion()));
+    }
+
+    @Test
+    void failedWithNonNullQuestionThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IterationResult(IterationStatus.FAILED, "err", 100, List.of(), 0, sampleQuestion()));
+    }
+
+    @Test
+    void backwardCompatConstructorHasNullQuestion() {
+        IterationResult result = new IterationResult(IterationStatus.SUCCESS, null, 0, List.of());
+        assertNull(result.question());
+    }
+
+    @Test
+    void fiveArgConstructorHasNullQuestion() {
+        IterationResult result = new IterationResult(IterationStatus.SUCCESS, null, 0, List.of(), 100);
+        assertNull(result.question());
+        assertEquals(100, result.tokenUsage());
     }
 }
