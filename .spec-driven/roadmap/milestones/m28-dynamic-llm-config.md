@@ -1,0 +1,63 @@
+# M28 - 动态 LLM 配置与热切换
+
+## Goal
+
+利用 Lealone `SET LLM` SQL 语法和 `Database.setLLMParameters()` 机制，让本项目的多 provider 架构支持运行时动态配置和热切换 LLM 参数（model、provider、temperature 等），无需重启服务。
+
+## In Scope
+
+- LlmConfig 动态更新接口：支持运行时修改 model、apiKey、url、temperature 等参数
+- 基于 Lealone DB 的配置持久化：LLM 配置变更写入数据库，重启后恢复
+- `SET LLM` SQL 语句对接：通过 Lealone 的 SetDatabase 语句动态下发配置
+- Per-session / per-agent 粒度的 LLM 配置隔离
+- LlmProviderRegistry 运行时热切换：已注册的 provider 可在不中断会话的情况下更换底层参数
+- 配置变更事件通知：通过 EventBus 发布配置变更事件，下游组件可响应
+
+## Out of Scope
+
+- 新增 provider 类型（由 M5 覆盖）
+- LLM 调用本身的流式处理（M19）
+- 配置的 Web UI 管理界面（可通过 HTTP API 间接操作）
+- 跨进程配置同步
+
+## Done Criteria
+
+- 运行时调用 LlmConfig.update() 可立即生效于后续 LLM 调用，无需重建 client 实例
+- 通过 `SET LLM MODEL=xxx, PROVIDER=xxx` SQL 语句可动态切换当前 session 的 LLM 配置
+- 配置变更 MUST 持久化到 Lealone DB，服务重启后自动恢复最后有效配置
+- 不同 session 可持有不同的 LLM 配置互不干扰
+- 配置变更 MUST 触发 EventType.LLM_CONFIG_CHANGED 事件
+- OpenAiClient / ClaudeClient 必须支持参数热更新（特别是 model 和 baseUrl）
+- 有单元测试覆盖动态更新、持久化恢复、session 隔离、事件发布、并发安全场景
+
+## Planned Changes
+
+- `dynamic-llm-config` - Declared: planned - 扩展 LlmConfig 支持运行时动态更新，新增 update() 方法与变更监听机制
+- `llm-config-persistence` - Declared: planned - 基于 Lealone DB 实现 Llm 配置的 CRUD 持久化，含版本记录与回滚能力
+- `set-llm-sql-handler` - Declared: planned - 对接 Lealone SET LLM SQL 语句，解析参数并分发到 DynamicLlmConfig
+- `provider-hot-switch` - Declared: planned - 扩展 LlmProviderRegistry 支持运行时热切换 provider 参数，保证正在进行的请求不受影响
+- `llm-config-events` - Declared: planned - 定义 LLM 配置变更事件模型并通过 EventBus 发布，支持下游消费
+
+## Dependencies
+
+- M5 LLM Provider Layer（LlmProvider、LlmClient、LlmConfig 基础接口）
+- M1 核心接口（EventBus 用于事件发布）
+- Lealone 嵌入式数据库（用于配置持久化）
+- Lealone 更新：`a584523` SET LLM 语句 + `Database.setLLMParameters()` + `CodeAgentBase.init(Map)` 动态初始化
+
+## Risks
+
+- 正在进行的 LLM 请求在配置切换过程中可能出现行为不一致
+- 配置频繁变更可能导致 provider 连接池状态混乱
+- 恶意或错误的 SET LLM 语句可能导致服务不可用，需要权限校验
+- OpenAI/Claude SDK 的客户端对象可能不支持所有参数的热更新
+
+## Status
+- Declared: proposed
+
+## Notes
+
+- 配置变更应采用 Copy-on-Write 策略：创建新配置副本后原子替换引用，避免并发读写问题
+- 参考Lealone Database.llmParameters 的 CaseInsensitiveMap<String> 存储方式
+- 首期仅支持单连接级别（per-session）配置，暂不做全局广播
+- 安全考虑：SET LLM 操作应受 PermissionCheckHook 约束，非 admin 用户不可随意切换

@@ -20,6 +20,12 @@
 - [m24-autonomous-loop-driver.md](milestones/m24-autonomous-loop-driver.md) - M24 - 内置自主循环执行流水线 - complete
 - [m25-production-install-repair.md](milestones/m25-production-install-repair.md) - M25 - 生产环境一键安装与修复 - proposed
 - [m26-autonomous-loop-recovery-escalation.md](milestones/m26-autonomous-loop-recovery-escalation.md) - M26 - 自主循环恢复与升级控制 - proposed
+- [m27-smart-context-injection.md](milestones/m27-smart-context-injection.md) - M27 - 智能上下文注入与 Token 优化 - proposed
+- [m28-dynamic-llm-config.md](milestones/m28-dynamic-llm-config.md) - M28 - 动态 LLM 配置与热切换 - proposed
+- [m29-interactive-human-in-loop.md](milestones/m29-interactive-human-in-loop.md) - M29 - SQL+自然语言交互式人机协作 - proposed
+- [m30-dynamic-compilation-hotload.md](milestones/m30-dynamic-compilation-hotload.md) - M30 - 动态编译与 Skill 热加载 - proposed
+- [m31-orm-integration-enhancement.md](milestones/m31-orm-integration-enhancement.md) - M31 - ORM 集成增强 - proposed
+- [m32-lealone-platform-unification.md](milestones/m32-lealone-platform-unification.md) - M32 - Lealone 平台化统一基础设施 - proposed
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - complete
 - [m4-agent-lifecycle.md](milestones/m4-agent-lifecycle.md) - M4 - Agent 生命周期与编排 - complete
 - [m5-llm-backend.md](milestones/m5-llm-backend.md) - M5 - LLM Provider Layer - complete
