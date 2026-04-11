@@ -1,3 +1,14 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/LspClient.java
+    - src/main/java/org/specdriven/agent/tool/LspTool.java
+  tests:
+    - src/test/java/org/specdriven/agent/testsupport/MockLspServerMain.java
+    - src/test/java/org/specdriven/agent/tool/LspClientTest.java
+    - src/test/java/org/specdriven/agent/tool/LspToolTest.java
+---
+
 # Tool LSP Spec
 
 ## ADDED Requirements

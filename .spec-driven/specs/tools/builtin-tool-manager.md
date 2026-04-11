@@ -1,3 +1,20 @@
+---
+mapping:
+  implementation:
+    - scripts/download-builtin-tools.sh
+    - src/main/java/org/specdriven/agent/tool/builtin/Architecture.java
+    - src/main/java/org/specdriven/agent/tool/builtin/BuiltinTool.java
+    - src/main/java/org/specdriven/agent/tool/builtin/BuiltinToolException.java
+    - src/main/java/org/specdriven/agent/tool/builtin/BuiltinToolManager.java
+    - src/main/java/org/specdriven/agent/tool/builtin/DefaultBuiltinToolManager.java
+    - src/main/java/org/specdriven/agent/tool/builtin/OperatingSystem.java
+    - src/main/java/org/specdriven/agent/tool/builtin/Platform.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/builtin/BuiltinToolTest.java
+    - src/test/java/org/specdriven/agent/tool/builtin/DefaultBuiltinToolManagerTest.java
+    - src/test/java/org/specdriven/agent/tool/builtin/PlatformTest.java
+---
+
 # builtin-tool-manager.md
 
 ## ADDED Requirements

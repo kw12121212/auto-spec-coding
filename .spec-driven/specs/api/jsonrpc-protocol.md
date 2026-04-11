@@ -1,3 +1,20 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/json/JsonReader.java
+    - src/main/java/org/specdriven/agent/json/JsonWriter.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcCodec.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcError.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcNotification.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcProtocolException.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcRequest.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcResponse.java
+  tests:
+    - src/test/java/org/specdriven/agent/json/JsonReaderTest.java
+    - src/test/java/org/specdriven/agent/json/JsonWriterTest.java
+    - src/test/java/org/specdriven/agent/jsonrpc/JsonRpcProtocolTest.java
+---
+
 # jsonrpc-protocol.md
 
 ## ADDED Requirements

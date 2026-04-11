@@ -1,7 +1,5 @@
 package org.specdriven.agent.http;
 
-import org.apache.catalina.Context;
-import org.apache.catalina.startup.Tomcat;
 import org.junit.jupiter.api.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
@@ -10,17 +8,9 @@ import org.specdriven.agent.tool.ToolParameter;
 import org.specdriven.agent.tool.ToolResult;
 import org.specdriven.sdk.SpecDriven;
 
-import jakarta.servlet.DispatcherType;
-import jakarta.servlet.Filter;
-import org.apache.tomcat.util.descriptor.web.FilterDef;
-import org.apache.tomcat.util.descriptor.web.FilterMap;
-
-import java.io.File;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,89 +23,36 @@ class HttpE2eTest {
 
     private static final String API_KEY = "test-api-key";
 
-    private static Tomcat tomcat;
-    private static int port;
-    private static HttpClient client;
-    private static SpecDriven sdk;
+    private static HttpTestStack stack;
 
     @BeforeAll
     static void startServer() throws Exception {
-        sdk = SpecDriven.builder()
-                .registerTool(new StubTool("bash", "run commands",
-                        List.of(new ToolParameter("command", "string", "the command", true))))
-                .build();
-
-        tomcat = new Tomcat();
-        tomcat.setBaseDir(System.getProperty("java.io.tmpdir") + "/tomcat-e2e-" + UUID.randomUUID());
-        tomcat.setPort(0);
-
-        Context ctx = tomcat.addContext("", new File(".").getCanonicalPath());
-
-        addFilter(ctx, "authFilter", new AuthFilter(), "/api/v1/*", Map.of("API_KEYS", API_KEY));
-        addFilter(ctx, "rateLimitFilter", new RateLimitFilter(), "/api/v1/*", Map.of("RATE_LIMIT_MAX", "100", "RATE_LIMIT_WINDOW_SECONDS", "60"));
-
-        Tomcat.addServlet(ctx, "apiServlet", new HttpApiServlet(sdk));
-        ctx.addServletMappingDecoded("/api/v1/*", "apiServlet");
-
-        tomcat.start();
-        port = tomcat.getConnector().getLocalPort();
-
-        client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .build();
+        stack = new HttpTestStack(API_KEY, 100, 60, testSdk()).start();
     }
 
     @AfterAll
     static void stopServer() throws Exception {
-        if (tomcat != null) {
-            tomcat.stop();
-            tomcat.destroy();
-        }
-        if (sdk != null) {
-            sdk.close();
+        if (stack != null) {
+            stack.close();
         }
     }
 
     // --- Helpers ---
 
-    private String baseUrl() {
-        return "http://localhost:" + port + "/api/v1";
-    }
-
     private HttpResponse<String> get(String path) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + path))
-                .GET()
-                .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
+        return stack.get(path);
     }
 
     private HttpResponse<String> getWithAuth(String path) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + path))
-                .header("Authorization", "Bearer " + API_KEY)
-                .GET()
-                .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
+        return stack.getWithBearer(path);
     }
 
     private HttpResponse<String> postWithAuth(String path, String body) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + path))
-                .header("Authorization", "Bearer " + API_KEY)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
+        return stack.postWithBearer(path, body);
     }
 
     private HttpResponse<String> postWithAuthNoBody(String path) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + path))
-                .header("Authorization", "Bearer " + API_KEY)
-                .POST(HttpRequest.BodyPublishers.ofString(""))
-                .build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
+        return stack.postWithBearerNoBody(path);
     }
 
     private String jsonField(String json, String key) {
@@ -131,6 +68,44 @@ class HttpE2eTest {
         HttpResponse<String> resp = postWithAuth("/agent/run", "{\"prompt\":\"test\"}");
         assertEquals(200, resp.statusCode(), "createAgent should succeed");
         return jsonField(resp.body(), "agentId");
+    }
+
+    private static SpecDriven testSdk() {
+        return SpecDriven.builder()
+                .registerTool(new StubTool("bash", "run commands",
+                        List.of(new ToolParameter("command", "string", "the command", true))))
+                .build();
+    }
+
+    // --- Test stack fixture ---
+
+    @Test
+    @Timeout(10)
+    void testStackStartsAndStopsCleanly() throws Exception {
+        int releasedPort;
+        try (HttpTestStack localStack = new HttpTestStack(API_KEY, 5, 60, testSdk()).start()) {
+            HttpResponse<String> response = localStack.get("/health");
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("\"status\":\"ok\""));
+            releasedPort = localStack.port();
+        }
+
+        assertPortReleased(releasedPort);
+    }
+
+    private static void assertPortReleased(int port) throws Exception {
+        AssertionError lastError = null;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try (ServerSocket socket = new ServerSocket()) {
+                socket.setReuseAddress(true);
+                socket.bind(new InetSocketAddress("localhost", port));
+                return;
+            } catch (Exception e) {
+                lastError = new AssertionError("Port " + port + " was not released", e);
+                Thread.sleep(100);
+            }
+        }
+        throw lastError;
     }
 
     // --- Health endpoint ---
@@ -257,12 +232,7 @@ class HttpE2eTest {
     @Test
     @Timeout(10)
     void auth_validXApiKey_passes() throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + "/tools"))
-                .header("X-API-Key", API_KEY)
-                .GET()
-                .build();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = stack.getWithApiKey("/tools");
         assertEquals(200, resp.statusCode());
     }
 
@@ -277,12 +247,7 @@ class HttpE2eTest {
     @Test
     @Timeout(10)
     void auth_invalidKey_returns401() throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl() + "/tools"))
-                .header("Authorization", "Bearer wrong-key")
-                .GET()
-                .build();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = stack.getWithBearerToken("/tools", "wrong-key");
         assertEquals(401, resp.statusCode());
     }
 
@@ -302,47 +267,22 @@ class HttpE2eTest {
         private static final int LOW_MAX = 3;
         private static final int WINDOW_SEC = 2;
 
-        private Tomcat rlTomcat;
-        private int rlPort;
+        private HttpTestStack rateLimitStack;
 
         @BeforeEach
         void startRlServer() throws Exception {
-            SpecDriven rlSdk = SpecDriven.builder()
-                    .registerTool(new StubTool("bash", "run commands",
-                            List.of(new ToolParameter("command", "string", "the command", true))))
-                    .build();
-
-            rlTomcat = new Tomcat();
-            rlTomcat.setBaseDir(System.getProperty("java.io.tmpdir") + "/tomcat-rl-" + UUID.randomUUID());
-            rlTomcat.setPort(0);
-
-            Context ctx = rlTomcat.addContext("", new File(".").getCanonicalPath());
-
-            addFilter(ctx, "authFilter", new AuthFilter(), "/api/v1/*", Map.of("API_KEYS", API_KEY));
-            addFilter(ctx, "rateLimitFilter", new RateLimitFilter(), "/api/v1/*", Map.of("RATE_LIMIT_MAX", String.valueOf(LOW_MAX), "RATE_LIMIT_WINDOW_SECONDS", String.valueOf(WINDOW_SEC)));
-
-            Tomcat.addServlet(ctx, "apiServlet", new HttpApiServlet(rlSdk));
-            ctx.addServletMappingDecoded("/api/v1/*", "apiServlet");
-
-            rlTomcat.start();
-            rlPort = rlTomcat.getConnector().getLocalPort();
+            rateLimitStack = new HttpTestStack(API_KEY, LOW_MAX, WINDOW_SEC, testSdk()).start();
         }
 
         @AfterEach
         void stopRlServer() throws Exception {
-            if (rlTomcat != null) {
-                rlTomcat.stop();
-                rlTomcat.destroy();
+            if (rateLimitStack != null) {
+                rateLimitStack.close();
             }
         }
 
         private HttpResponse<String> rlGet(String path) throws Exception {
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:" + rlPort + "/api/v1" + path))
-                    .header("Authorization", "Bearer " + API_KEY)
-                    .GET()
-                    .build();
-            return client.send(req, HttpResponse.BodyHandlers.ofString());
+            return rateLimitStack.getWithBearer(path);
         }
 
         @Test
@@ -431,27 +371,9 @@ class HttpE2eTest {
         assertEquals("STOPPED", jsonField(stateResp2.body(), "state"));
     }
 
-    // --- Filter registration helper ---
-
-    private static void addFilter(Context ctx, String name, Filter filter, String urlPattern, Map<String, String> initParams) {
-        FilterDef def = new FilterDef();
-        def.setFilterName(name);
-        def.setFilter(filter);
-        if (initParams != null) {
-            initParams.forEach(def::addInitParameter);
-        }
-        ctx.addFilterDef(def);
-
-        FilterMap map = new FilterMap();
-        map.setFilterName(name);
-        map.addURLPatternDecoded(urlPattern);
-        map.setDispatcher(DispatcherType.REQUEST.name());
-        ctx.addFilterMap(map);
-    }
-
     // --- Stub Tool ---
 
-    record StubTool(String name, String description, List<ToolParameter> parameters) implements Tool {
+    private record StubTool(String name, String description, List<ToolParameter> parameters) implements Tool {
         @Override
         public String getName() { return name; }
         @Override

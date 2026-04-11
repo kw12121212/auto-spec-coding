@@ -1,3 +1,26 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/hook/PermissionCheckHook.java
+    - src/main/java/org/specdriven/agent/hook/ToolExecutionHook.java
+    - src/main/java/org/specdriven/agent/permission/AuditEntry.java
+    - src/main/java/org/specdriven/agent/permission/DefaultPermissionProvider.java
+    - src/main/java/org/specdriven/agent/permission/LealonePolicyStore.java
+    - src/main/java/org/specdriven/agent/permission/Permission.java
+    - src/main/java/org/specdriven/agent/permission/PermissionContext.java
+    - src/main/java/org/specdriven/agent/permission/PermissionDecision.java
+    - src/main/java/org/specdriven/agent/permission/PermissionProvider.java
+    - src/main/java/org/specdriven/agent/permission/PolicyStore.java
+    - src/main/java/org/specdriven/agent/permission/StoredPolicy.java
+  tests:
+    - src/test/java/org/specdriven/agent/hook/PermissionCheckHookTest.java
+    - src/test/java/org/specdriven/agent/permission/DefaultPermissionProviderWithStoreTest.java
+    - src/test/java/org/specdriven/agent/permission/LealonePolicyStoreConcurrentTest.java
+    - src/test/java/org/specdriven/agent/permission/LealonePolicyStoreTest.java
+    - src/test/java/org/specdriven/agent/permission/PermissionProviderTest.java
+    - src/test/java/org/specdriven/agent/permission/PermissionTest.java
+---
+
 # Permission Interface Spec
 
 ## Requirements

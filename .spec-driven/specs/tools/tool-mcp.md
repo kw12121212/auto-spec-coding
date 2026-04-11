@@ -1,3 +1,20 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/mcp/McpClient.java
+    - src/main/java/org/specdriven/agent/mcp/McpClientRegistry.java
+    - src/main/java/org/specdriven/agent/mcp/McpServer.java
+    - src/main/java/org/specdriven/agent/mcp/McpToolAdapter.java
+    - src/main/java/org/specdriven/agent/mcp/McpTransport.java
+  tests:
+    - src/test/java/org/specdriven/agent/mcp/McpClientRegistryTest.java
+    - src/test/java/org/specdriven/agent/mcp/McpClientTest.java
+    - src/test/java/org/specdriven/agent/mcp/McpServerTest.java
+    - src/test/java/org/specdriven/agent/mcp/McpToolAdapterTest.java
+    - src/test/java/org/specdriven/agent/mcp/McpTransportTest.java
+    - src/test/java/org/specdriven/agent/testsupport/MockMcpServerMain.java
+---
+
 # Tool MCP Spec
 
 ## ADDED Requirements

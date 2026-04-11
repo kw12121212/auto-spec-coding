@@ -1,3 +1,24 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/vault/LealoneVault.java
+    - src/main/java/org/specdriven/agent/vault/SecretVault.java
+    - src/main/java/org/specdriven/agent/vault/VaultEntry.java
+    - src/main/java/org/specdriven/agent/vault/VaultException.java
+    - src/main/java/org/specdriven/agent/vault/VaultFactory.java
+    - src/main/java/org/specdriven/agent/vault/VaultMasterKey.java
+    - src/main/java/org/specdriven/agent/vault/VaultResolver.java
+  tests:
+    - src/test/java/org/specdriven/agent/vault/LealoneVaultTest.java
+    - src/test/java/org/specdriven/agent/vault/SecretVaultTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultEntryTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultExceptionTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultFactoryTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultMasterKeyTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultResolverTest.java
+---
+
 # secret-vault.md
 
 ## ADDED Requirements

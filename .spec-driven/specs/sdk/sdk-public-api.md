@@ -1,3 +1,30 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/sdk/SdkAgent.java
+    - src/main/java/org/specdriven/sdk/SdkBuilder.java
+    - src/main/java/org/specdriven/sdk/SdkConfig.java
+    - src/main/java/org/specdriven/sdk/SdkConfigException.java
+    - src/main/java/org/specdriven/sdk/SdkEventListener.java
+    - src/main/java/org/specdriven/sdk/SdkException.java
+    - src/main/java/org/specdriven/sdk/SdkLlmException.java
+    - src/main/java/org/specdriven/sdk/SdkPermissionException.java
+    - src/main/java/org/specdriven/sdk/SdkToolException.java
+    - src/main/java/org/specdriven/sdk/SdkVaultException.java
+    - src/main/java/org/specdriven/sdk/SpecDriven.java
+  tests:
+    - src/test/java/org/specdriven/sdk/SdkAgentEventTest.java
+    - src/test/java/org/specdriven/sdk/SdkAgentQuestionTest.java
+    - src/test/java/org/specdriven/sdk/SdkAgentTest.java
+    - src/test/java/org/specdriven/sdk/SdkBuilderEventTest.java
+    - src/test/java/org/specdriven/sdk/SdkBuilderTest.java
+    - src/test/java/org/specdriven/sdk/SdkConfigTest.java
+    - src/test/java/org/specdriven/sdk/SdkEventListenerTest.java
+    - src/test/java/org/specdriven/sdk/SdkExceptionTest.java
+    - src/test/java/org/specdriven/sdk/SdkSubclassExceptionTest.java
+    - src/test/java/org/specdriven/sdk/SpecDrivenTest.java
+---
+
 # sdk-public-api.md
 
 ## ADDED Requirements

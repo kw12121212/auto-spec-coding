@@ -1,3 +1,14 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/skill/discovery/DiscoveryResult.java
+    - src/main/java/org/specdriven/skill/discovery/SkillAutoDiscovery.java
+    - src/main/java/org/specdriven/skill/discovery/SkillDiscoveryError.java
+  tests:
+    - src/test/java/org/specdriven/skill/discovery/RealSkillsDiscoveryTest.java
+    - src/test/java/org/specdriven/skill/discovery/SkillAutoDiscoveryTest.java
+---
+
 # skill-auto-discovery.md
 
 ## Requirements

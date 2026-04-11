@@ -1,3 +1,16 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/skill/sql/SkillFrontmatter.java
+    - src/main/java/org/specdriven/skill/sql/SkillMarkdownParser.java
+    - src/main/java/org/specdriven/skill/sql/SkillSqlConverter.java
+    - src/main/java/org/specdriven/skill/sql/SkillSqlException.java
+  tests:
+    - src/test/java/org/specdriven/skill/sql/RealSkillsIntegrationTest.java
+    - src/test/java/org/specdriven/skill/sql/SkillMarkdownParserTest.java
+    - src/test/java/org/specdriven/skill/sql/SkillSqlConverterTest.java
+---
+
 # skill-sql-converter.md
 
 ## ADDED Requirements

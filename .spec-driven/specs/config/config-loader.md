@@ -1,3 +1,17 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/config/Config.java
+    - src/main/java/org/specdriven/agent/config/ConfigException.java
+    - src/main/java/org/specdriven/agent/config/ConfigLoader.java
+    - src/main/java/org/specdriven/agent/vault/VaultFactory.java
+    - src/main/java/org/specdriven/agent/vault/VaultResolver.java
+  tests:
+    - src/test/java/org/specdriven/agent/config/ConfigLoaderTest.java
+    - src/test/java/org/specdriven/agent/config/ConfigLoaderVaultIntegrationTest.java
+    - src/test/java/org/specdriven/agent/vault/VaultFactoryTest.java
+---
+
 # Config Loader Spec
 
 ## ADDED Requirements

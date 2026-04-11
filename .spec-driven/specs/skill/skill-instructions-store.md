@@ -1,3 +1,13 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/skill/store/FileSystemInstructionStore.java
+    - src/main/java/org/specdriven/skill/store/SkillInstructionStore.java
+    - src/main/java/org/specdriven/skill/store/SkillInstructionStoreException.java
+  tests:
+    - src/test/java/org/specdriven/skill/store/SkillInstructionStoreTest.java
+---
+
 # skill-instructions-store.md
 
 ## SkillInstructionStoreException, SkillInstructionStore, FileSystemInstructionStore

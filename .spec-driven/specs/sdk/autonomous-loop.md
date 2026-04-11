@@ -1,3 +1,51 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/loop/AnswerResolution.java
+    - src/main/java/org/specdriven/agent/loop/ContextBudget.java
+    - src/main/java/org/specdriven/agent/loop/DefaultLoopAnswerAgent.java
+    - src/main/java/org/specdriven/agent/loop/DefaultLoopDriver.java
+    - src/main/java/org/specdriven/agent/loop/IterationResult.java
+    - src/main/java/org/specdriven/agent/loop/IterationStatus.java
+    - src/main/java/org/specdriven/agent/loop/LealoneLoopIterationStore.java
+    - src/main/java/org/specdriven/agent/loop/LoopAnswerAgent.java
+    - src/main/java/org/specdriven/agent/loop/LoopCandidate.java
+    - src/main/java/org/specdriven/agent/loop/LoopConfig.java
+    - src/main/java/org/specdriven/agent/loop/LoopContext.java
+    - src/main/java/org/specdriven/agent/loop/LoopDriver.java
+    - src/main/java/org/specdriven/agent/loop/LoopIteration.java
+    - src/main/java/org/specdriven/agent/loop/LoopIterationStore.java
+    - src/main/java/org/specdriven/agent/loop/LoopPipeline.java
+    - src/main/java/org/specdriven/agent/loop/LoopProgress.java
+    - src/main/java/org/specdriven/agent/loop/LoopScheduler.java
+    - src/main/java/org/specdriven/agent/loop/LoopState.java
+    - src/main/java/org/specdriven/agent/loop/PipelinePhase.java
+    - src/main/java/org/specdriven/agent/loop/PlannedChange.java
+    - src/main/java/org/specdriven/agent/loop/SequentialMilestoneScheduler.java
+    - src/main/java/org/specdriven/agent/loop/SpecDrivenPipeline.java
+    - src/main/java/org/specdriven/agent/loop/StubLoopPipeline.java
+    - src/main/java/org/specdriven/agent/loop/TokenAccumulator.java
+    - src/main/resources/loop-phases/archive.txt
+    - src/main/resources/loop-phases/implement.txt
+    - src/main/resources/loop-phases/propose.txt
+    - src/main/resources/loop-phases/review.txt
+    - src/main/resources/loop-phases/verify.txt
+  tests:
+    - src/test/java/org/specdriven/agent/loop/ContextBudgetTest.java
+    - src/test/java/org/specdriven/agent/loop/DefaultLoopAnswerAgentTest.java
+    - src/test/java/org/specdriven/agent/loop/DefaultLoopDriverTest.java
+    - src/test/java/org/specdriven/agent/loop/IterationResultTest.java
+    - src/test/java/org/specdriven/agent/loop/LealoneLoopIterationStoreTest.java
+    - src/test/java/org/specdriven/agent/loop/LoopConfigTest.java
+    - src/test/java/org/specdriven/agent/loop/LoopIterationTest.java
+    - src/test/java/org/specdriven/agent/loop/LoopProgressTest.java
+    - src/test/java/org/specdriven/agent/loop/LoopStateTest.java
+    - src/test/java/org/specdriven/agent/loop/PipelinePhaseTest.java
+    - src/test/java/org/specdriven/agent/loop/SequentialMilestoneSchedulerTest.java
+    - src/test/java/org/specdriven/agent/loop/SpecDrivenPipelineTest.java
+---
+
 # Autonomous Loop Driver
 
 ## ADDED Requirements

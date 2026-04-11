@@ -1,3 +1,19 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/Tool.java
+    - src/main/java/org/specdriven/agent/tool/ToolContext.java
+    - src/main/java/org/specdriven/agent/tool/ToolInput.java
+    - src/main/java/org/specdriven/agent/tool/ToolParameter.java
+    - src/main/java/org/specdriven/agent/tool/ToolResult.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/ToolInputTest.java
+    - src/test/java/org/specdriven/agent/tool/ToolParameterTest.java
+    - src/test/java/org/specdriven/agent/tool/ToolPermissionForTest.java
+    - src/test/java/org/specdriven/agent/tool/ToolResultTest.java
+    - src/test/java/org/specdriven/agent/tool/ToolTest.java
+---
+
 # Tool Interface Spec
 
 ## ADDED Requirements

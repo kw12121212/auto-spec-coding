@@ -1,3 +1,17 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/registry/LealoneTaskStore.java
+    - src/main/java/org/specdriven/agent/registry/Task.java
+    - src/main/java/org/specdriven/agent/registry/TaskStatus.java
+    - src/main/java/org/specdriven/agent/registry/TaskStore.java
+  tests:
+    - src/test/java/org/specdriven/agent/registry/LealoneTaskStoreTest.java
+    - src/test/java/org/specdriven/agent/registry/TaskStatusTest.java
+    - src/test/java/org/specdriven/agent/registry/TaskTest.java
+---
+
 # Task Registry Spec
 
 ## ADDED Requirements

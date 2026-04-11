@@ -1,3 +1,12 @@
+---
+mapping:
+  implementation:
+    - README.md
+    - pom.xml
+  tests:
+    - src/test/java/org/specdriven/sdk/ReleasePrepQuickstartExampleTest.java
+---
+
 # Release Preparation Spec
 
 ## ADDED Requirements

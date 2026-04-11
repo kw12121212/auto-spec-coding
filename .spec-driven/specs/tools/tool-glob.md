@@ -1,3 +1,11 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/GlobTool.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/GlobToolTest.java
+---
+
 # Glob Tool Spec
 
 ## ADDED Requirements

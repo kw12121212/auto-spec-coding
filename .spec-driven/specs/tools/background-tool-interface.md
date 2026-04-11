@@ -1,3 +1,32 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/tool/BackgroundProcessHandle.java
+    - src/main/java/org/specdriven/agent/tool/BackgroundTool.java
+    - src/main/java/org/specdriven/agent/tool/DefaultProcessManager.java
+    - src/main/java/org/specdriven/agent/tool/HttpProbeStrategy.java
+    - src/main/java/org/specdriven/agent/tool/OutputRingBuffer.java
+    - src/main/java/org/specdriven/agent/tool/ProbeStrategy.java
+    - src/main/java/org/specdriven/agent/tool/ProbeType.java
+    - src/main/java/org/specdriven/agent/tool/ProcessManager.java
+    - src/main/java/org/specdriven/agent/tool/ProcessOutput.java
+    - src/main/java/org/specdriven/agent/tool/ProcessState.java
+    - src/main/java/org/specdriven/agent/tool/ReadyProbe.java
+    - src/main/java/org/specdriven/agent/tool/ServerTool.java
+    - src/main/java/org/specdriven/agent/tool/TcpProbeStrategy.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/BackgroundProcessHandleTest.java
+    - src/test/java/org/specdriven/agent/tool/BackgroundToolIntegrationTest.java
+    - src/test/java/org/specdriven/agent/tool/BackgroundToolTest.java
+    - src/test/java/org/specdriven/agent/tool/HttpProbeStrategyTest.java
+    - src/test/java/org/specdriven/agent/tool/ProcessManagerTest.java
+    - src/test/java/org/specdriven/agent/tool/ProcessOutputTest.java
+    - src/test/java/org/specdriven/agent/tool/ProcessStateTest.java
+    - src/test/java/org/specdriven/agent/tool/ServerToolLifecycleTest.java
+    - src/test/java/org/specdriven/agent/tool/TcpProbeStrategyTest.java
+---
+
 # Background Tool Interface Spec
 
 ## ADDED Requirements

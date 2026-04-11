@@ -1,3 +1,13 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcCodec.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcDispatcher.java
+    - src/main/java/org/specdriven/agent/jsonrpc/StdioTransport.java
+  tests:
+    - src/test/java/org/specdriven/agent/jsonrpc/JsonRpcEndToEndTest.java
+---
+
 # jsonrpc-e2e-tests.md
 
 ## ADDED Requirements

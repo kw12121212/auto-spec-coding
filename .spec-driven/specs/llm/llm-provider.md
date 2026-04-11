@@ -1,3 +1,55 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/agent/ClaudeClient.java
+    - src/main/java/org/specdriven/agent/agent/ClaudeProvider.java
+    - src/main/java/org/specdriven/agent/agent/ClaudeProviderFactory.java
+    - src/main/java/org/specdriven/agent/agent/ContextWindowManager.java
+    - src/main/java/org/specdriven/agent/agent/DefaultLlmProviderRegistry.java
+    - src/main/java/org/specdriven/agent/agent/LlmClient.java
+    - src/main/java/org/specdriven/agent/agent/LlmConfig.java
+    - src/main/java/org/specdriven/agent/agent/LlmProvider.java
+    - src/main/java/org/specdriven/agent/agent/LlmProviderFactory.java
+    - src/main/java/org/specdriven/agent/agent/LlmProviderRegistry.java
+    - src/main/java/org/specdriven/agent/agent/LlmRequest.java
+    - src/main/java/org/specdriven/agent/agent/LlmResponse.java
+    - src/main/java/org/specdriven/agent/agent/LlmStreamCallback.java
+    - src/main/java/org/specdriven/agent/agent/LlmUsage.java
+    - src/main/java/org/specdriven/agent/agent/OpenAiClient.java
+    - src/main/java/org/specdriven/agent/agent/OpenAiProvider.java
+    - src/main/java/org/specdriven/agent/agent/OpenAiProviderFactory.java
+    - src/main/java/org/specdriven/agent/agent/SkillRoute.java
+    - src/main/java/org/specdriven/agent/agent/SseParser.java
+    - src/main/java/org/specdriven/agent/agent/TokenCounter.java
+    - src/main/java/org/specdriven/agent/agent/ToolCall.java
+    - src/main/java/org/specdriven/agent/agent/ToolMessage.java
+    - src/main/java/org/specdriven/agent/agent/ToolSchema.java
+    - src/main/java/org/specdriven/agent/json/JsonReader.java
+    - src/main/java/org/specdriven/agent/json/JsonWriter.java
+  tests:
+    - src/test/java/org/specdriven/agent/agent/ClaudeClientTest.java
+    - src/test/java/org/specdriven/agent/agent/ClaudeProviderTest.java
+    - src/test/java/org/specdriven/agent/agent/ClaudeStreamingTest.java
+    - src/test/java/org/specdriven/agent/agent/ContextWindowManagerTest.java
+    - src/test/java/org/specdriven/agent/agent/DefaultLlmProviderRegistryTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmClientTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmConfigTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmProviderRegistryTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmRequestTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmResponseTest.java
+    - src/test/java/org/specdriven/agent/agent/MessageTest.java
+    - src/test/java/org/specdriven/agent/agent/OpenAiClientTest.java
+    - src/test/java/org/specdriven/agent/agent/OpenAiProviderTest.java
+    - src/test/java/org/specdriven/agent/agent/OpenAiStreamingTest.java
+    - src/test/java/org/specdriven/agent/agent/SkillRouteTest.java
+    - src/test/java/org/specdriven/agent/agent/SseParserTest.java
+    - src/test/java/org/specdriven/agent/agent/TokenCounterTest.java
+    - src/test/java/org/specdriven/agent/agent/ToolCallTest.java
+    - src/test/java/org/specdriven/agent/agent/ToolSchemaTest.java
+    - src/test/java/org/specdriven/agent/json/JsonReaderTest.java
+    - src/test/java/org/specdriven/agent/json/JsonWriterTest.java
+---
+
 # llm-provider.md
 
 ## CHANGED Requirements

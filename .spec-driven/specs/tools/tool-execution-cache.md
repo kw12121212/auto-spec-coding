@@ -1,3 +1,17 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/tool/cache/CachingTool.java
+    - src/main/java/org/specdriven/agent/tool/cache/LealoneToolCache.java
+    - src/main/java/org/specdriven/agent/tool/cache/ToolCache.java
+    - src/main/java/org/specdriven/agent/tool/cache/ToolCacheKey.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/cache/CachingToolTest.java
+    - src/test/java/org/specdriven/agent/tool/cache/LealoneToolCacheTest.java
+    - src/test/java/org/specdriven/agent/tool/cache/ToolCacheKeyTest.java
+---
+
 # Tool Execution Cache Spec
 
 ## ADDED Requirements

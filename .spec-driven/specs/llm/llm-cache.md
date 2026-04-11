@@ -1,3 +1,18 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/llm/CacheKeyGenerator.java
+    - src/main/java/org/specdriven/agent/llm/CachingLlmClient.java
+    - src/main/java/org/specdriven/agent/llm/LealoneLlmCache.java
+    - src/main/java/org/specdriven/agent/llm/LlmCache.java
+    - src/main/java/org/specdriven/agent/llm/UsageRecord.java
+  tests:
+    - src/test/java/org/specdriven/agent/llm/CacheKeyGeneratorTest.java
+    - src/test/java/org/specdriven/agent/llm/CachingLlmClientTest.java
+    - src/test/java/org/specdriven/agent/llm/LealoneLlmCacheTest.java
+---
+
 # LLM Cache Spec
 
 ### Requirement: LlmCache interface

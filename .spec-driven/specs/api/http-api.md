@@ -1,3 +1,25 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/http/AgentStateResponse.java
+    - src/main/java/org/specdriven/agent/http/AuthFilter.java
+    - src/main/java/org/specdriven/agent/http/ErrorResponse.java
+    - src/main/java/org/specdriven/agent/http/HealthResponse.java
+    - src/main/java/org/specdriven/agent/http/HttpApiException.java
+    - src/main/java/org/specdriven/agent/http/HttpApiServlet.java
+    - src/main/java/org/specdriven/agent/http/HttpJsonCodec.java
+    - src/main/java/org/specdriven/agent/http/RateLimitFilter.java
+    - src/main/java/org/specdriven/agent/http/RunAgentRequest.java
+    - src/main/java/org/specdriven/agent/http/RunAgentResponse.java
+    - src/main/java/org/specdriven/agent/http/ToolInfo.java
+    - src/main/java/org/specdriven/agent/http/ToolsListResponse.java
+  tests:
+    - src/test/java/org/specdriven/agent/http/AuthFilterTest.java
+    - src/test/java/org/specdriven/agent/http/HttpApiServletTest.java
+    - src/test/java/org/specdriven/agent/http/HttpModelsTest.java
+    - src/test/java/org/specdriven/agent/http/RateLimitFilterTest.java
+---
+
 # http-api.md
 
 ## Requirements

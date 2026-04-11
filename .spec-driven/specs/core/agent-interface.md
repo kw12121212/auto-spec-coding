@@ -1,3 +1,42 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/agent/Agent.java
+    - src/main/java/org/specdriven/agent/agent/AgentContext.java
+    - src/main/java/org/specdriven/agent/agent/AgentState.java
+    - src/main/java/org/specdriven/agent/agent/AssistantMessage.java
+    - src/main/java/org/specdriven/agent/agent/Conversation.java
+    - src/main/java/org/specdriven/agent/agent/DefaultAgent.java
+    - src/main/java/org/specdriven/agent/agent/DefaultOrchestrator.java
+    - src/main/java/org/specdriven/agent/agent/LealoneSessionStore.java
+    - src/main/java/org/specdriven/agent/agent/LlmClient.java
+    - src/main/java/org/specdriven/agent/agent/LlmResponse.java
+    - src/main/java/org/specdriven/agent/agent/Message.java
+    - src/main/java/org/specdriven/agent/agent/Orchestrator.java
+    - src/main/java/org/specdriven/agent/agent/OrchestratorConfig.java
+    - src/main/java/org/specdriven/agent/agent/Session.java
+    - src/main/java/org/specdriven/agent/agent/SessionStore.java
+    - src/main/java/org/specdriven/agent/agent/SimpleAgentContext.java
+    - src/main/java/org/specdriven/agent/agent/SystemMessage.java
+    - src/main/java/org/specdriven/agent/agent/ToolCall.java
+    - src/main/java/org/specdriven/agent/agent/ToolMessage.java
+    - src/main/java/org/specdriven/agent/agent/UserMessage.java
+    - src/main/java/org/specdriven/agent/tool/ProcessManager.java
+  tests:
+    - src/test/java/org/specdriven/agent/agent/AgentStateTest.java
+    - src/test/java/org/specdriven/agent/agent/ConversationTest.java
+    - src/test/java/org/specdriven/agent/agent/DefaultAgentOrchestratorTest.java
+    - src/test/java/org/specdriven/agent/agent/DefaultAgentTest.java
+    - src/test/java/org/specdriven/agent/agent/DefaultOrchestratorTest.java
+    - src/test/java/org/specdriven/agent/agent/LealoneSessionStoreTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmClientTest.java
+    - src/test/java/org/specdriven/agent/agent/LlmResponseTest.java
+    - src/test/java/org/specdriven/agent/agent/MessageTest.java
+    - src/test/java/org/specdriven/agent/agent/SessionStoreIntegrationTest.java
+    - src/test/java/org/specdriven/agent/agent/SimpleAgentContextTest.java
+    - src/test/java/org/specdriven/agent/agent/ToolCallTest.java
+---
+
 # Agent Interface Spec
 
 ## ADDED Requirements

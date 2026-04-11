@@ -1,3 +1,11 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/cli/SpecDrivenCliMain.java
+  tests:
+    - src/test/java/org/specdriven/cli/SpecDrivenCliMainTest.java
+---
+
 # skill-cli-java.md
 
 ## ADDED Requirements

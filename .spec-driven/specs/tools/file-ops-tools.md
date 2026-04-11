@@ -1,3 +1,15 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/EditTool.java
+    - src/main/java/org/specdriven/agent/tool/ReadTool.java
+    - src/main/java/org/specdriven/agent/tool/WriteTool.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/EditToolTest.java
+    - src/test/java/org/specdriven/agent/tool/ReadToolTest.java
+    - src/test/java/org/specdriven/agent/tool/WriteToolTest.java
+---
+
 # File Ops Tools Spec
 
 ## ADDED Requirements

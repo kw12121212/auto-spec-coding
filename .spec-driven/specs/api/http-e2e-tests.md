@@ -1,3 +1,13 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/http/AuthFilter.java
+    - src/main/java/org/specdriven/agent/http/HttpApiServlet.java
+    - src/main/java/org/specdriven/agent/http/RateLimitFilter.java
+  tests:
+    - src/test/java/org/specdriven/agent/http/HttpE2eTest.java
+---
+
 # http-e2e-tests.md
 
 ## ADDED Requirements

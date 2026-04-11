@@ -1,3 +1,15 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcCodec.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcMessageHandler.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcProtocolException.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcTransport.java
+    - src/main/java/org/specdriven/agent/jsonrpc/StdioTransport.java
+  tests:
+    - src/test/java/org/specdriven/agent/jsonrpc/JsonRpcTransportTest.java
+---
+
 # jsonrpc-transport.md
 
 ## ADDED Requirements

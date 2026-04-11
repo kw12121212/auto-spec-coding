@@ -1,3 +1,19 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/registry/LealoneTeamStore.java
+    - src/main/java/org/specdriven/agent/registry/Team.java
+    - src/main/java/org/specdriven/agent/registry/TeamMember.java
+    - src/main/java/org/specdriven/agent/registry/TeamRole.java
+    - src/main/java/org/specdriven/agent/registry/TeamStatus.java
+    - src/main/java/org/specdriven/agent/registry/TeamStore.java
+  tests:
+    - src/test/java/org/specdriven/agent/registry/LealoneTeamStoreTest.java
+    - src/test/java/org/specdriven/agent/registry/TeamStatusTest.java
+    - src/test/java/org/specdriven/agent/registry/TeamTest.java
+---
+
 # Team Registry Spec
 
 ## ADDED Requirements

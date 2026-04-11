@@ -1,3 +1,11 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/BashTool.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/BashToolTest.java
+---
+
 # Bash Tool Spec
 
 ## ADDED Requirements

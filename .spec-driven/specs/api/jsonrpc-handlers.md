@@ -1,3 +1,13 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcDispatcher.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcMessageHandler.java
+    - src/main/java/org/specdriven/agent/jsonrpc/JsonRpcTransport.java
+  tests:
+    - src/test/java/org/specdriven/agent/jsonrpc/JsonRpcDispatcherTest.java
+---
+
 # jsonrpc-handlers.md
 
 ## ADDED Requirements

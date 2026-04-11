@@ -1,3 +1,11 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/tool/GrepTool.java
+  tests:
+    - src/test/java/org/specdriven/agent/tool/GrepToolTest.java
+---
+
 # Grep Tool Spec
 
 ## ADDED Requirements

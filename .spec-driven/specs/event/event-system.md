@@ -1,3 +1,20 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/AuditEntry.java
+    - src/main/java/org/specdriven/agent/event/AuditLogStore.java
+    - src/main/java/org/specdriven/agent/event/Event.java
+    - src/main/java/org/specdriven/agent/event/EventBus.java
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/event/LealoneAuditLogStore.java
+    - src/main/java/org/specdriven/agent/event/SimpleEventBus.java
+  tests:
+    - src/test/java/org/specdriven/agent/event/EventJsonTest.java
+    - src/test/java/org/specdriven/agent/event/EventSystemTest.java
+    - src/test/java/org/specdriven/agent/event/LealoneAuditLogStoreTest.java
+    - src/test/java/org/specdriven/agent/event/SimpleEventBusTest.java
+---
+
 # Event System Spec
 
 ## Requirements

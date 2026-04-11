@@ -1,3 +1,19 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/registry/CronEntry.java
+    - src/main/java/org/specdriven/agent/registry/CronExpression.java
+    - src/main/java/org/specdriven/agent/registry/CronStatus.java
+    - src/main/java/org/specdriven/agent/registry/CronStore.java
+    - src/main/java/org/specdriven/agent/registry/LealoneCronStore.java
+  tests:
+    - src/test/java/org/specdriven/agent/registry/CronEntryTest.java
+    - src/test/java/org/specdriven/agent/registry/CronExpressionTest.java
+    - src/test/java/org/specdriven/agent/registry/CronStatusTest.java
+    - src/test/java/org/specdriven/agent/registry/LealoneCronStoreTest.java
+---
+
 # Cron Registry Spec
 
 ## ADDED Requirements

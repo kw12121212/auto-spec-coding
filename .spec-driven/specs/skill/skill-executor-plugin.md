@@ -1,3 +1,18 @@
+---
+mapping:
+  implementation:
+    - src/main/java/org/specdriven/skill/executor/SkillParameterParser.java
+    - src/main/java/org/specdriven/skill/executor/SkillServiceExecutor.java
+    - src/main/java/org/specdriven/skill/executor/SkillServiceExecutorFactory.java
+    - src/main/java/org/specdriven/skill/sql/SkillSqlException.java
+    - src/main/java/org/specdriven/skill/store/FileSystemInstructionStore.java
+    - src/main/resources/META-INF/services/com.lealone.db.service.ServiceExecutorFactory
+  tests:
+    - src/test/java/org/specdriven/skill/executor/SkillParameterParserTest.java
+    - src/test/java/org/specdriven/skill/executor/SkillServiceExecutorFactoryTest.java
+    - src/test/java/org/specdriven/skill/executor/SkillServiceExecutorTest.java
+---
+
 # skill-executor-plugin.md
 
 ## ADDED Requirements
