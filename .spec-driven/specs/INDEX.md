@@ -1,37 +1,75 @@
 # Specs Index
 
-- [tool-interface.md](tool-interface.md) - Tool, ToolInput, ToolResult, ToolContext, ToolParameter
-- [agent-interface.md](agent-interface.md) - Agent, AgentState, AgentContext, Message, Conversation
-- [event-system.md](event-system.md) - Event, EventType, EventBus
-- [question-resolution.md](question-resolution.md) - Question, QuestionCategory, Answer, AnswerSource, QuestionStatus, QuestionDecision, DeliveryMode, QuestionEvents, MobileChannelConfig, MobileChannelHandle, MobileChannelProvider, MobileChannelRegistry, MobileAdapterException, RichMessageFormatter, PlainTextFormatter, TemplateFieldPolicy, MaskingStrategy, DefaultMaskingStrategy, QuestionMessageTemplate, TelegramMessageTemplate, DiscordMessageTemplate, TelegramDeliveryChannel, TelegramReplyCollector, TelegramChannelProvider, DiscordDeliveryChannel, DiscordReplyCollector, DiscordChannelProvider, BuiltinMobileAdapters, ReplyCallbackRouter, DeliveryStatus, DeliveryAttempt, DeliveryLogStore, LealoneDeliveryLogStore, RetryConfig, RetryingDeliveryChannel
-- [permission-interface.md](permission-interface.md) - PermissionProvider, Permission, PermissionContext
-- [config-loader.md](config-loader.md) - ConfigLoader, Config, ConfigException
-- [bash-tool.md](bash-tool.md) - BashTool, shell command execution with timeout and permission checks
-- [file-ops-tools.md](file-ops-tools.md) - ReadTool, WriteTool, EditTool — file read/write/edit with permission checks
-- [tool-grep.md](tool-grep.md) - GrepTool — content search with regex, glob filtering, and multiple output modes
-- [tool-glob.md](tool-glob.md) - GlobTool — file pattern matching with glob, sorted by modification time
-- [llm-provider.md](llm-provider.md) - LlmProvider, LlmConfig, LlmRequest, LlmResponse, LlmUsage, ToolSchema, LlmStreamCallback, LlmProviderRegistry, DefaultLlmProviderRegistry, SkillRoute, LlmProviderFactory
-- [task-registry.md](task-registry.md) - Task, TaskStatus, TaskStore, LealoneTaskStore
-- [team-registry.md](team-registry.md) - Team, TeamStatus, TeamMember, TeamRole, TeamStore, LealoneTeamStore
-- [cron-registry.md](cron-registry.md) - CronEntry, CronStatus, CronExpression, CronStore, LealoneCronStore
-- [tool-lsp.md](tool-lsp.md) - LspTool, LspClient — LSP client tool for code intelligence (diagnostics, hover, definition, references, document symbols)
-- [tool-mcp.md](tool-mcp.md) - McpTransport, McpClient, McpServer, McpToolAdapter, McpClientRegistry — MCP protocol client/server, tool discovery and adaptation
-- [secret-vault.md](secret-vault.md) - SecretVault, VaultEntry, VaultResolver, VaultMasterKey, VaultException — encrypted secret storage interface and config resolution
-- [sdk-public-api.md](sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException, SdkConfigException, SdkVaultException, SdkLlmException, SdkToolException, SdkPermissionException, SdkEventListener — public SDK facade with builder pattern, auto-assembly, typed error handling, and event callbacks
-- [builtin-tool-manager.md](builtin-tool-manager.md) - BuiltinTool, BuiltinToolManager, DefaultBuiltinToolManager, Platform, BuiltinToolException — bundled external tool binary extraction and PATH detection
-- [jsonrpc-protocol.md](jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec, JsonRpcProtocolException — JSON-RPC 2.0 protocol types and encode/decode codec
-- [jsonrpc-transport.md](jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport — stdin/stdout framed transport with Content-Length header, daemon reader thread, and error recovery
-- [jsonrpc-handlers.md](jsonrpc-handlers.md) - JsonRpcDispatcher — request routing, SDK operation mapping, event forwarding, and error code translation
-- [jsonrpc-e2e-tests.md](jsonrpc-e2e-tests.md) - End-to-end integration tests validating the full JSON-RPC pipeline from transport framing through SDK invocation
-- [http-api.md](http-api.md) - RunAgentRequest, RunAgentResponse, AgentStateResponse, ToolInfo, ToolsListResponse, HealthResponse, ErrorResponse, HttpApiException, HttpJsonCodec, HttpApiServlet, AuthFilter, RateLimitFilter — HTTP REST API model types, JSON codec, route servlet, authentication and rate-limiting middleware, and structured error handling
-- [http-e2e-tests.md](http-e2e-tests.md) - End-to-end integration tests validating the full HTTP REST API pipeline from embedded Tomcat through filter chain to SDK invocation
-- [background-tool-interface.md](background-tool-interface.md) - BackgroundTool, BackgroundProcessHandle, ProcessState, ProcessOutput — async tool execution interface extending Tool surface
-- [llm-cache.md](llm-cache.md) - LlmCache, LealoneLlmCache, CacheKeyGenerator, CachingLlmClient, UsageRecord — LLM response caching with TTL, token usage persistence, and cache event publishing
-- [tool-execution-cache.md](tool-execution-cache.md) - ToolCache, CacheEntry, ToolCacheKey, LealoneToolCache, CachingTool — tool execution result caching with TTL, file-change invalidation, and cache event publishing
-- [skill-sql-converter.md](skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter, SkillSqlException — SKILL.md YAML frontmatter parsing and CREATE SERVICE SQL generation
-- [skill-auto-discovery.md](skill-auto-discovery.md) - SkillAutoDiscovery, DiscoveryResult, SkillDiscoveryError — skills/ directory scanning, bulk CREATE SERVICE DDL registration via Lealone JDBC
-- [skill-instructions-store.md](skill-instructions-store.md) - SkillInstructionStore, FileSystemInstructionStore, SkillInstructionStoreException — 3-level progressive loading of skill instruction bodies and resource files
-- [skill-executor-plugin.md](skill-executor-plugin.md) - SkillServiceExecutorFactory, SkillServiceExecutor, PARAMETERS parsing — Lealone ServiceExecutor SPI plugin for executable skill services
-- [skill-cli-java.md](skill-cli-java.md) - Java-native shared spec-driven CLI for propose, apply, verify, roadmap reporting, maintenance, migration, and archive workflows
-- [release-preparation.md](release-preparation.md) - Repository release overview, three-surface examples, and repo-local Maven release metadata requirements
-- [autonomous-loop.md](autonomous-loop.md) - LoopState, LoopConfig, IterationStatus, LoopIteration, PlannedChange, LoopCandidate, LoopContext, LoopDriver, LoopScheduler, SequentialMilestoneScheduler, DefaultLoopDriver, LoopProgress, LoopIterationStore, LealoneLoopIterationStore — autonomous loop state machine, scheduling, persistence, and event publication
+## Core (核心接口)
+
+- [agent-interface.md](core/agent-interface.md) - Agent, AgentState, AgentContext, Message, Conversation
+- [tool-interface.md](core/tool-interface.md) - Tool, ToolInput, ToolResult, ToolContext, ToolParameter
+
+## Tools (工具实现)
+
+- [bash-tool.md](tools/bash-tool.md) - BashTool, shell command execution with timeout and permission checks
+- [file-ops-tools.md](tools/file-ops-tools.md) - ReadTool, WriteTool, EditTool — file read/write/edit with permission checks
+- [tool-grep.md](tools/tool-grep.md) - GrepTool — content search with regex, glob filtering, and multiple output modes
+- [tool-glob.md](tools/tool-glob.md) - GlobTool — file pattern matching with glob, sorted by modification time
+- [tool-lsp.md](tools/tool-lsp.md) - LspTool, LspClient — LSP client tool for code intelligence
+- [tool-mcp.md](tools/tool-mcp.md) - McpTransport, McpClient, McpServer, McpToolAdapter, McpClientRegistry — MCP protocol
+- [background-tool-interface.md](tools/background-tool-interface.md) - BackgroundTool, BackgroundProcessHandle, ProcessState, ProcessOutput
+- [builtin-tool-manager.md](tools/builtin-tool-manager.md) - BuiltinTool, BuiltinToolManager, DefaultBuiltinToolManager
+- [tool-execution-cache.md](tools/tool-execution-cache.md) - ToolCache, CacheEntry, ToolCacheKey, LealoneToolCache, CachingTool
+
+## LLM (LLM 提供者)
+
+- [llm-provider.md](llm/llm-provider.md) - LlmProvider, LlmConfig, LlmRequest, LlmResponse, LlmUsage, ToolSchema, LlmStreamCallback, LlmProviderRegistry, DefaultLlmProviderRegistry, SkillRoute, LlmProviderFactory
+- [llm-cache.md](llm/llm-cache.md) - LlmCache, LealoneLlmCache, CacheKeyGenerator, CachingLlmClient, UsageRecord
+
+## API (API 层)
+
+- [http-api.md](api/http-api.md) - HttpApiServlet, AuthFilter, RateLimitFilter — HTTP REST API
+- [http-e2e-tests.md](api/http-e2e-tests.md) - HTTP REST API E2E integration tests
+- [jsonrpc-protocol.md](api/jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec
+- [jsonrpc-handlers.md](api/jsonrpc-handlers.md) - JsonRpcDispatcher — request routing and SDK operation mapping
+- [jsonrpc-transport.md](api/jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport
+- [jsonrpc-e2e-tests.md](api/jsonrpc-e2e-tests.md) - JSON-RPC E2E integration tests
+
+## Event (事件系统)
+
+- [event-system.md](event/event-system.md) - Event, EventType, EventBus, AuditLogStore, LealoneAuditLogStore
+
+## Permission (权限系统)
+
+- [permission-interface.md](permission/permission-interface.md) - PermissionProvider, Permission, PermissionContext, PolicyStore, LealonePolicyStore
+
+## Vault (密钥保管库)
+
+- [secret-vault.md](vault/secret-vault.md) - SecretVault, VaultEntry, VaultResolver, VaultFactory, LealoneVault
+
+## Question (问题/问答系统)
+
+- [question-resolution.md](question/question-resolution.md) - Question, Answer, DeliveryChannel, ReplyCollector, QuestionDeliveryService, Mobile channels
+
+## Registry (注册中心)
+
+- [task-registry.md](registry/task-registry.md) - Task, TaskStatus, TaskStore, LealoneTaskStore
+- [team-registry.md](registry/team-registry.md) - Team, TeamStatus, TeamMember, TeamRole, TeamStore, LealoneTeamStore
+- [cron-registry.md](registry/cron-registry.md) - CronEntry, CronStatus, CronExpression, CronStore, LealoneCronStore
+
+## Config (配置管理)
+
+- [config-loader.md](config/config-loader.md) - ConfigLoader, Config, ConfigException
+
+## Skill (Skill 系统)
+
+- [skill-auto-discovery.md](skill/skill-auto-discovery.md) - SkillAutoDiscovery, DiscoveryResult, SkillDiscoveryError
+- [skill-cli-java.md](skill/skill-cli-java.md) - Java-native shared spec-driven CLI
+- [skill-executor-plugin.md](skill/skill-executor-plugin.md) - SkillServiceExecutorFactory, SkillServiceExecutor
+- [skill-instructions-store.md](skill/skill-instructions-store.md) - SkillInstructionStore, FileSystemInstructionStore
+- [skill-sql-converter.md](skill/skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter
+
+## SDK (SDK 公共 API)
+
+- [sdk-public-api.md](sdk/sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException
+- [autonomous-loop.md](sdk/autonomous-loop.md) - LoopDriver, LoopScheduler, LoopConfig, LoopState, LoopIteration
+
+## Release (发布准备)
+
+- [release-preparation.md](release/release-preparation.md) - Repository release overview and Maven release metadata
