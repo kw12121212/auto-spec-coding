@@ -26,6 +26,7 @@ mapping:
     - src/main/java/org/specdriven/agent/loop/SpecDrivenPipeline.java
     - src/main/java/org/specdriven/agent/loop/StubLoopPipeline.java
     - src/main/java/org/specdriven/agent/loop/TokenAccumulator.java
+    - src/main/java/org/specdriven/agent/question/QuestionDeliveryService.java
     - src/main/resources/loop-phases/archive.txt
     - src/main/resources/loop-phases/implement.txt
     - src/main/resources/loop-phases/propose.txt
@@ -141,6 +142,8 @@ mapping:
 - Constructor MUST accept `LoopConfig` and `LoopScheduler`
 - Constructor MUST accept `LoopConfig`, `LoopScheduler`, and `LoopPipeline`
 - Constructor MUST accept `LoopConfig`, `LoopScheduler`, `LoopPipeline`, `LoopIterationStore`, and `LoopAnswerAgent` (where `LoopAnswerAgent` MAY be null)
+- Constructor MUST accept `LoopConfig`, `LoopScheduler`, `LoopPipeline`, `LoopIterationStore`, `LoopAnswerAgent`, and `QuestionDeliveryService` (where `QuestionDeliveryService` MAY be null)
+- Existing constructors MUST behave as if no question delivery service is configured
 - A backward-compatible constructor `DefaultLoopDriver(LoopConfig, LoopScheduler)` MUST remain, using a `StubLoopPipeline` that returns `IterationResult` with `status=SUCCESS` and empty phases
 - `start()` MUST launch a VirtualThread running the scheduling loop
 - The scheduling loop MUST check `maxIterations` before each iteration; when reached, MUST call `stop()` with reason "max iterations reached"
@@ -148,9 +151,16 @@ mapping:
 - When the pipeline returns `status=QUESTIONING`:
   - MUST publish `LOOP_QUESTION_ROUTED` event with metadata: `questionId` (String), `changeName` (String), `sessionId` (String)
   - MUST transition `RUNNING → QUESTIONING`
+  - MUST inspect the returned `Question` before invoking `LoopAnswerAgent`
+  - If the question category is `PERMISSION_CONFIRMATION` or `IRREVERSIBLE_APPROVAL`, MUST NOT invoke `LoopAnswerAgent`
+  - If the question delivery mode is `PUSH_MOBILE_WAIT_HUMAN` or `PAUSE_WAIT_HUMAN`, MUST NOT invoke `LoopAnswerAgent`
+  - Human-escalated questions MUST publish `LOOP_QUESTION_ESCALATED`, transition `QUESTIONING → PAUSED`, record a partial `LoopIteration` with `status=QUESTIONING` and a non-empty `failureReason`, and wait for resume
+  - Human-escalated questions MUST NOT add the paused change name to `completedChangeNames`
+  - When a question delivery service is configured for a human-escalated question, MUST submit the waiting question to that service
+  - When no question delivery service is configured, MUST still expose the escalation through loop event metadata
   - When `loopAnswerAgent` is non-null: MUST call `loopAnswerAgent.resolve(result.question(), config.iterationTimeoutSeconds())`
     - On `Resolved`: MUST publish `LOOP_QUESTION_ANSWERED` (metadata: questionId, changeName, confidence), transition `QUESTIONING → RUNNING`, then re-invoke `pipeline.execute(candidate, config, Set.copyOf(result.phasesCompleted()))` to resume from the interrupted phase
-    - On `Escalated`: MUST publish `LOOP_QUESTION_ESCALATED` (metadata: questionId, changeName, reason), transition `QUESTIONING → PAUSED`, record a partial `LoopIteration` with `status=QUESTIONING` and `failureReason=resolution.reason()`, wait for resume
+    - On `Escalated`: MUST publish `LOOP_QUESTION_ESCALATED`, transition `QUESTIONING → PAUSED`, record a partial `LoopIteration` with `status=QUESTIONING` and `failureReason=resolution.reason()`, wait for resume
   - When `loopAnswerAgent` is null: treat as `Escalated("no answer agent configured")`
 - The completed `LoopIteration` MUST use the `IterationResult.status` for its `status` field
 - The completed `LoopIteration` MUST use the `IterationResult.failureReason` for its `failureReason` field when status is not SUCCESS
@@ -166,7 +176,7 @@ mapping:
 - MUST add the following values to the existing `EventType` enum in `org.specdriven.agent.event`: LOOP_STARTED, LOOP_PAUSED, LOOP_RESUMED, LOOP_STOPPED, LOOP_ITERATION_COMPLETED, LOOP_QUESTION_ROUTED, LOOP_QUESTION_ANSWERED, LOOP_QUESTION_ESCALATED, LOOP_ERROR
 - `LOOP_QUESTION_ROUTED` — published when a question is detected and routing begins; metadata: `questionId` (String), `changeName` (String), `sessionId` (String)
 - `LOOP_QUESTION_ANSWERED` — published when `LoopAnswerAgent` returns `Resolved`; metadata: `questionId` (String), `changeName` (String), `confidence` (double)
-- `LOOP_QUESTION_ESCALATED` — published when `LoopAnswerAgent` returns `Escalated` or is absent; metadata: `questionId` (String), `changeName` (String), `reason` (String)
+- `LOOP_QUESTION_ESCALATED` — published when a question needs human handling, `LoopAnswerAgent` returns `Escalated`, or `LoopAnswerAgent` is absent; metadata: `questionId` (String), `sessionId` (String), `changeName` (String), `category` (String enum name), `deliveryMode` (String enum name), `reason` (String), `routingReason` (String)
 - Existing EventType values MUST NOT change
 
 ### Requirement: PipelinePhase enum
@@ -264,6 +274,16 @@ mapping:
   - On `stop()`, MUST call `store.saveProgress(finalSnapshot)` with the terminal state
 - When store is null (existing constructors), MUST continue using in-memory tracking only — no behavioral change
 - Recovered `completedChangeNames` MUST be passed to `LoopContext` so `SequentialMilestoneScheduler` skips already-completed changes
+- Escalated partial iterations MUST NOT add the escalated change name to the recovered `completedChangeNames`
+- Recovered progress MUST allow a previously escalated change to be selected again unless a later successful iteration completed it
+
+### Requirement: Human escalation reason
+
+- A human escalation reason MUST be non-empty
+- For human-only categories, the reason MUST explain that the question category requires human approval
+- For human delivery modes, the reason MUST explain that the configured delivery mode requires human handling
+- For `LoopAnswerAgent` escalation responses, the reason MUST preserve the agent-provided escalation reason
+- For absent `LoopAnswerAgent`, the reason MUST remain `no answer agent configured`
 
 ### Requirement: LOOP_PROGRESS_SAVED EventType
 

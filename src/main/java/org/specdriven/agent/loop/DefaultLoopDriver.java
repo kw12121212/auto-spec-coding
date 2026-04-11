@@ -4,6 +4,11 @@ import org.specdriven.agent.agent.ContextWindowManager;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionDeliveryService;
+import org.specdriven.agent.question.QuestionRoutingPolicy;
+import org.specdriven.agent.question.QuestionStatus;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -28,6 +33,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private final LoopPipeline pipeline;
     private final LoopIterationStore store;
     private final LoopAnswerAgent answerAgent;
+    private final QuestionDeliveryService questionDeliveryService;
     private final Object stateLock = new Object();
 
     private LoopState state = LoopState.IDLE;
@@ -39,25 +45,32 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile ContextWindowManager contextManager;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
-        this(config, scheduler, new StubLoopPipeline(), null, null);
+        this(config, scheduler, new StubLoopPipeline(), null, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline) {
-        this(config, scheduler, pipeline, null, null);
+        this(config, scheduler, pipeline, null, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
                              LoopIterationStore store) {
-        this(config, scheduler, pipeline, store, null);
+        this(config, scheduler, pipeline, store, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
                              LoopIterationStore store, LoopAnswerAgent answerAgent) {
+        this(config, scheduler, pipeline, store, answerAgent, null);
+    }
+
+    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
+                             LoopIterationStore store, LoopAnswerAgent answerAgent,
+                             QuestionDeliveryService questionDeliveryService) {
         this.config = config;
         this.scheduler = scheduler;
         this.pipeline = pipeline;
         this.store = store;
         this.answerAgent = answerAgent;
+        this.questionDeliveryService = questionDeliveryService;
     }
 
     @Override
@@ -215,10 +228,11 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 // Handle QUESTIONING: route to answer agent or escalate
                 if (pipelineResult.status() == IterationStatus.QUESTIONING) {
+                    Question question = pipelineResult.question();
                     publishEvent(EventType.LOOP_QUESTION_ROUTED, Map.of(
-                            "questionId", pipelineResult.question().questionId(),
+                            "questionId", question.questionId(),
                             "changeName", c.changeName(),
-                            "sessionId", pipelineResult.question().sessionId()
+                            "sessionId", question.sessionId()
                     ));
                     synchronized (stateLock) {
                         state.requireTransitionTo(LoopState.QUESTIONING);
@@ -226,16 +240,18 @@ public class DefaultLoopDriver implements LoopDriver {
                     }
 
                     AnswerResolution resolution;
-                    if (answerAgent == null) {
+                    if (requiresHumanEscalation(question)) {
+                        resolution = new AnswerResolution.Escalated(humanEscalationReason(question));
+                    } else if (answerAgent == null) {
                         resolution = new AnswerResolution.Escalated("no answer agent configured");
                     } else {
                         resolution = answerAgent.resolve(
-                                pipelineResult.question(), config.iterationTimeoutSeconds());
+                                question, config.iterationTimeoutSeconds());
                     }
 
                     if (resolution instanceof AnswerResolution.Resolved resolved) {
                         publishEvent(EventType.LOOP_QUESTION_ANSWERED, Map.of(
-                                "questionId", pipelineResult.question().questionId(),
+                                "questionId", question.questionId(),
                                 "changeName", c.changeName(),
                                 "confidence", resolved.answer().confidence()
                         ));
@@ -248,15 +264,13 @@ public class DefaultLoopDriver implements LoopDriver {
                         // Fall through to checkpoint/complete handling below
                     } else {
                         AnswerResolution.Escalated escalated = (AnswerResolution.Escalated) resolution;
-                        publishEvent(EventType.LOOP_QUESTION_ESCALATED, Map.of(
-                                "questionId", pipelineResult.question().questionId(),
-                                "changeName", c.changeName(),
-                                "reason", escalated.reason()
-                        ));
+                        publishEscalatedEvent(question, c.changeName(), escalated.reason());
                         synchronized (stateLock) {
                             state.requireTransitionTo(LoopState.PAUSED);
                             state = LoopState.PAUSED;
                         }
+                        publishEvent(EventType.LOOP_PAUSED, Map.of());
+                        deliverEscalatedQuestion(question);
                         LoopIteration partial = new LoopIteration(
                                 iterationCount, c.changeName(), c.milestoneFile(),
                                 startedAt, System.currentTimeMillis(),
@@ -272,7 +286,9 @@ public class DefaultLoopDriver implements LoopDriver {
                         }
                         synchronized (stateLock) {
                             try {
-                                stateLock.wait();
+                                while (state == LoopState.PAUSED && !stopRequested) {
+                                    stateLock.wait();
+                                }
                             } catch (InterruptedException e) {
                                 if (stopRequested) return;
                                 Thread.currentThread().interrupt();
@@ -340,6 +356,62 @@ public class DefaultLoopDriver implements LoopDriver {
                     "error", e.getMessage() != null ? e.getMessage() : "unknown"
             ));
         }
+    }
+
+    private boolean requiresHumanEscalation(Question question) {
+        return !QuestionRoutingPolicy.allowsAutoAiReply(question.category())
+                || question.deliveryMode() != DeliveryMode.AUTO_AI_REPLY;
+    }
+
+    private String humanEscalationReason(Question question) {
+        if (!QuestionRoutingPolicy.allowsAutoAiReply(question.category())) {
+            return QuestionRoutingPolicy.routingReason(question.category());
+        }
+        return "Delivery mode " + question.deliveryMode() + " requires human handling.";
+    }
+
+    private void publishEscalatedEvent(Question question, String changeName, String reason) {
+        publishEvent(EventType.LOOP_QUESTION_ESCALATED, Map.of(
+                "questionId", question.questionId(),
+                "sessionId", question.sessionId(),
+                "changeName", changeName,
+                "category", question.category().name(),
+                "deliveryMode", question.deliveryMode().name(),
+                "reason", reason,
+                "routingReason", QuestionRoutingPolicy.routingReason(question.category())
+        ));
+    }
+
+    private void deliverEscalatedQuestion(Question question) {
+        if (questionDeliveryService == null || question.deliveryMode() == DeliveryMode.AUTO_AI_REPLY) {
+            return;
+        }
+
+        Question waitingQuestion = asWaitingQuestion(question);
+        Optional<Question> pending = questionDeliveryService.pendingQuestion(waitingQuestion.sessionId());
+        if (pending.isEmpty()) {
+            questionDeliveryService.runtime().beginWaitingQuestion(waitingQuestion);
+        } else if (!pending.get().questionId().equals(waitingQuestion.questionId())) {
+            throw new IllegalStateException("session already has a different waiting question: "
+                    + pending.get().questionId());
+        }
+        questionDeliveryService.deliver(waitingQuestion);
+    }
+
+    private Question asWaitingQuestion(Question question) {
+        if (question.status() == QuestionStatus.WAITING_FOR_ANSWER) {
+            return question;
+        }
+        return new Question(
+                question.questionId(),
+                question.sessionId(),
+                question.question(),
+                question.impact(),
+                question.recommendation(),
+                QuestionStatus.WAITING_FOR_ANSWER,
+                question.category(),
+                question.deliveryMode()
+        );
     }
 
     private void stopWithReason(String reason) {

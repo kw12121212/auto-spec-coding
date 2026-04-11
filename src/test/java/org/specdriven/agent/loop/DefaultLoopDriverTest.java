@@ -17,10 +17,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.specdriven.agent.question.Answer;
 import org.specdriven.agent.question.AnswerSource;
 import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.InMemoryReplyCollector;
 import org.specdriven.agent.question.Question;
 import org.specdriven.agent.question.QuestionCategory;
 import org.specdriven.agent.question.QuestionDecision;
+import org.specdriven.agent.question.QuestionDeliveryChannel;
+import org.specdriven.agent.question.QuestionDeliveryService;
+import org.specdriven.agent.question.QuestionReplyCollector;
+import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.question.QuestionStatus;
+import org.specdriven.agent.question.QuestionStore;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
@@ -544,10 +550,16 @@ class DefaultLoopDriverTest {
     // -------------------------------------------------------------------------
 
     private static Question sampleQuestion() {
-        return new Question("q-test", "session-test",
+        return question("q-test", "session-test",
                 "What should I do?", "Critical", "Use approach A",
-                QuestionStatus.WAITING_FOR_ANSWER, QuestionCategory.PERMISSION_CONFIRMATION,
-                DeliveryMode.PAUSE_WAIT_HUMAN);
+                QuestionCategory.CLARIFICATION, DeliveryMode.AUTO_AI_REPLY);
+    }
+
+    private static Question question(String questionId, String sessionId,
+                                     String text, String impact, String recommendation,
+                                     QuestionCategory category, DeliveryMode deliveryMode) {
+        return new Question(questionId, sessionId, text, impact, recommendation,
+                QuestionStatus.WAITING_FOR_ANSWER, category, deliveryMode);
     }
 
     private static Answer sampleAnswer() {
@@ -729,5 +741,293 @@ class DefaultLoopDriverTest {
         assertEquals(0.8, (double) answered.metadata().get("confidence"), 0.001);
 
         driver.stop();
+    }
+
+    @Test
+    void humanOnlyCategoriesBypassAnswerAgentAndPauseLoop() throws Exception {
+        assertHumanOnlyCategoryBypassesAnswerAgent(QuestionCategory.PERMISSION_CONFIRMATION);
+        assertHumanOnlyCategoryBypassesAnswerAgent(QuestionCategory.IRREVERSIBLE_APPROVAL);
+    }
+
+    private void assertHumanOnlyCategoryBypassesAnswerAgent(QuestionCategory category) throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> escalatedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ESCALATED, escalatedEvents::add);
+
+        Question question = question("q-" + category.name(), "session-" + category.name(),
+                "May the loop continue?", "Requires operator approval.",
+                "Ask a human before proceeding.", category, DeliveryMode.PAUSE_WAIT_HUMAN);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        AtomicInteger answerAgentCalls = new AtomicInteger();
+        LoopAnswerAgent agent = (q, timeout) -> {
+            answerAgentCalls.incrementAndGet();
+            return new AnswerResolution.Resolved(sampleAnswer());
+        };
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("human-only-change", "m.md", "goal"));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agent);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertEquals(0, answerAgentCalls.get());
+        assertEquals(1, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
+        assertFalse(escalatedEvents.isEmpty());
+        assertTrue(driver.getCompletedIterations().get(0).failureReason().contains("requires human approval"));
+
+        driver.stop();
+    }
+
+    @Test
+    void humanDeliveryModesBypassAnswerAgentAndExposeEscalationMetadata() throws Exception {
+        assertHumanDeliveryModeBypassesAnswerAgent(DeliveryMode.PAUSE_WAIT_HUMAN);
+        assertHumanDeliveryModeBypassesAnswerAgent(DeliveryMode.PUSH_MOBILE_WAIT_HUMAN);
+    }
+
+    private void assertHumanDeliveryModeBypassesAnswerAgent(DeliveryMode deliveryMode) throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> escalatedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_QUESTION_ESCALATED, escalatedEvents::add);
+
+        Question question = question("q-" + deliveryMode.name(), "session-" + deliveryMode.name(),
+                "Need outside input?", "Configured delivery requires a person.",
+                "Wait for human handling.", QuestionCategory.PLAN_SELECTION, deliveryMode);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        AtomicInteger answerAgentCalls = new AtomicInteger();
+        LoopAnswerAgent agent = (q, timeout) -> {
+            answerAgentCalls.incrementAndGet();
+            return new AnswerResolution.Resolved(sampleAnswer());
+        };
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("human-delivery-change", "m.md", "goal"));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agent);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertEquals(0, answerAgentCalls.get());
+        assertFalse(escalatedEvents.isEmpty());
+        Event event = escalatedEvents.get(0);
+        assertEquals(question.questionId(), event.metadata().get("questionId"));
+        assertEquals(question.sessionId(), event.metadata().get("sessionId"));
+        assertEquals("human-delivery-change", event.metadata().get("changeName"));
+        assertEquals(question.category().name(), event.metadata().get("category"));
+        assertEquals(deliveryMode.name(), event.metadata().get("deliveryMode"));
+        assertTrue(((String) event.metadata().get("reason")).contains("requires human handling"));
+        assertNotNull(event.metadata().get("routingReason"));
+
+        driver.stop();
+    }
+
+    @Test
+    void escalatedPartialIterationDoesNotMarkChangeCompleteInStore() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        Question question = question("q-persist", "session-persist",
+                "Can this change proceed?", "The change requires approval.",
+                "Pause for a human.", QuestionCategory.PERMISSION_CONFIRMATION,
+                DeliveryMode.PAUSE_WAIT_HUMAN);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("approval-change", "m.md", "goal"));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store, (q, timeout) -> {
+            fail("LoopAnswerAgent must not be invoked for human-only questions");
+            return new AnswerResolution.Escalated("unexpected");
+        });
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.PAUSED, progress.loopState());
+        assertFalse(progress.completedChangeNames().contains("approval-change"));
+        assertEquals(1, store.loadIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, store.loadIterations().get(0).status());
+
+        driver.stop();
+    }
+
+    @Test
+    void recoveredEscalatedProgressAllowsSameChangeToRunAgain() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        store.saveIteration(new LoopIteration(1, "approval-change", "m.md",
+                100L, 200L, IterationStatus.QUESTIONING, "requires human approval"));
+        store.saveProgress(new LoopProgress(LoopState.PAUSED, Set.of(), 1));
+
+        CountDownLatch schedulerCalled = new CountDownLatch(1);
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx -> {
+            assertFalse(ctx.completedChangeNames().contains("approval-change"));
+            schedulerCalled.countDown();
+            return Optional.of(new LoopCandidate("approval-change", "m.md", "goal"));
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, new StubLoopPipeline(), store);
+        driver.start();
+
+        assertTrue(schedulerCalled.await(5, TimeUnit.SECONDS));
+        Thread.sleep(300);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(2, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.SUCCESS, driver.getCompletedIterations().get(1).status());
+        assertTrue(store.loadProgress().orElseThrow().completedChangeNames().contains("approval-change"));
+    }
+
+    @Test
+    void resumeAfterHumanEscalationRetriesPausedChange() throws Exception {
+        SimpleEventBus bus = eventBus();
+        Question question = question("q-resume", "session-resume",
+                "Can this change proceed?", "The change requires approval.",
+                "Pause for a human.", QuestionCategory.PERMISSION_CONFIRMATION,
+                DeliveryMode.PAUSE_WAIT_HUMAN);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("approval-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, (q, timeout) -> {
+            fail("LoopAnswerAgent must not be invoked for human-only questions");
+            return new AnswerResolution.Escalated("unexpected");
+        });
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+        driver.resume();
+        Thread.sleep(500);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(2, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
+        assertEquals(IterationStatus.SUCCESS, driver.getCompletedIterations().get(1).status());
+    }
+
+    @Test
+    void configuredDeliveryServiceReceivesHumanEscalationQuestion() throws Exception {
+        SimpleEventBus bus = eventBus();
+        RecordingQuestionChannel channel = new RecordingQuestionChannel();
+        QuestionRuntime runtime = new QuestionRuntime(bus);
+        InMemoryQuestionStore store = new InMemoryQuestionStore();
+        runtime.setQuestionStore(store);
+        QuestionReplyCollector collector = new InMemoryReplyCollector(runtime);
+        QuestionDeliveryService deliveryService = new QuestionDeliveryService(channel, collector, runtime, store);
+
+        Question question = question("q-delivery", "session-delivery",
+                "Need mobile confirmation?", "Configured channel must receive the question.",
+                "Notify a human.", QuestionCategory.PLAN_SELECTION,
+                DeliveryMode.PUSH_MOBILE_WAIT_HUMAN);
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("delivery-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> {
+                    fail("LoopAnswerAgent must not be invoked for human delivery modes");
+                    return new AnswerResolution.Escalated("unexpected");
+                },
+                deliveryService);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertEquals(1, channel.sent.size());
+        assertEquals("q-delivery", channel.sent.get(0).questionId());
+        assertTrue(deliveryService.pendingQuestion("session-delivery").isPresent());
+
+        driver.stop();
+    }
+
+    private static void waitUntilState(DefaultLoopDriver driver, LoopState expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            if (driver.getState() == expected) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        fail("Expected state " + expected + " but got " + driver.getState());
+    }
+
+    private static class RecordingQuestionChannel implements QuestionDeliveryChannel {
+        private final List<Question> sent = new ArrayList<>();
+
+        @Override
+        public void send(Question question) {
+            sent.add(question);
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    private static class InMemoryQuestionStore implements QuestionStore {
+        private final Map<String, Question> questions = new java.util.concurrent.ConcurrentHashMap<>();
+
+        @Override
+        public String save(Question question) {
+            questions.put(question.questionId(), question);
+            return question.questionId();
+        }
+
+        @Override
+        public Question update(String questionId, QuestionStatus status) {
+            Question existing = questions.get(questionId);
+            if (existing == null) {
+                throw new IllegalStateException("missing question: " + questionId);
+            }
+            Question updated = new Question(
+                    existing.questionId(),
+                    existing.sessionId(),
+                    existing.question(),
+                    existing.impact(),
+                    existing.recommendation(),
+                    status,
+                    existing.category(),
+                    existing.deliveryMode()
+            );
+            questions.put(questionId, updated);
+            return updated;
+        }
+
+        @Override
+        public List<Question> findBySession(String sessionId) {
+            return questions.values().stream()
+                    .filter(question -> question.sessionId().equals(sessionId))
+                    .toList();
+        }
+
+        @Override
+        public List<Question> findByStatus(QuestionStatus status) {
+            return questions.values().stream()
+                    .filter(question -> question.status() == status)
+                    .toList();
+        }
+
+        @Override
+        public Optional<Question> findPending(String sessionId) {
+            return questions.values().stream()
+                    .filter(question -> question.sessionId().equals(sessionId))
+                    .filter(question -> question.status() == QuestionStatus.WAITING_FOR_ANSWER)
+                    .findFirst();
+        }
+
+        @Override
+        public void delete(String questionId) {
+            questions.remove(questionId);
+        }
     }
 }

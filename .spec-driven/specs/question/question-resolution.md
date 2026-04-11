@@ -383,6 +383,13 @@ The system MUST prevent human-only question categories from being auto-answered.
 - THEN the system MUST reject `AUTO_AI_REPLY` for that question
 - AND it MUST preserve a human-handled delivery mode for the unresolved question
 
+#### Scenario: Loop can observe human-only categories
+- GIVEN a structured question categorized as `PERMISSION_CONFIRMATION` or `IRREVERSIBLE_APPROVAL`
+- WHEN the autonomous loop inspects the question
+- THEN the question MUST be observable as requiring human handling
+- AND its routing metadata MUST include a non-empty `routingReason`
+- AND the routing metadata MUST be usable by loop escalation events without requiring a second routing decision
+
 ### Requirement: Routing decision auditability
 
 The system MUST make the routing decision observable before answer execution begins.
@@ -595,6 +602,44 @@ The system MUST provide a `QuestionDeliveryService` facade that combines deliver
 - GIVEN a `QuestionDeliveryService` with a configured `QuestionStore`
 - WHEN a question is delivered or answered
 - THEN the state change MUST be persisted via the `QuestionStore`
+
+#### Scenario: Push-mobile loop escalation reaches delivery channel
+- GIVEN an escalated loop question with delivery mode `PUSH_MOBILE_WAIT_HUMAN`
+- AND a configured question delivery surface
+- WHEN the loop escalates the question
+- THEN the question MUST be available to the configured mobile delivery channel
+
+#### Scenario: Pause-wait loop escalation remains pending
+- GIVEN an escalated loop question with delivery mode `PAUSE_WAIT_HUMAN`
+- AND a configured question delivery surface
+- WHEN the loop escalates the question
+- THEN the question MUST be available as a pending waiting question for the session
+
+#### Scenario: Loop escalation remains observable without delivery surface
+- GIVEN an escalated loop question
+- AND no question delivery surface is configured for the loop
+- WHEN the loop escalates the question
+- THEN the question MUST remain observable through loop escalation event metadata
+
+#### Scenario: Loop escalation delivery failure is not successful
+- GIVEN an escalated loop question
+- AND the configured delivery surface fails to deliver it
+- WHEN the loop handles the failure
+- THEN the loop iteration MUST NOT be marked successful
+- AND the loop MUST be left in `PAUSED` or `ERROR`
+- AND the loop MUST NOT continue in `RUNNING`
+
+### Requirement: Loop escalation audit context
+
+The system MUST expose enough audit context for every loop-escalated question.
+
+#### Scenario: Escalated loop question preserves routing context
+- GIVEN a loop question escalated to human handling
+- THEN the audit context MUST identify the originating session
+- AND it MUST identify the question category
+- AND it MUST identify the delivery mode
+- AND it MUST explain why AI auto-answering was not used
+- AND it MUST preserve the original `questionId`, `sessionId`, `category`, `deliveryMode`, and `routingReason`
 
 ### Requirement: QuestionStore
 
