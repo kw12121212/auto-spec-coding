@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -176,6 +177,99 @@ class DefaultLlmProviderRegistryTest {
         assertNull(registry.route("anything"));
     }
 
+    @Test
+    void defaultSnapshot_usesDefaultProviderConfig() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        StubProvider provider = new StubProvider("https://api.openai.com/v1", "key");
+        registry.register("openai", provider);
+
+        LlmConfigSnapshot snapshot = registry.defaultSnapshot();
+
+        assertEquals("openai", snapshot.providerName());
+        assertEquals(provider.config().baseUrl(), snapshot.baseUrl());
+        assertEquals(provider.config().model(), snapshot.model());
+        assertEquals(provider.config().timeout(), snapshot.timeout());
+        assertEquals(provider.config().maxRetries(), snapshot.maxRetries());
+        registry.close();
+    }
+
+    @Test
+    void replaceSessionSnapshot_fallsBackWhenCleared() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot sessionSnapshot = new LlmConfigSnapshot(
+                "claude",
+                "https://api.anthropic.com/v1",
+                "claude-opus",
+                20,
+                1);
+        registry.replaceSessionSnapshot("session-a", sessionSnapshot);
+
+        assertEquals(sessionSnapshot, registry.snapshot("session-a"));
+
+        registry.clearSessionSnapshot("session-a");
+
+        assertEquals("openai", registry.snapshot("session-a").providerName());
+        registry.close();
+    }
+
+    @Test
+    void replaceDefaultSnapshot_updatesFutureResolutionAtomically() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot original = registry.defaultSnapshot();
+        LlmConfigSnapshot replacement = new LlmConfigSnapshot(
+                "openai",
+                "https://api.alt.example/v1",
+                "gpt-4.1",
+                25,
+                4);
+
+        registry.replaceDefaultSnapshot(replacement);
+
+        assertEquals(original.providerName(), replacement.providerName());
+        assertNotEquals(original.baseUrl(), registry.defaultSnapshot().baseUrl());
+        assertEquals(replacement, registry.defaultSnapshot());
+        registry.close();
+    }
+
+    @Test
+    void createClientForSession_bindsSnapshotPerRequest() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        SnapshotRecordingProvider provider = new SnapshotRecordingProvider(new LlmConfig(
+                "https://api.openai.com/v1", "key-a", "gpt-4", 20, 1));
+        registry.register("openai", provider);
+        registry.setDefault("openai");
+
+        LlmClient client = registry.createClientForSession("session-a");
+        LlmConfigSnapshot first = new LlmConfigSnapshot(
+                "openai",
+                "https://api.first.example/v1",
+                "gpt-4",
+                20,
+                1);
+        LlmConfigSnapshot second = new LlmConfigSnapshot(
+                "openai",
+                "https://api.second.example/v1",
+                "gpt-4.1",
+                30,
+                2);
+
+        registry.replaceSessionSnapshot("session-a", first);
+        client.chat(List.of(new UserMessage("first", 0)));
+
+        registry.replaceSessionSnapshot("session-a", second);
+        client.chat(List.of(new UserMessage("second", 0)));
+
+        assertEquals(List.of(first, second), provider.snapshotsSeen);
+        registry.close();
+    }
+
     // --- stub ---
 
     static class StubProvider implements LlmProvider {
@@ -201,5 +295,44 @@ class DefaultLlmProviderRegistryTest {
 
         @Override
         public void close() { closed = true; }
+    }
+
+    static final class SnapshotRecordingProvider implements LlmProvider {
+        private final LlmConfig config;
+        private final List<LlmConfigSnapshot> snapshotsSeen = new CopyOnWriteArrayList<>();
+
+        SnapshotRecordingProvider(LlmConfig config) {
+            this.config = config;
+        }
+
+        @Override
+        public LlmConfig config() {
+            return config;
+        }
+
+        @Override
+        public LlmClient createClient() {
+            throw new UnsupportedOperationException("snapshot-aware path expected");
+        }
+
+        @Override
+        public LlmClient createClient(LlmConfigSnapshot snapshot) {
+            snapshotsSeen.add(snapshot);
+            return new LlmClient() {
+                @Override
+                public LlmResponse chat(List<Message> messages) {
+                    return new LlmResponse.TextResponse(snapshot.model(), null, null);
+                }
+
+                @Override
+                public LlmResponse chat(LlmRequest request) {
+                    return new LlmResponse.TextResponse(snapshot.model(), null, null);
+                }
+            };
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }

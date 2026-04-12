@@ -2,6 +2,8 @@ package org.specdriven.agent.agent;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.specdriven.agent.config.Config;
 
@@ -13,6 +15,8 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
     private final ConcurrentHashMap<String, LlmProvider> providers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillRoute> skillRouting = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, LlmConfigSnapshot> sessionSnapshots = new ConcurrentHashMap<>();
+    private final AtomicReference<LlmConfigSnapshot> defaultSnapshotOverride = new AtomicReference<>();
     private volatile String defaultProviderName;
 
     public DefaultLlmProviderRegistry() {}
@@ -42,15 +46,26 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
     @Override
     public LlmProvider defaultProvider() {
-        String name = defaultProviderName;
-        if (name != null) {
-            LlmProvider p = providers.get(name);
-            if (p != null) return p;
+        return provider(resolveDefaultProviderName());
+    }
+
+    @Override
+    public LlmConfigSnapshot defaultSnapshot() {
+        LlmConfigSnapshot override = defaultSnapshotOverride.get();
+        if (override != null) {
+            return override;
         }
-        // fallback: first registered provider in insertion order
-        Iterator<LlmProvider> it = providers.values().iterator();
-        if (it.hasNext()) return it.next();
-        throw new IllegalStateException("no providers registered");
+        String providerName = resolveDefaultProviderName();
+        return LlmConfigSnapshot.of(providerName, provider(providerName).config());
+    }
+
+    @Override
+    public LlmConfigSnapshot snapshot(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return defaultSnapshot();
+        }
+        LlmConfigSnapshot snapshot = sessionSnapshots.get(sessionId);
+        return snapshot != null ? snapshot : defaultSnapshot();
     }
 
     @Override
@@ -74,6 +89,10 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         if (name.equals(defaultProviderName)) {
             defaultProviderName = null;
         }
+        if (name.equals(defaultSnapshotOverride.get() != null ? defaultSnapshotOverride.get().providerName() : null)) {
+            defaultSnapshotOverride.set(null);
+        }
+        sessionSnapshots.entrySet().removeIf(entry -> name.equals(entry.getValue().providerName()));
     }
 
     @Override
@@ -82,6 +101,23 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             throw new IllegalArgumentException("no provider registered under name '" + name + "'");
         }
         defaultProviderName = name;
+    }
+
+    @Override
+    public void replaceDefaultSnapshot(LlmConfigSnapshot snapshot) {
+        defaultSnapshotOverride.set(validateSnapshot(snapshot));
+    }
+
+    @Override
+    public void replaceSessionSnapshot(String sessionId, LlmConfigSnapshot snapshot) {
+        requireSessionId(sessionId);
+        sessionSnapshots.put(sessionId, validateSnapshot(snapshot));
+    }
+
+    @Override
+    public void clearSessionSnapshot(String sessionId) {
+        requireSessionId(sessionId);
+        sessionSnapshots.remove(sessionId);
     }
 
     @Override
@@ -101,6 +137,12 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     }
 
     @Override
+    public LlmClient createClientForSession(String sessionId) {
+        Supplier<LlmConfigSnapshot> supplier = () -> snapshot(sessionId);
+        return new SnapshotAwareLlmClient(supplier);
+    }
+
+    @Override
     public void close() {
         // close all providers, collecting errors
         Exception firstError = null;
@@ -113,9 +155,63 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         }
         providers.clear();
         skillRouting.clear();
+        sessionSnapshots.clear();
+        defaultSnapshotOverride.set(null);
         defaultProviderName = null;
         if (firstError != null) {
             throw new RuntimeException("error closing providers", firstError);
+        }
+    }
+
+    private LlmConfigSnapshot validateSnapshot(LlmConfigSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "snapshot must not be null");
+        provider(snapshot.providerName());
+        return snapshot;
+    }
+
+    private void requireSessionId(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IllegalArgumentException("sessionId must not be null or blank");
+        }
+    }
+
+    private String resolveDefaultProviderName() {
+        String name = defaultProviderName;
+        if (name != null) {
+            LlmProvider provider = providers.get(name);
+            if (provider != null) {
+                return name;
+            }
+        }
+        Iterator<String> it = providers.keySet().iterator();
+        if (it.hasNext()) {
+            return it.next();
+        }
+        throw new IllegalStateException("no providers registered");
+    }
+
+    private final class SnapshotAwareLlmClient implements LlmClient {
+        private final Supplier<LlmConfigSnapshot> snapshotSupplier;
+
+        private SnapshotAwareLlmClient(Supplier<LlmConfigSnapshot> snapshotSupplier) {
+            this.snapshotSupplier = snapshotSupplier;
+        }
+
+        @Override
+        public LlmResponse chat(List<Message> messages) {
+            return chat(LlmRequest.of(messages));
+        }
+
+        @Override
+        public LlmResponse chat(LlmRequest request) {
+            LlmConfigSnapshot snapshot = snapshotSupplier.get();
+            return provider(snapshot.providerName()).createClient(snapshot).chat(request);
+        }
+
+        @Override
+        public void chatStreaming(LlmRequest request, LlmStreamCallback callback) {
+            LlmConfigSnapshot snapshot = snapshotSupplier.get();
+            provider(snapshot.providerName()).createClient(snapshot).chatStreaming(request, callback);
         }
     }
 

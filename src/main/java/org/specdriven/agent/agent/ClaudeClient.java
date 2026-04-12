@@ -32,6 +32,10 @@ public class ClaudeClient implements LlmClient {
                 .build();
     }
 
+    LlmConfig config() {
+        return config;
+    }
+
     @Override
     public LlmResponse chat(List<Message> messages) {
         return chat(LlmRequest.of(messages));

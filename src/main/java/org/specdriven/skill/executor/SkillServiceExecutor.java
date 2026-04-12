@@ -139,7 +139,7 @@ public class SkillServiceExecutor implements ServiceExecutor {
         private DefaultSkillLlmClientFactory() {}
 
         static LlmClient create(Path skillDir) {
-            return registry(skillDir).defaultProvider().createClient();
+            return registry(skillDir).createClientForSession(null);
         }
 
         private static DefaultLlmProviderRegistry registry(Path skillDir) {

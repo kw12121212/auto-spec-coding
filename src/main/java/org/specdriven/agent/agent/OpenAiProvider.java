@@ -23,6 +23,17 @@ public class OpenAiProvider implements LlmProvider {
     }
 
     @Override
+    public LlmClient createClient(LlmConfigSnapshot snapshot) {
+        if (snapshot == null) throw new IllegalArgumentException("snapshot must not be null");
+        return new OpenAiClient(new LlmConfig(
+                snapshot.baseUrl(),
+                config.apiKey(),
+                snapshot.model(),
+                snapshot.timeout(),
+                snapshot.maxRetries()));
+    }
+
+    @Override
     public void close() {
         // stateless — nothing to release
     }

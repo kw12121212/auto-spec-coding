@@ -24,6 +24,25 @@ class ClaudeProviderTest {
     }
 
     @Test
+    void createClientWithSnapshotUsesSnapshotConfig() {
+        ClaudeProvider provider = new ClaudeProvider(CONFIG);
+        LlmConfigSnapshot snapshot = new LlmConfigSnapshot(
+                "claude",
+                "https://claude.example.com/v1",
+                "claude-opus",
+                45,
+                2);
+
+        ClaudeClient client = assertInstanceOf(ClaudeClient.class, provider.createClient(snapshot));
+
+        assertEquals(snapshot.baseUrl(), client.config().baseUrl());
+        assertEquals(CONFIG.apiKey(), client.config().apiKey());
+        assertEquals(snapshot.model(), client.config().model());
+        assertEquals(snapshot.timeout(), client.config().timeout());
+        assertEquals(snapshot.maxRetries(), client.config().maxRetries());
+    }
+
+    @Test
     void closeCompletesWithoutError() {
         ClaudeProvider provider = new ClaudeProvider(CONFIG);
         assertDoesNotThrow(provider::close);

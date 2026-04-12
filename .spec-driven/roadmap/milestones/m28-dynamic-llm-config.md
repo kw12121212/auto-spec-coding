@@ -33,8 +33,7 @@
 - 有单元测试覆盖动态更新、持久化恢复、session 隔离、事件发布、并发安全场景
 
 ## Planned Changes
-
-- `dynamic-llm-config-snapshots` - Declared: planned - 引入不可变 LLM 配置快照与原子替换机制，支持运行时更新后续请求使用的新参数
+- `dynamic-llm-config-snapshots` - Declared: complete - 引入不可变 LLM 配置快照与原子替换机制，支持运行时更新后续请求使用的新参数
 - `llm-config-persistence` - Declared: planned - 基于 Lealone DB 持久化非敏感 LLM 配置，含版本记录与回滚能力
 - `set-llm-sql-handler` - Declared: planned - 对接 Lealone SET LLM SQL 语句，解析参数并分发到 DynamicLlmConfig
 - `provider-config-refresh` - Declared: planned - 扩展 LlmProviderRegistry 支持运行时切换后续请求所用的 provider 参数快照，保证正在进行的请求不受影响
@@ -63,3 +62,4 @@
 - 参考Lealone Database.llmParameters 的 CaseInsensitiveMap<String> 存储方式
 - 首期仅支持单连接级别（per-session）配置，暂不做全局广播
 - 共享或生产环境中的密钥引用治理、权限控制与审计由后续 milestone 覆盖
+

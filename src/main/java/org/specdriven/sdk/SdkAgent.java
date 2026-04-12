@@ -287,8 +287,13 @@ public class SdkAgent {
                 return null;
             }
             try {
-                LlmProvider provider = providerRegistry.defaultProvider();
-                return provider.createClient();
+                return providerRegistry.createClientForSession(sessionId);
+            } catch (UnsupportedOperationException e) {
+                try {
+                    return providerRegistry.defaultProvider().createClient();
+                } catch (Exception ignored) {
+                    return null;
+                }
             } catch (Exception e) {
                 return null;
             }

@@ -24,6 +24,25 @@ class OpenAiProviderTest {
     }
 
     @Test
+    void createClientWithSnapshotUsesSnapshotConfig() {
+        OpenAiProvider provider = new OpenAiProvider(CONFIG);
+        LlmConfigSnapshot snapshot = new LlmConfigSnapshot(
+                "openai",
+                "https://api.example.com/v1",
+                "gpt-4.1",
+                45,
+                2);
+
+        OpenAiClient client = assertInstanceOf(OpenAiClient.class, provider.createClient(snapshot));
+
+        assertEquals(snapshot.baseUrl(), client.config().baseUrl());
+        assertEquals(CONFIG.apiKey(), client.config().apiKey());
+        assertEquals(snapshot.model(), client.config().model());
+        assertEquals(snapshot.timeout(), client.config().timeout());
+        assertEquals(snapshot.maxRetries(), client.config().maxRetries());
+    }
+
+    @Test
     void closeCompletesWithoutError() {
         OpenAiProvider provider = new OpenAiProvider(CONFIG);
         assertDoesNotThrow(provider::close);

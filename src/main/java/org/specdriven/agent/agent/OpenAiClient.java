@@ -30,6 +30,10 @@ public class OpenAiClient implements LlmClient {
                 .build();
     }
 
+    LlmConfig config() {
+        return config;
+    }
+
     @Override
     public LlmResponse chat(List<Message> messages) {
         return chat(LlmRequest.of(messages));
