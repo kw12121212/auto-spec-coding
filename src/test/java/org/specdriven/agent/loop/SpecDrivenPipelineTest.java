@@ -16,8 +16,13 @@ import org.specdriven.agent.agent.LlmClient;
 import org.specdriven.agent.agent.LlmResponse;
 import org.specdriven.agent.agent.Message;
 import org.specdriven.agent.agent.ToolCall;
+import org.specdriven.agent.agent.ToolMessage;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
+import org.specdriven.agent.tool.ToolContext;
+import org.specdriven.agent.tool.ToolInput;
+import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.agent.tool.ToolResult;
 
 class SpecDrivenPipelineTest {
 
@@ -230,6 +235,37 @@ class SpecDrivenPipelineTest {
                 System.currentTimeMillis(), "test", Map.of())));
     }
 
+    @Test
+    void contextBudgetedPipelineOptimizesMessagesBeforeDelegate() {
+        RecordingPipelineClient client = new RecordingPipelineClient();
+        LoopConfig config = new LoopConfig(
+                1,
+                60,
+                List.of(),
+                Path.of("/tmp"),
+                new SimpleEventBus(),
+                ContextBudget.of(10_000));
+        LoopPipeline pipeline = new SpecDrivenPipeline(path -> client, Map.of("lookup", new LookupTool()));
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, config, Set.of());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertTrue(client.calls.size() >= 2);
+        assertFalse(client.calls.get(1).stream().anyMatch(ToolMessage.class::isInstance));
+    }
+
+    @Test
+    void pipelineWithoutContextBudgetLeavesMessagesUnchanged() {
+        RecordingPipelineClient client = new RecordingPipelineClient();
+        LoopPipeline pipeline = new SpecDrivenPipeline(path -> client, Map.of("lookup", new LookupTool()));
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(), Set.of());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertTrue(client.calls.size() >= 2);
+        assertTrue(client.calls.get(1).stream().anyMatch(ToolMessage.class::isInstance));
+    }
+
     private static final class StubLlmClient implements LlmClient {
         private final LlmResponse response;
 
@@ -245,5 +281,41 @@ class SpecDrivenPipelineTest {
 
     private static LlmResponse textResponse(String content) {
         return new LlmResponse.TextResponse(content);
+    }
+
+    private static final class RecordingPipelineClient implements LlmClient {
+        private final List<List<Message>> calls = new java.util.ArrayList<>();
+
+        @Override
+        public LlmResponse chat(List<Message> messages) {
+            calls.add(List.copyOf(messages));
+            if (calls.size() == 1) {
+                return new LlmResponse.ToolCallResponse(List.of(
+                        new ToolCall("lookup", Map.of(), "lookup-call-1")));
+            }
+            return new LlmResponse.TextResponse("done");
+        }
+    }
+
+    private static final class LookupTool implements Tool {
+        @Override
+        public String getName() {
+            return "lookup";
+        }
+
+        @Override
+        public String getDescription() {
+            return "lookup test output";
+        }
+
+        @Override
+        public List<ToolParameter> getParameters() {
+            return List.of();
+        }
+
+        @Override
+        public ToolResult execute(ToolInput input, ToolContext context) {
+            return new ToolResult.Success("unrelated archived lookup output");
+        }
     }
 }

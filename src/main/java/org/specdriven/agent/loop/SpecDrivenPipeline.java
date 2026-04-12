@@ -6,6 +6,8 @@ import org.specdriven.agent.agent.DefaultOrchestrator;
 import org.specdriven.agent.agent.LlmClient;
 import org.specdriven.agent.agent.OrchestratorConfig;
 import org.specdriven.agent.agent.SimpleAgentContext;
+import org.specdriven.agent.agent.SmartContextInjector;
+import org.specdriven.agent.agent.SmartContextInjectorConfig;
 import org.specdriven.agent.agent.SystemMessage;
 import org.specdriven.agent.agent.UserMessage;
 import org.specdriven.agent.event.Event;
@@ -84,6 +86,7 @@ public class SpecDrivenPipeline implements LoopPipeline {
         try {
             LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
             TokenAccumulator tokenAccumulator = new TokenAccumulator(rawClient);
+            LlmClient phaseClient = contextOptimizedClient(tokenAccumulator, config);
 
             for (PipelinePhase phase : PipelinePhase.ordered()) {
                 if (skipPhases.contains(phase)) {
@@ -102,7 +105,7 @@ public class SpecDrivenPipeline implements LoopPipeline {
                 };
                 config.eventBus().subscribe(EventType.QUESTION_CREATED, questionListener);
                 try {
-                    executePhase(phase, candidate, config, tokenAccumulator, questionRuntime);
+                    executePhase(phase, candidate, config, phaseClient, questionRuntime);
                     completed.add(phase);
                 } catch (QuestionCaptureException e) {
                     return result(IterationStatus.QUESTIONING, null, startMs, completed,
@@ -195,6 +198,15 @@ public class SpecDrivenPipeline implements LoopPipeline {
                                    Question question) {
         return new IterationResult(status, failureReason,
                 System.currentTimeMillis() - startMs, completed, tokenUsage, question);
+    }
+
+    private static LlmClient contextOptimizedClient(LlmClient client, LoopConfig config) {
+        if (config.contextBudget() == null) {
+            return client;
+        }
+        return new SmartContextInjector(
+                client,
+                SmartContextInjectorConfig.defaults(config.contextBudget().maxTokens()));
     }
 
     private static Question reconstructQuestion(Event event) {

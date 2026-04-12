@@ -25,6 +25,7 @@
 - [context-retention-policy.md](llm/context-retention-policy.md) - ContextRetentionPolicy, retention decisions, and mandatory context reasons
 - [tool-result-filter.md](llm/tool-result-filter.md) - ToolResultFilter, DefaultToolResultFilter, ToolResultFilterInput
 - [conversation-summarizer.md](llm/conversation-summarizer.md) - ConversationSummarizer, DefaultConversationSummarizer, ConversationSummary, ConversationSummarizerInput
+- [smart-context-injector.md](llm/smart-context-injector.md) - SmartContextInjector, SmartContextInjectorConfig, smart context optimization decorator
 
 ## API (API 层)
 

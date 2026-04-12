@@ -36,7 +36,7 @@
 - `context-retention-policy` - Declared: complete - 定义恢复执行、Question 升级和 Answer 回放场景下不可裁剪的最小上下文保留规则
 - `tool-result-filter` - Declared: complete - 实现 ToolResultFilter 装饰器：在构建 LlmRequest 时根据当前 turn 的 tool call 列表过滤无关 ToolResult
 - `conversation-summarizer` - Declared: complete - 实现 ConversationSummarizer：基于滑动窗口对早期对话历史生成语义摘要，替换简单截断策略
-- `smart-context-injector` - Declared: planned - 整合上述组件为 SmartContextInjector 装饰器，透明包装 LlmClient，与 DefaultOrchestrator 和 LoopDriver 集成，并接入固定评测集验证
+- `smart-context-injector` - Declared: complete - 整合上述组件为 SmartContextInjector 装饰器，透明包装 LlmClient，与 DefaultOrchestrator 和 LoopDriver 集成，并接入固定评测集验证
 
 ## Dependencies
 
@@ -55,7 +55,7 @@
 - 若缺少固定评测集和无回归阈值，后续 change 很难判断优化是否真正有效
 
 ## Status
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -64,4 +64,6 @@
 - 参考 Lealone Service.genJavaCode() 中通过反射获取 public field/method 并按 propertyClasses 去重的思路
 - 该 milestone 是 M24/M26 自主循环长运行稳定性的关键支撑——context 效率直接影响循环可持续性
 - 首期优先保证“少裁错”而不是“极限压缩”，避免为追求压缩率牺牲恢复稳定性
+
+
 

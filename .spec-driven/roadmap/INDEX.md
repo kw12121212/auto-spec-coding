@@ -20,7 +20,7 @@
 - [m24-autonomous-loop-driver.md](milestones/m24-autonomous-loop-driver.md) - M24 - 内置自主循环执行流水线 - complete
 - [m25-production-install-repair.md](milestones/m25-production-install-repair.md) - M25 - 生产环境一键安装与修复 - proposed
 - [m26-autonomous-loop-recovery-escalation.md](milestones/m26-autonomous-loop-recovery-escalation.md) - M26 - 自主循环恢复与升级控制 - complete
-- [m27-smart-context-injection.md](milestones/m27-smart-context-injection.md) - M27 - 智能上下文注入与 Token 优化 - proposed
+- [m27-smart-context-injection.md](milestones/m27-smart-context-injection.md) - M27 - 智能上下文注入与 Token 优化 - complete
 - [m28-dynamic-llm-config.md](milestones/m28-dynamic-llm-config.md) - M28 - 动态 LLM 配置与热切换 - proposed
 - [m29-interactive-human-in-loop.md](milestones/m29-interactive-human-in-loop.md) - M29 - SQL+自然语言交互式人机协作 - proposed
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - complete
