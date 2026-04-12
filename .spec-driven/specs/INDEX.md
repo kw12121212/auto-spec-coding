@@ -23,6 +23,7 @@
 - [llm-cache.md](llm/llm-cache.md) - LlmCache, LealoneLlmCache, CacheKeyGenerator, CachingLlmClient, UsageRecord
 - [context-relevance-scorer.md](llm/context-relevance-scorer.md) - ContextRelevanceScorer, KeywordContextRelevanceScorer, keyword-based tool-result relevance scoring
 - [context-retention-policy.md](llm/context-retention-policy.md) - ContextRetentionPolicy, retention decisions, and mandatory context reasons
+- [tool-result-filter.md](llm/tool-result-filter.md) - ToolResultFilter, DefaultToolResultFilter, ToolResultFilterInput
 
 ## API (API 层)
 
