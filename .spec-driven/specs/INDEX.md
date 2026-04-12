@@ -22,6 +22,7 @@
 - [llm-provider.md](llm/llm-provider.md) - LlmProvider, LlmConfig, LlmRequest, LlmResponse, LlmUsage, ToolSchema, LlmStreamCallback, LlmProviderRegistry, DefaultLlmProviderRegistry, SkillRoute, LlmProviderFactory
 - [llm-cache.md](llm/llm-cache.md) - LlmCache, LealoneLlmCache, CacheKeyGenerator, CachingLlmClient, UsageRecord
 - [context-relevance-scorer.md](llm/context-relevance-scorer.md) - ContextRelevanceScorer, KeywordContextRelevanceScorer, keyword-based tool-result relevance scoring
+- [context-retention-policy.md](llm/context-retention-policy.md) - ContextRetentionPolicy, retention decisions, and mandatory context reasons
 
 ## API (API 层)
 
