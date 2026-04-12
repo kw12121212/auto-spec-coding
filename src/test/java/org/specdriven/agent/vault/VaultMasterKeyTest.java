@@ -2,9 +2,11 @@ package org.specdriven.agent.vault;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@ResourceLock("VaultMasterKey")
 class VaultMasterKeyTest {
 
     @AfterEach

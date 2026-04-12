@@ -24,6 +24,7 @@
 - [context-relevance-scorer.md](llm/context-relevance-scorer.md) - ContextRelevanceScorer, KeywordContextRelevanceScorer, keyword-based tool-result relevance scoring
 - [context-retention-policy.md](llm/context-retention-policy.md) - ContextRetentionPolicy, retention decisions, and mandatory context reasons
 - [tool-result-filter.md](llm/tool-result-filter.md) - ToolResultFilter, DefaultToolResultFilter, ToolResultFilterInput
+- [conversation-summarizer.md](llm/conversation-summarizer.md) - ConversationSummarizer, DefaultConversationSummarizer, ConversationSummary, ConversationSummarizerInput
 
 ## API (API 层)
 
