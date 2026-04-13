@@ -2,6 +2,7 @@ package org.specdriven.agent.agent;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.llm.LealoneRuntimeLlmConfigStore;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -239,6 +241,79 @@ class DefaultLlmProviderRegistryTest {
     }
 
     @Test
+    void defaultSnapshot_recoversPersistedDefaultWhenStoreConfigured() {
+        String jdbcUrl = jdbcUrl("llm_registry_recovery");
+        LealoneRuntimeLlmConfigStore firstStore = new LealoneRuntimeLlmConfigStore(jdbcUrl);
+        firstStore.persistDefaultSnapshot(new LlmConfigSnapshot(
+                "openai",
+                "https://api.persisted.example/v1",
+                "gpt-4.1",
+                45,
+                5));
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(new LealoneRuntimeLlmConfigStore(jdbcUrl));
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertEquals("https://api.persisted.example/v1", registry.defaultSnapshot().baseUrl());
+        assertEquals("gpt-4.1", registry.defaultSnapshot().model());
+        registry.close();
+    }
+
+    @Test
+    void replaceDefaultSnapshot_persistsDefaultWithoutChangingSessionOverrides() {
+        String jdbcUrl = jdbcUrl("llm_registry_store");
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(new LealoneRuntimeLlmConfigStore(jdbcUrl));
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot sessionSnapshot = new LlmConfigSnapshot(
+                "claude",
+                "https://api.anthropic.com/v1",
+                "claude-opus",
+                20,
+                1);
+        LlmConfigSnapshot persistedDefault = new LlmConfigSnapshot(
+                "openai",
+                "https://api.persisted.example/v1",
+                "gpt-4.1",
+                40,
+                2);
+
+        registry.replaceSessionSnapshot("session-a", sessionSnapshot);
+        registry.replaceDefaultSnapshot(persistedDefault);
+
+        assertEquals(sessionSnapshot, registry.snapshot("session-a"));
+        registry.clearSessionSnapshot("session-a");
+        assertEquals(persistedDefault, registry.snapshot("session-a"));
+        registry.close();
+
+        LealoneRuntimeLlmConfigStore recoveredStore = new LealoneRuntimeLlmConfigStore(jdbcUrl);
+        assertEquals(persistedDefault, recoveredStore.loadDefaultSnapshot().orElseThrow());
+    }
+
+    @Test
+    void defaultSnapshot_fallsBackWhenPersistedProviderIsUnavailable() {
+        String jdbcUrl = jdbcUrl("llm_registry_missing_provider");
+        LealoneRuntimeLlmConfigStore store = new LealoneRuntimeLlmConfigStore(jdbcUrl);
+        store.persistDefaultSnapshot(new LlmConfigSnapshot(
+                "claude",
+                "https://api.anthropic.com/v1",
+                "claude-opus",
+                20,
+                1));
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(new LealoneRuntimeLlmConfigStore(jdbcUrl));
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertEquals("openai", registry.defaultSnapshot().providerName());
+        assertEquals("https://api.openai.com/v1", registry.defaultSnapshot().baseUrl());
+        registry.close();
+    }
+
+    @Test
     void createClientForSession_bindsSnapshotPerRequest() {
         DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
         SnapshotRecordingProvider provider = new SnapshotRecordingProvider(new LlmConfig(
@@ -334,5 +409,10 @@ class DefaultLlmProviderRegistryTest {
         @Override
         public void close() {
         }
+    }
+
+    private static String jdbcUrl(String prefix) {
+        String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        return "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
     }
 }

@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.specdriven.agent.config.Config;
+import org.specdriven.agent.llm.RuntimeLlmConfigStore;
 
 /**
  * Thread-safe implementation of {@link LlmProviderRegistry}.
@@ -17,9 +18,19 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     private final ConcurrentHashMap<String, SkillRoute> skillRouting = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LlmConfigSnapshot> sessionSnapshots = new ConcurrentHashMap<>();
     private final AtomicReference<LlmConfigSnapshot> defaultSnapshotOverride = new AtomicReference<>();
+    private final RuntimeLlmConfigStore runtimeConfigStore;
     private volatile String defaultProviderName;
 
-    public DefaultLlmProviderRegistry() {}
+    public DefaultLlmProviderRegistry() {
+        this(null);
+    }
+
+    public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore) {
+        this.runtimeConfigStore = runtimeConfigStore;
+        if (runtimeConfigStore != null) {
+            defaultSnapshotOverride.set(runtimeConfigStore.loadDefaultSnapshot().orElse(null));
+        }
+    }
 
     @Override
     public void register(String name, LlmProvider provider) {
@@ -53,7 +64,10 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     public LlmConfigSnapshot defaultSnapshot() {
         LlmConfigSnapshot override = defaultSnapshotOverride.get();
         if (override != null) {
-            return override;
+            if (providers.isEmpty() || providers.containsKey(override.providerName())) {
+                return override;
+            }
+            defaultSnapshotOverride.compareAndSet(override, null);
         }
         String providerName = resolveDefaultProviderName();
         return LlmConfigSnapshot.of(providerName, provider(providerName).config());
@@ -105,7 +119,11 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
     @Override
     public void replaceDefaultSnapshot(LlmConfigSnapshot snapshot) {
-        defaultSnapshotOverride.set(validateSnapshot(snapshot));
+        LlmConfigSnapshot validated = validateSnapshot(snapshot);
+        if (runtimeConfigStore != null) {
+            runtimeConfigStore.persistDefaultSnapshot(validated);
+        }
+        defaultSnapshotOverride.set(validated);
     }
 
     @Override
@@ -158,6 +176,13 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         sessionSnapshots.clear();
         defaultSnapshotOverride.set(null);
         defaultProviderName = null;
+        if (runtimeConfigStore != null) {
+            try {
+                runtimeConfigStore.close();
+            } catch (Exception e) {
+                if (firstError == null) firstError = e;
+            }
+        }
         if (firstError != null) {
             throw new RuntimeException("error closing providers", firstError);
         }
@@ -241,10 +266,17 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     public static DefaultLlmProviderRegistry fromConfig(
             Config config,
             Map<String, LlmProviderFactory> factories) {
+        return fromConfig(config, factories, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfig(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            RuntimeLlmConfigStore runtimeConfigStore) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(factories, "factories must not be null");
 
-        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(runtimeConfigStore);
 
         // navigate to llm section
         Config llmSection = config.getSection("llm");
