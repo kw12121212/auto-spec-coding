@@ -40,6 +40,7 @@
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <lealone.version>8.0.0-SNAPSHOT</lealone.version>
+        <lealone.upstream.commit>990a56f458a5a48c719450243f35fea17f45fb78</lealone.upstream.commit>
         <junit.version>5.11.4</junit.version>
     </properties>
 
@@ -53,6 +54,11 @@
         <dependency>
             <groupId>com.lealone</groupId>
             <artifactId>lealone-net</artifactId>
+            <version>${lealone.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.lealone</groupId>
+            <artifactId>lealone-db</artifactId>
             <version>${lealone.version}</version>
         </dependency>
         <dependency>

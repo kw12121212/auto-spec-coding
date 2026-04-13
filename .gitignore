@@ -24,6 +24,7 @@ Thumbs.db
 
 # Lealone submodule build artifacts
 lealone/**/target/
+lealone_data/
 
 # Bundled tool binaries (downloaded via scripts/download-builtin-tools.sh)
 src/main/resources/builtin-tools/

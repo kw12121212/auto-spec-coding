@@ -1,5 +1,7 @@
 package org.specdriven.skill.compiler;
 
+import com.lealone.db.util.SourceCompiler;
+
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -8,14 +10,12 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 public final class LealoneSkillSourceCompiler implements SkillSourceCompiler {
@@ -43,8 +43,12 @@ public final class LealoneSkillSourceCompiler implements SkillSourceCompiler {
         }
 
         try {
-            Map<String, byte[]> classBytes = compilerBackend.compile(entryClassName, javaSource);
-            writeClassOutputs(outputDir, classBytes);
+            compilerBackend.compile(entryClassName, javaSource, outputDir);
+            Path entryClassFile = outputDir.resolve(entryClassName.replace('.', '/') + ".class");
+            if (!Files.isRegularFile(entryClassFile)) {
+                throw new SkillCompilationException(
+                        "Compiled output missing entry class bytes for: " + entryClassName);
+            }
             return new SkillCompilationResult(true, entryClassName, List.of());
         } catch (SkillCompilationException e) {
             throw e;
@@ -53,17 +57,6 @@ public final class LealoneSkillSourceCompiler implements SkillSourceCompiler {
                 throw new SkillCompilationException("Required Lealone compiler capability is unavailable", e);
             }
             throw new SkillCompilationException("Failed to compile skill source for: " + entryClassName, e);
-        }
-    }
-
-    private void writeClassOutputs(Path outputDir, Map<String, byte[]> classBytes) throws IOException {
-        for (Map.Entry<String, byte[]> entry : classBytes.entrySet()) {
-            Path classFile = outputDir.resolve(entry.getKey().replace('.', '/') + ".class");
-            Path parent = classFile.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.write(classFile, entry.getValue());
         }
     }
 
@@ -152,24 +145,16 @@ public final class LealoneSkillSourceCompiler implements SkillSourceCompiler {
     }
 
     interface CompilerBackend {
-        Map<String, byte[]> compile(String entryClassName, String javaSource) throws Exception;
+        void compile(String entryClassName, String javaSource, Path outputDir) throws Exception;
     }
 
     private static final class SourceCompilerBackend implements CompilerBackend {
         @Override
-        public Map<String, byte[]> compile(String entryClassName, String javaSource) throws Exception {
-            Class<?> compilerClass = Class.forName("com.lealone.db.util.SourceCompiler$SCJavaCompiler");
-            Method newInstance = compilerClass.getDeclaredMethod("newInstance", ClassLoader.class, boolean.class);
-            newInstance.setAccessible(true);
-            Object compiler = newInstance.invoke(null, LealoneSkillSourceCompiler.class.getClassLoader(), true);
-            Method compile = compilerClass.getDeclaredMethod("compile", String.class, String.class);
-            compile.setAccessible(true);
-            @SuppressWarnings("unchecked")
-            Map<String, byte[]> byteCodes = (Map<String, byte[]>) compile.invoke(compiler, entryClassName, javaSource);
-            if (!byteCodes.containsKey(entryClassName)) {
-                throw new SkillCompilationException("Compiled output missing entry class bytes for: " + entryClassName);
-            }
-            return Map.copyOf(byteCodes);
+        public void compile(String entryClassName, String javaSource, Path outputDir) {
+            SourceCompiler compiler = new SourceCompiler();
+            compiler.setClassDir(outputDir.toFile());
+            compiler.setSource(entryClassName, javaSource);
+            compiler.compile(entryClassName);
         }
     }
 

@@ -66,7 +66,7 @@ class SkillSourceCompilerTest {
 
     @Test
     void unavailableCompilerCapabilityFailsFast() {
-        LealoneSkillSourceCompiler compiler = new LealoneSkillSourceCompiler((entryClassName, javaSource) -> {
+        LealoneSkillSourceCompiler compiler = new LealoneSkillSourceCompiler((entryClassName, javaSource, outputDir) -> {
             throw new RuntimeException("JDK Java compiler not available");
         });
 

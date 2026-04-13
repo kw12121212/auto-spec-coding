@@ -23,9 +23,20 @@ The repository already includes the core runtime, built-in tool surface, eventin
 - JDK 25+
 - Maven 3.9+
 
+## Lealone Upstream Baseline
+
+- Verified upstream commit: `990a56f458a5a48c719450243f35fea17f45fb78` (also recorded as `lealone.upstream.commit` in `pom.xml`)
+- Alignment note: [`LEALONE_ALIGNMENT.md`](LEALONE_ALIGNMENT.md)
+- Install the verified upstream baseline locally before compiling or testing:
+
+```bash
+./scripts/install-lealone-upstream.sh
+```
+
 ## Local Verification
 
 ```bash
+./scripts/install-lealone-upstream.sh
 mvn compile -q
 mvn test -q -Dsurefire.useFile=false
 ```

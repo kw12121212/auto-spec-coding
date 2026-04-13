@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.lang.reflect.Field;
+import java.util.List;
 
 import com.lealone.db.service.Service;
 import com.lealone.db.service.ServiceExecutor;
@@ -28,6 +29,9 @@ class SkillServiceExecutorFactoryTest {
         Field sqlField = Service.class.getDeclaredField("sql");
         sqlField.setAccessible(true);
         sqlField.set(service, sql);
+        Field methodsField = Service.class.getDeclaredField("serviceMethods");
+        methodsField.setAccessible(true);
+        methodsField.set(service, List.of());
         return service;
     }
 
