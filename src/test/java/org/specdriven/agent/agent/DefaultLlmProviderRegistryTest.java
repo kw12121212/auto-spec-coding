@@ -2,6 +2,9 @@ package org.specdriven.agent.agent;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.llm.LealoneRuntimeLlmConfigStore;
 
 import java.io.IOException;
@@ -219,6 +222,155 @@ class DefaultLlmProviderRegistryTest {
     }
 
     @Test
+    void replaceDefaultSnapshot_publishesConfigChangedEventWithDefaultMetadata() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        registry.replaceDefaultSnapshot(new LlmConfigSnapshot(
+                "openai",
+                "https://api.alt.example/v1",
+                "gpt-4.1",
+                25,
+                4));
+
+        assertEquals(1, events.size());
+        Event event = events.get(0);
+        assertEquals(EventType.LLM_CONFIG_CHANGED, event.type());
+        assertEquals("llm-runtime-config", event.source());
+        assertEquals("default", event.metadata().get("scope"));
+        assertFalse(event.metadata().containsKey("sessionId"));
+        assertEquals("openai", event.metadata().get("provider"));
+        assertEquals("baseUrl,model,timeout,maxRetries", event.metadata().get("changedKeys"));
+        registry.close();
+    }
+
+    @Test
+    void replaceSessionSnapshot_publishesConfigChangedEventWithSessionMetadata() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+
+        registry.replaceSessionSnapshot("session-a", new LlmConfigSnapshot(
+                "claude",
+                "https://api.anthropic.com/v1",
+                "claude-opus",
+                20,
+                1));
+
+        assertEquals(1, events.size());
+        Event event = events.get(0);
+        assertEquals("session", event.metadata().get("scope"));
+        assertEquals("session-a", event.metadata().get("sessionId"));
+        assertEquals("claude", event.metadata().get("provider"));
+        assertEquals("provider,baseUrl,model,timeout,maxRetries", event.metadata().get("changedKeys"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_updatesSupportedSessionParametersAtomically() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot updated = registry.applySetLlmStatement(
+                "session-a",
+                "SET LLM provider='claude', model='claude-sonnet', base_url='https://api.alt.anthropic.com/v1', timeout=45, max_retries=5");
+
+        assertEquals(updated, registry.snapshot("session-a"));
+        assertEquals("claude", updated.providerName());
+        assertEquals("claude-sonnet", updated.model());
+        assertEquals("https://api.alt.anthropic.com/v1", updated.baseUrl());
+        assertEquals(45, updated.timeout());
+        assertEquals(5, updated.maxRetries());
+        assertEquals("openai", registry.defaultSnapshot().providerName());
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_preservesUnspecifiedValues() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot original = registry.snapshot("session-a");
+        LlmConfigSnapshot updated = registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1-mini'");
+
+        assertEquals(original.providerName(), updated.providerName());
+        assertEquals(original.baseUrl(), updated.baseUrl());
+        assertEquals("gpt-4.1-mini", updated.model());
+        assertEquals(original.timeout(), updated.timeout());
+        assertEquals(original.maxRetries(), updated.maxRetries());
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_rejectsUnsupportedOrInvalidAssignmentsWithoutPartialUpdate() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot before = registry.snapshot("session-a");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM api_key='secret'"));
+        assertEquals(before, registry.snapshot("session-a"));
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM timeout=0, model='gpt-4.1'"));
+        assertEquals(before, registry.snapshot("session-a"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_isSessionScoped() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot sessionB = registry.snapshot("session-b");
+
+        registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1' , timeout=30");
+
+        assertEquals("gpt-4.1", registry.snapshot("session-a").model());
+        assertEquals(30, registry.snapshot("session-a").timeout());
+        assertEquals(sessionB, registry.snapshot("session-b"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_publishesConfigChangedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+
+        registry.applySetLlmStatement("session-a", "SET LLM provider='claude', model='claude-sonnet', timeout=45");
+
+        assertEquals(1, events.size());
+        Event event = events.get(0);
+        assertEquals("session", event.metadata().get("scope"));
+        assertEquals("session-a", event.metadata().get("sessionId"));
+        assertEquals("claude", event.metadata().get("provider"));
+        assertEquals("provider,model,timeout", event.metadata().get("changedKeys"));
+        registry.close();
+    }
+
+    @Test
     void replaceDefaultSnapshot_updatesFutureResolutionAtomically() {
         DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
         registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
@@ -237,6 +389,51 @@ class DefaultLlmProviderRegistryTest {
         assertEquals(original.providerName(), replacement.providerName());
         assertNotEquals(original.baseUrl(), registry.defaultSnapshot().baseUrl());
         assertEquals(replacement, registry.defaultSnapshot());
+        registry.close();
+    }
+
+    @Test
+    void clearSessionSnapshot_publishesFallbackEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+        registry.replaceSessionSnapshot("session-a", new LlmConfigSnapshot(
+                "claude",
+                "https://api.anthropic.com/v1",
+                "claude-opus",
+                20,
+                1));
+        events.clear();
+
+        registry.clearSessionSnapshot("session-a");
+
+        assertEquals(1, events.size());
+        Event event = events.get(0);
+        assertEquals("session", event.metadata().get("scope"));
+        assertEquals("session-a", event.metadata().get("sessionId"));
+        assertEquals("openai", event.metadata().get("provider"));
+        assertEquals("provider,baseUrl,model,timeout,maxRetries", event.metadata().get("changedKeys"));
+        registry.close();
+    }
+
+    @Test
+    void failedRuntimeUpdateDoesNotPublishConfigChangedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM timeout=0, model='gpt-4.1'"));
+        assertTrue(events.isEmpty());
         registry.close();
     }
 

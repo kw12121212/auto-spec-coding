@@ -77,6 +77,13 @@ public interface LlmProviderRegistry extends AutoCloseable {
     }
 
     /**
+     * Parses and applies a session-scoped {@code SET LLM} SQL statement as one atomic runtime snapshot replacement.
+     */
+    default LlmConfigSnapshot applySetLlmStatement(String sessionId, String sql) {
+        throw new UnsupportedOperationException("Runtime snapshots are not supported by this registry");
+    }
+
+    /**
      * Clears any session-specific snapshot override so the session falls back to the default snapshot.
      */
     default void clearSessionSnapshot(String sessionId) {

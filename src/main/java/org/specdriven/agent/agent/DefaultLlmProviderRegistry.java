@@ -6,6 +6,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import org.specdriven.agent.config.Config;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventBus;
+import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.llm.RuntimeLlmConfigStore;
 
 /**
@@ -14,19 +17,33 @@ import org.specdriven.agent.llm.RuntimeLlmConfigStore;
  */
 public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
+    private static final System.Logger LOG = System.getLogger(DefaultLlmProviderRegistry.class.getName());
+
+    private static final Set<String> SUPPORTED_SET_LLM_KEYS = Set.of("provider", "model", "base_url", "timeout", "max_retries");
+    private static final String DEFAULT_SCOPE = "default";
+    private static final String SESSION_SCOPE = "session";
+    private static final String EVENT_SOURCE = "llm-runtime-config";
+
     private final ConcurrentHashMap<String, LlmProvider> providers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillRoute> skillRouting = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LlmConfigSnapshot> sessionSnapshots = new ConcurrentHashMap<>();
     private final AtomicReference<LlmConfigSnapshot> defaultSnapshotOverride = new AtomicReference<>();
     private final RuntimeLlmConfigStore runtimeConfigStore;
+    private final EventBus eventBus;
+    private final SetLlmStatementParser setLlmStatementParser = new SetLlmStatementParser();
     private volatile String defaultProviderName;
 
     public DefaultLlmProviderRegistry() {
-        this(null);
+        this(null, null);
     }
 
     public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore) {
+        this(runtimeConfigStore, null);
+    }
+
+    public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore, EventBus eventBus) {
         this.runtimeConfigStore = runtimeConfigStore;
+        this.eventBus = eventBus;
         if (runtimeConfigStore != null) {
             defaultSnapshotOverride.set(runtimeConfigStore.loadDefaultSnapshot().orElse(null));
         }
@@ -119,23 +136,42 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
     @Override
     public void replaceDefaultSnapshot(LlmConfigSnapshot snapshot) {
+        LlmConfigSnapshot previous = defaultSnapshot();
         LlmConfigSnapshot validated = validateSnapshot(snapshot);
         if (runtimeConfigStore != null) {
             runtimeConfigStore.persistDefaultSnapshot(validated);
         }
         defaultSnapshotOverride.set(validated);
+        publishConfigChanged(DEFAULT_SCOPE, null, previous, validated);
     }
 
     @Override
     public void replaceSessionSnapshot(String sessionId, LlmConfigSnapshot snapshot) {
         requireSessionId(sessionId);
-        sessionSnapshots.put(sessionId, validateSnapshot(snapshot));
+        LlmConfigSnapshot previous = snapshot(sessionId);
+        LlmConfigSnapshot validated = validateSnapshot(snapshot);
+        sessionSnapshots.put(sessionId, validated);
+        publishConfigChanged(SESSION_SCOPE, sessionId, previous, validated);
+    }
+
+    @Override
+    public LlmConfigSnapshot applySetLlmStatement(String sessionId, String sql) {
+        requireSessionId(sessionId);
+        Map<String, String> assignments = setLlmStatementParser.parseAssignments(sql);
+        LlmConfigSnapshot current = snapshot(sessionId);
+        LlmConfigSnapshot replacement = buildReplacementSnapshot(current, assignments);
+        sessionSnapshots.put(sessionId, replacement);
+        publishConfigChanged(SESSION_SCOPE, sessionId, current, replacement);
+        return replacement;
     }
 
     @Override
     public void clearSessionSnapshot(String sessionId) {
         requireSessionId(sessionId);
-        sessionSnapshots.remove(sessionId);
+        LlmConfigSnapshot previous = sessionSnapshots.remove(sessionId);
+        if (previous != null) {
+            publishConfigChanged(SESSION_SCOPE, sessionId, previous, snapshot(sessionId));
+        }
     }
 
     @Override
@@ -197,6 +233,74 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     private void requireSessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("sessionId must not be null or blank");
+        }
+    }
+
+    private LlmConfigSnapshot buildReplacementSnapshot(LlmConfigSnapshot current, Map<String, String> assignments) {
+        String providerName = current.providerName();
+        String baseUrl = current.baseUrl();
+        String model = current.model();
+        int timeout = current.timeout();
+        int maxRetries = current.maxRetries();
+
+        for (Map.Entry<String, String> entry : assignments.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (!SUPPORTED_SET_LLM_KEYS.contains(key)) {
+                throw new SetLlmSqlException("Unsupported SET LLM parameter '" + key + "'");
+            }
+            switch (key) {
+                case "provider" -> providerName = requireRegisteredProvider(value);
+                case "model" -> model = requireNonBlankValue(key, value);
+                case "base_url" -> baseUrl = requireNonBlankValue(key, value);
+                case "timeout" -> timeout = parsePositiveInt(key, value);
+                case "max_retries" -> maxRetries = parseNonNegativeInt(key, value);
+                default -> throw new SetLlmSqlException("Unsupported SET LLM parameter '" + key + "'");
+            }
+        }
+
+        return validateSnapshot(new LlmConfigSnapshot(providerName, baseUrl, model, timeout, maxRetries));
+    }
+
+    private String requireRegisteredProvider(String providerName) {
+        String resolved = requireNonBlankValue("provider", providerName);
+        try {
+            provider(resolved);
+            return resolved;
+        } catch (IllegalArgumentException e) {
+            throw new SetLlmSqlException("Unsupported SET LLM provider '" + resolved + "'", e);
+        }
+    }
+
+    private String requireNonBlankValue(String key, String value) {
+        if (value == null || value.isBlank()) {
+            throw new SetLlmSqlException("SET LLM parameter '" + key + "' must not be blank");
+        }
+        return value;
+    }
+
+    private int parsePositiveInt(String key, String value) {
+        int parsed = parseInteger(key, value);
+        if (parsed <= 0) {
+            throw new SetLlmSqlException("SET LLM parameter '" + key + "' must be positive");
+        }
+        return parsed;
+    }
+
+    private int parseNonNegativeInt(String key, String value) {
+        int parsed = parseInteger(key, value);
+        if (parsed < 0) {
+            throw new SetLlmSqlException("SET LLM parameter '" + key + "' must not be negative");
+        }
+        return parsed;
+    }
+
+    private int parseInteger(String key, String value) {
+        String normalized = requireNonBlankValue(key, value);
+        try {
+            return Integer.parseInt(normalized);
+        } catch (NumberFormatException e) {
+            throw new SetLlmSqlException("SET LLM parameter '" + key + "' must be an integer", e);
         }
     }
 
@@ -266,17 +370,32 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     public static DefaultLlmProviderRegistry fromConfig(
             Config config,
             Map<String, LlmProviderFactory> factories) {
-        return fromConfig(config, factories, null);
+        return fromConfig(config, factories, null, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfig(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            EventBus eventBus) {
+        return fromConfig(config, factories, null, eventBus);
     }
 
     public static DefaultLlmProviderRegistry fromConfig(
             Config config,
             Map<String, LlmProviderFactory> factories,
             RuntimeLlmConfigStore runtimeConfigStore) {
+        return fromConfig(config, factories, runtimeConfigStore, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfig(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            RuntimeLlmConfigStore runtimeConfigStore,
+            EventBus eventBus) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(factories, "factories must not be null");
 
-        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(runtimeConfigStore);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(runtimeConfigStore, eventBus);
 
         // navigate to llm section
         Config llmSection = config.getSection("llm");
@@ -355,5 +474,44 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         String baseUrl = providerMap.getOrDefault("baseUrl", "").toLowerCase();
         if (baseUrl.contains("anthropic")) return "claude";
         return "openai"; // default to openai-compatible
+    }
+
+    private void publishConfigChanged(String scope, String sessionId, LlmConfigSnapshot before, LlmConfigSnapshot after) {
+        if (eventBus == null) {
+            return;
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("scope", scope);
+        if (SESSION_SCOPE.equals(scope)) {
+            metadata.put("sessionId", sessionId);
+        }
+        metadata.put("provider", after.providerName());
+        metadata.put("changedKeys", String.join(",", changedKeys(before, after)));
+        try {
+            eventBus.publish(new Event(EventType.LLM_CONFIG_CHANGED, System.currentTimeMillis(), EVENT_SOURCE, metadata));
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING, "Failed to publish runtime LLM config change event", e);
+        }
+    }
+
+    private List<String> changedKeys(LlmConfigSnapshot before, LlmConfigSnapshot after) {
+        List<String> changed = new ArrayList<>();
+        if (!Objects.equals(before.providerName(), after.providerName())) {
+            changed.add("provider");
+        }
+        if (!Objects.equals(before.baseUrl(), after.baseUrl())) {
+            changed.add("baseUrl");
+        }
+        if (!Objects.equals(before.model(), after.model())) {
+            changed.add("model");
+        }
+        if (before.timeout() != after.timeout()) {
+            changed.add("timeout");
+        }
+        if (before.maxRetries() != after.maxRetries()) {
+            changed.add("maxRetries");
+        }
+        return changed;
     }
 }

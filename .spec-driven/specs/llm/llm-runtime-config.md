@@ -5,6 +5,11 @@ mapping:
     - src/main/java/org/specdriven/agent/agent/LlmProvider.java
     - src/main/java/org/specdriven/agent/agent/LlmProviderRegistry.java
     - src/main/java/org/specdriven/agent/agent/DefaultLlmProviderRegistry.java
+    - src/main/java/org/specdriven/agent/event/Event.java
+    - src/main/java/org/specdriven/agent/event/EventBus.java
+    - src/main/java/org/specdriven/agent/event/EventType.java
+    - src/main/java/org/specdriven/agent/agent/SetLlmSqlException.java
+    - src/main/java/org/specdriven/agent/agent/SetLlmStatementParser.java
     - src/main/java/org/specdriven/agent/llm/LealoneRuntimeLlmConfigStore.java
     - src/main/java/org/specdriven/agent/llm/RuntimeLlmConfigStore.java
     - src/main/java/org/specdriven/agent/llm/RuntimeLlmConfigVersion.java
@@ -12,14 +17,18 @@ mapping:
     - src/main/java/org/specdriven/agent/agent/ClaudeClient.java
     - src/main/java/org/specdriven/agent/agent/OpenAiProvider.java
     - src/main/java/org/specdriven/agent/agent/ClaudeProvider.java
+    - src/main/java/org/specdriven/sdk/SdkBuilder.java
     - src/main/java/org/specdriven/sdk/SdkAgent.java
     - src/main/java/org/specdriven/skill/executor/SkillServiceExecutor.java
   tests:
     - src/test/java/org/specdriven/agent/agent/LlmConfigTest.java
     - src/test/java/org/specdriven/agent/agent/DefaultLlmProviderRegistryTest.java
+    - src/test/java/org/specdriven/agent/agent/SetLlmStatementParserTest.java
     - src/test/java/org/specdriven/agent/llm/LealoneRuntimeLlmConfigStoreTest.java
     - src/test/java/org/specdriven/agent/agent/OpenAiProviderTest.java
     - src/test/java/org/specdriven/agent/agent/ClaudeProviderTest.java
+    - src/test/java/org/specdriven/sdk/SdkBuilderTest.java
+    - src/test/java/org/specdriven/sdk/SdkBuilderEventTest.java
 ---
 
 # Runtime LLM Config
@@ -159,3 +168,134 @@ Persisting and recovering the default runtime snapshot MUST NOT change the exist
 - WHEN that request continues to completion
 - THEN it MUST keep using the snapshot it originally resolved
 - AND only later requests MAY observe the recovered or restored default snapshot
+
+### Requirement: SET LLM updates supported non-sensitive runtime parameters
+The system MUST support updating the active runtime LLM configuration for a session through a `SET LLM` SQL statement that carries supported non-sensitive parameter assignments.
+
+#### Scenario: SET LLM updates later requests in the same session
+- GIVEN a session currently resolves runtime snapshot `S1`
+- AND a `SET LLM` statement assigns supported non-sensitive parameters such as provider, model, base URL, timeout, or retry-related fields
+- WHEN the statement completes successfully for that session
+- THEN later LLM requests started by that session MUST resolve a replacement snapshot reflecting those assigned values
+- AND requests started by other sessions MUST continue resolving their own snapshots unchanged
+
+#### Scenario: Missing parameter in SET LLM keeps prior effective value
+- GIVEN a session currently resolves runtime snapshot `S1`
+- WHEN a successful `SET LLM` statement assigns only a subset of supported parameters
+- THEN the replacement snapshot for that session MUST preserve the prior effective value for every supported parameter not mentioned in the statement
+
+### Requirement: SET LLM applies updates atomically
+The system MUST apply each successful `SET LLM` statement as one atomic runtime snapshot replacement for the targeted scope.
+
+#### Scenario: Successful statement installs one coherent replacement snapshot
+- GIVEN a `SET LLM` statement assigns multiple supported parameters
+- WHEN the statement succeeds
+- THEN later requests MUST observe either the full pre-statement snapshot or the full post-statement snapshot
+- AND no later request may observe a mixture of old and new parameter values from that statement
+
+#### Scenario: Failed statement leaves prior snapshot active
+- GIVEN a session currently resolves runtime snapshot `S1`
+- WHEN a `SET LLM` statement fails validation or execution before completion
+- THEN later requests in that session MUST continue resolving `S1`
+- AND no partial update from the failed statement may become active
+
+### Requirement: SET LLM rejects unsupported or invalid assignments
+The system MUST reject `SET LLM` assignments that target unsupported keys or provide invalid values for supported non-sensitive runtime parameters.
+
+#### Scenario: Unsupported key is rejected
+- GIVEN a `SET LLM` statement includes a key that is outside the supported non-sensitive runtime LLM config contract
+- WHEN the statement is evaluated
+- THEN the statement MUST fail
+- AND the active runtime snapshot for that scope MUST remain unchanged
+
+#### Scenario: Invalid value is rejected
+- GIVEN a `SET LLM` statement includes a supported key with an invalid value such as a blank provider name or a non-positive timeout
+- WHEN the statement is evaluated
+- THEN the statement MUST fail
+- AND the active runtime snapshot for that scope MUST remain unchanged
+
+### Requirement: SET LLM preserves in-flight request binding
+Applying runtime LLM config changes through `SET LLM` MUST NOT change the snapshot already bound to an in-flight request.
+
+#### Scenario: In-flight request continues with pre-update snapshot
+- GIVEN an LLM request starts in a session using snapshot `S1`
+- AND the same session later executes a successful `SET LLM` statement that installs snapshot `S2`
+- WHEN the in-flight request continues to completion
+- THEN it MUST continue using `S1`
+- AND only later requests started after the statement completes MAY observe `S2`
+
+### Requirement: SET LLM does not introduce secret governance behavior
+The `SET LLM` behavior defined by this change MUST remain limited to non-sensitive runtime config fields.
+
+#### Scenario: Secret-bearing governance remains outside this change
+- GIVEN runtime LLM updates through `SET LLM` are enabled
+- WHEN this change defines the SQL update contract
+- THEN secret references, secret redaction, permission checks, and audit governance MUST remain outside this change
+- AND those behaviors MUST be specified by later roadmap items instead of being implied here
+
+### Requirement: Successful runtime config changes publish `LLM_CONFIG_CHANGED`
+The system MUST publish one `EventType.LLM_CONFIG_CHANGED` event whenever a successful runtime LLM config change becomes active for future requests.
+
+#### Scenario: Successful default snapshot replacement publishes one event
+- GIVEN a default runtime snapshot `S1` is currently active
+- WHEN a successful default snapshot replacement makes `S2` active for later requests
+- THEN exactly one `LLM_CONFIG_CHANGED` event MUST be published
+- AND the event MUST describe the post-change default scope rather than the previous snapshot
+
+#### Scenario: Successful session snapshot replacement publishes one session-scoped event
+- GIVEN session `session-a` currently resolves runtime snapshot `S1`
+- WHEN a successful session snapshot replacement makes `S2` active for later requests in `session-a`
+- THEN exactly one `LLM_CONFIG_CHANGED` event MUST be published
+- AND the event MUST identify the affected session scope
+
+#### Scenario: Successful `SET LLM` publishes one session-scoped event
+- GIVEN session `session-a` currently resolves runtime snapshot `S1`
+- WHEN a successful `SET LLM` statement installs replacement snapshot `S2` for later requests in `session-a`
+- THEN exactly one `LLM_CONFIG_CHANGED` event MUST be published
+- AND the event MUST describe the committed post-statement session snapshot
+
+#### Scenario: Clearing a session override publishes one fallback event
+- GIVEN session `session-a` currently resolves a session-specific runtime snapshot override
+- WHEN that session override is cleared successfully and the session falls back to the default runtime snapshot
+- THEN exactly one `LLM_CONFIG_CHANGED` event MUST be published
+- AND the event MUST describe the post-clear effective session snapshot
+
+#### Scenario: Failed runtime update publishes no success event
+- GIVEN a runtime config update attempt fails before a replacement snapshot becomes active
+- WHEN the failure is returned to the caller
+- THEN no `LLM_CONFIG_CHANGED` event may be published for that failed attempt
+
+### Requirement: `LLM_CONFIG_CHANGED` metadata identifies scope and affected fields
+Each published `LLM_CONFIG_CHANGED` event MUST carry enough non-sensitive metadata for downstream consumers to identify which scope changed and which runtime fields changed.
+
+#### Scenario: Default-scope event metadata
+- GIVEN a successful default runtime snapshot replacement publishes `LLM_CONFIG_CHANGED`
+- WHEN the event metadata is inspected
+- THEN it MUST contain `scope = "default"`
+- AND it MUST contain the effective post-change `provider`
+- AND it MUST contain `changedKeys` as a string value naming the non-sensitive runtime fields whose effective values changed
+- AND it MUST NOT contain `sessionId`
+
+#### Scenario: Session-scope event metadata
+- GIVEN a successful session-scoped runtime config change publishes `LLM_CONFIG_CHANGED`
+- WHEN the event metadata is inspected
+- THEN it MUST contain `scope = "session"`
+- AND it MUST contain the affected `sessionId`
+- AND it MUST contain the effective post-change `provider`
+- AND it MUST contain `changedKeys` as a string value naming the non-sensitive runtime fields whose effective values changed
+
+#### Scenario: Event metadata excludes full snapshot payloads
+- GIVEN a published `LLM_CONFIG_CHANGED` event
+- WHEN the event metadata is inspected
+- THEN it MUST identify the affected scope and changed fields without embedding the full pre-change or post-change snapshot as metadata
+- AND it MUST remain limited to non-sensitive runtime config information
+
+### Requirement: Config-change events preserve existing request binding semantics
+Publishing `LLM_CONFIG_CHANGED` MUST NOT alter the existing runtime config semantics for atomic replacement, session isolation, or in-flight request snapshot binding.
+
+#### Scenario: Event publication does not change in-flight request binding
+- GIVEN an in-flight LLM request is already bound to runtime snapshot `S1`
+- AND a later successful runtime config change publishes `LLM_CONFIG_CHANGED` for replacement snapshot `S2`
+- WHEN the in-flight request continues to completion
+- THEN it MUST continue using `S1`
+- AND only later requests MAY observe `S2`

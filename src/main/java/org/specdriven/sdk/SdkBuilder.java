@@ -116,6 +116,7 @@ public class SdkBuilder {
         try {
             Map<String, String> configMap = Collections.emptyMap();
             LlmProviderRegistry registry = this.providerRegistry;
+            SimpleEventBus eventBus = new SimpleEventBus();
 
             // Auto-assembly from config file
             if (configPath != null && registry == null) {
@@ -132,14 +133,13 @@ public class SdkBuilder {
                 Map<String, LlmProviderFactory> factories = new HashMap<>();
                 factories.put("openai", new OpenAiProviderFactory());
                 factories.put("claude", new ClaudeProviderFactory());
-                registry = DefaultLlmProviderRegistry.fromConfig(config, factories);
+                registry = DefaultLlmProviderRegistry.fromConfig(config, factories, eventBus);
             }
 
             // Merge system prompt: explicit > sdkConfig > config
             String effectiveSystemPrompt = systemPrompt != null ? systemPrompt : sdkConfig.systemPrompt();
 
-            // Create shared event bus and wire global listeners
-            SimpleEventBus eventBus = new SimpleEventBus();
+            // Wire global listeners onto the shared event bus
             for (SdkEventListener listener : globalListeners) {
                 for (EventType type : EventType.values()) {
                     eventBus.subscribe(type, listener);
