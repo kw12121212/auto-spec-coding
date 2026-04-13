@@ -306,6 +306,13 @@ The system MUST define a `LlmProvider` interface that represents a configured LL
 - WHEN `createClient()` is called
 - THEN it MUST return a `LlmClient` instance ready for use
 
+#### Scenario: Create client from snapshot
+- GIVEN a `LlmProvider` instance configured with provider-owned authentication data
+- AND a runtime snapshot with effective non-sensitive request settings for that provider
+- WHEN `createClient(snapshot)` is called
+- THEN it MUST return a client that uses the snapshot's effective non-sensitive request settings for later requests started through that client
+- AND it MUST keep using the provider's configured authentication material
+
 #### Scenario: Provider lifecycle
 - GIVEN a `LlmProvider` instance
 - WHEN `close()` is called
@@ -437,6 +444,20 @@ The system MUST define a `LlmProviderRegistry` interface that manages named `Llm
 - GIVEN a `LlmProviderRegistry` with multiple providers registered
 - WHEN `close()` is called
 - THEN `close()` MUST be called on every registered provider and all internal maps MUST be cleared
+
+#### Scenario: Later request uses replacement provider without recreating the session client
+- GIVEN a registry-managed client has already been created for a session
+- AND the session currently resolves a snapshot whose provider is `openai`
+- AND a later successful runtime replacement makes a snapshot with provider `claude` active for later requests in that session
+- WHEN a new request starts after the replacement completes
+- THEN that new request MUST be sent using a client created from the `claude` provider
+
+#### Scenario: Streaming request keeps the provider chosen at request start
+- GIVEN a registry-managed client starts a streaming request after resolving snapshot `S1`
+- AND a later successful runtime replacement makes `S2` active before the stream completes
+- WHEN the in-flight stream continues
+- THEN the stream MUST continue using the provider client created from `S1`
+- AND only later requests MAY use a provider client created from `S2`
 
 ### Requirement: Default Provider Fallback
 The system MUST support a designated default provider used when no specific provider name is specified.

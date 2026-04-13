@@ -60,6 +60,14 @@ The system MUST support atomically replacing the active runtime LLM config snaps
 - THEN that request MUST resolve `S2`
 - AND it MUST NOT observe a mixture of fields from `S1` and `S2`
 
+#### Scenario: Existing session client picks up a later session snapshot
+- GIVEN a registry-managed client for `session-a` has already been created
+- AND a first request from that client starts while `session-a` resolves snapshot `S1`
+- AND a later successful runtime replacement makes `S2` active for later requests in `session-a`
+- WHEN a second request starts from the same registry-managed client after the replacement completes
+- THEN the first request MUST keep using `S1`
+- AND the second request MUST resolve `S2`
+
 #### Scenario: Concurrent readers never observe partial update
 - GIVEN multiple threads resolve the active snapshot while another thread replaces it
 - WHEN reads occur during the replacement window
@@ -75,6 +83,13 @@ Each LLM request MUST bind to exactly one resolved runtime snapshot for the full
 - WHEN the in-flight request continues
 - THEN it MUST continue using `S1` until completion
 - AND only later requests MAY observe `S2`
+
+#### Scenario: Later requests may switch providers without recreating the client
+- GIVEN a registry-managed client for `session-a` starts a request while `session-a` resolves snapshot `S1` with provider `openai`
+- AND a later successful runtime replacement makes snapshot `S2` active for `session-a` with provider `claude`
+- WHEN a later request starts from the same registry-managed client after the replacement completes
+- THEN the later request MUST use provider `claude`
+- AND the earlier in-flight request MUST continue using provider `openai` until completion
 
 ### Requirement: Session-scoped runtime isolation baseline
 The system MUST support resolving runtime LLM config snapshots by scope so one session can observe a different active snapshot than another session.

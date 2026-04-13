@@ -542,6 +542,121 @@ class DefaultLlmProviderRegistryTest {
         registry.close();
     }
 
+    @Test
+    void createClientForSession_usesReplacementProviderForLaterRequests() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        SnapshotRecordingProvider openaiProvider = new SnapshotRecordingProvider(
+                new LlmConfig("https://api.openai.com/v1", "key-a", "gpt-4", 20, 1),
+                "openai");
+        SnapshotRecordingProvider claudeProvider = new SnapshotRecordingProvider(
+                new LlmConfig("https://api.anthropic.com/v1", "key-b", "claude-sonnet", 20, 1),
+                "claude");
+        registry.register("openai", openaiProvider);
+        registry.register("claude", claudeProvider);
+        registry.setDefault("openai");
+
+        LlmClient client = registry.createClientForSession("session-a");
+        LlmConfigSnapshot first = new LlmConfigSnapshot(
+                "openai",
+                "https://api.first.example/v1",
+                "gpt-4",
+                20,
+                1);
+        LlmConfigSnapshot second = new LlmConfigSnapshot(
+                "claude",
+                "https://api.second.example/v1",
+                "claude-opus",
+                30,
+                2);
+
+        registry.replaceSessionSnapshot("session-a", first);
+        LlmResponse.TextResponse firstResponse = assertInstanceOf(
+                LlmResponse.TextResponse.class,
+                client.chat(List.of(new UserMessage("first", 0))));
+
+        registry.replaceSessionSnapshot("session-a", second);
+        LlmResponse.TextResponse secondResponse = assertInstanceOf(
+                LlmResponse.TextResponse.class,
+                client.chat(List.of(new UserMessage("second", 0))));
+
+        assertEquals("openai:gpt-4", firstResponse.content());
+        assertEquals("claude:claude-opus", secondResponse.content());
+        assertEquals(List.of(first), openaiProvider.snapshotsSeen);
+        assertEquals(List.of(second), claudeProvider.snapshotsSeen);
+        registry.close();
+    }
+
+    @Test
+    void createClientForSession_streamingRequestKeepsResolvedProviderUntilCompletion() throws Exception {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        CountDownLatch streamStarted = new CountDownLatch(1);
+        CountDownLatch releaseStream = new CountDownLatch(1);
+        SnapshotRecordingProvider openaiProvider = new SnapshotRecordingProvider(
+                new LlmConfig("https://api.openai.com/v1", "key-a", "gpt-4", 20, 1),
+                "openai",
+                streamStarted,
+                releaseStream);
+        SnapshotRecordingProvider claudeProvider = new SnapshotRecordingProvider(
+                new LlmConfig("https://api.anthropic.com/v1", "key-b", "claude-sonnet", 20, 1),
+                "claude");
+        registry.register("openai", openaiProvider);
+        registry.register("claude", claudeProvider);
+        registry.setDefault("openai");
+
+        LlmClient client = registry.createClientForSession("session-a");
+        LlmConfigSnapshot first = new LlmConfigSnapshot(
+                "openai",
+                "https://api.first.example/v1",
+                "gpt-4",
+                20,
+                1);
+        LlmConfigSnapshot second = new LlmConfigSnapshot(
+                "claude",
+                "https://api.second.example/v1",
+                "claude-opus",
+                30,
+                2);
+        List<String> completions = new CopyOnWriteArrayList<>();
+        List<Exception> errors = new CopyOnWriteArrayList<>();
+
+        registry.replaceSessionSnapshot("session-a", first);
+        Thread streamThread = new Thread(() -> client.chatStreaming(
+                LlmRequest.of(List.of(new UserMessage("stream", 0))),
+                new LlmStreamCallback() {
+                    @Override
+                    public void onToken(String token) {
+                    }
+
+                    @Override
+                    public void onComplete(LlmResponse response) {
+                        completions.add(assertInstanceOf(LlmResponse.TextResponse.class, response).content());
+                    }
+
+                    @Override
+                    public void onError(Exception e) {
+                        errors.add(e);
+                    }
+                }));
+        streamThread.start();
+
+        assertTrue(streamStarted.await(5, TimeUnit.SECONDS));
+        registry.replaceSessionSnapshot("session-a", second);
+        releaseStream.countDown();
+        streamThread.join(TimeUnit.SECONDS.toMillis(5));
+        assertFalse(streamThread.isAlive());
+
+        LlmResponse.TextResponse laterResponse = assertInstanceOf(
+                LlmResponse.TextResponse.class,
+                client.chat(List.of(new UserMessage("after-stream", 0))));
+
+        assertTrue(errors.isEmpty());
+        assertEquals(List.of("openai:gpt-4"), completions);
+        assertEquals("claude:claude-opus", laterResponse.content());
+        assertEquals(List.of(first), openaiProvider.snapshotsSeen);
+        assertEquals(List.of(second), claudeProvider.snapshotsSeen);
+        registry.close();
+    }
+
     // --- stub ---
 
     static class StubProvider implements LlmProvider {
@@ -571,10 +686,28 @@ class DefaultLlmProviderRegistryTest {
 
     static final class SnapshotRecordingProvider implements LlmProvider {
         private final LlmConfig config;
+        private final String providerLabel;
+        private final CountDownLatch streamStarted;
+        private final CountDownLatch releaseStream;
         private final List<LlmConfigSnapshot> snapshotsSeen = new CopyOnWriteArrayList<>();
 
         SnapshotRecordingProvider(LlmConfig config) {
+            this(config, "snapshot", null, null);
+        }
+
+        SnapshotRecordingProvider(LlmConfig config, String providerLabel) {
+            this(config, providerLabel, null, null);
+        }
+
+        SnapshotRecordingProvider(
+                LlmConfig config,
+                String providerLabel,
+                CountDownLatch streamStarted,
+                CountDownLatch releaseStream) {
             this.config = config;
+            this.providerLabel = providerLabel;
+            this.streamStarted = streamStarted;
+            this.releaseStream = releaseStream;
         }
 
         @Override
@@ -593,12 +726,28 @@ class DefaultLlmProviderRegistryTest {
             return new LlmClient() {
                 @Override
                 public LlmResponse chat(List<Message> messages) {
-                    return new LlmResponse.TextResponse(snapshot.model(), null, null);
+                    return new LlmResponse.TextResponse(providerLabel + ":" + snapshot.model(), null, null);
                 }
 
                 @Override
                 public LlmResponse chat(LlmRequest request) {
-                    return new LlmResponse.TextResponse(snapshot.model(), null, null);
+                    return new LlmResponse.TextResponse(providerLabel + ":" + snapshot.model(), null, null);
+                }
+
+                @Override
+                public void chatStreaming(LlmRequest request, LlmStreamCallback callback) {
+                    try {
+                        if (streamStarted != null) {
+                            streamStarted.countDown();
+                        }
+                        if (releaseStream != null) {
+                            releaseStream.await(5, TimeUnit.SECONDS);
+                        }
+                        callback.onComplete(new LlmResponse.TextResponse(providerLabel + ":" + snapshot.model(), null, null));
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        callback.onError(e);
+                    }
                 }
             };
         }
