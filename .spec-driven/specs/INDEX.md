@@ -69,6 +69,7 @@
 - [skill-cli-java.md](skill/skill-cli-java.md) - Java-native shared spec-driven CLI
 - [skill-executor-plugin.md](skill/skill-executor-plugin.md) - SkillServiceExecutorFactory, SkillServiceExecutor
 - [skill-instructions-store.md](skill/skill-instructions-store.md) - SkillInstructionStore, FileSystemInstructionStore
+- [class-cache-manager.md](skill/class-cache-manager.md) - ClassCacheManager, ClassCacheException, LealoneClassCacheManager — disk-backed compiled skill class cache
 - [skill-source-compiler.md](skill/skill-source-compiler.md) - SkillSourceCompiler, SkillCompilationResult, SkillCompilationDiagnostic, LealoneSkillSourceCompiler
 - [skill-sql-converter.md](skill/skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter
 

@@ -35,7 +35,7 @@
 
 ## Planned Changes
 - `skill-source-compiler` - Declared: complete - 封装 Lealone SourceCompiler 为 SkillSourceCompiler 接口，提供 skill 源码编译、错误报告与 class 产出能力
-- `class-cache-manager` - Declared: planned - 实现 ClassCacheManager：基于 Service.getClassDir() 模式管理编译产物的磁盘持久化、版本检测与按需加载
+- `class-cache-manager` - Declared: complete - 实现 ClassCacheManager：基于 Service.getClassDir() 模式管理编译产物的磁盘持久化、版本检测与按需加载
 - `skill-hot-loader` - Declared: planned - 实现 SkillHotLoader：运行时 skill 的注册、注销、热替换全生命周期管理，含 ClassLoader 隔离
 - `compile-fallback-isolation` - Declared: planned - 编译失败隔离机制：捕获编译异常、隔离失败 skill、维护健康 skill 的可用性
 - `hot-load-integration` - Declared: planned - 将动态编译与热加载能力集成到 SkillAutoDiscovery 和 BuiltinToolManager，统一 skill 发现与加载流程
@@ -65,4 +65,5 @@
 - 编译缓存 key = skillName + sourceHash，源码不变时直接用缓存
 - 参考 Lealone Service.getExecutor() 的延迟创建 + synchronized 双重检查模式
 - 默认关闭、权限、审计和来源治理由后续 milestone 覆盖；在共享或生产环境开放该能力前应与治理 milestone 配套规划
+
 
