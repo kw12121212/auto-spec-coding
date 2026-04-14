@@ -21,9 +21,38 @@ mapping:
 
 - MUST extend `ServiceExecutorFactoryBase` and implement `ServiceExecutorFactory`
 - MUST be named `"skill"` — this name MUST match the `LANGUAGE` value in the CREATE SERVICE SQL
-- MUST implement `createServiceExecutor(Service service)` returning a `SkillServiceExecutor` initialized with the given `Service`
+- MUST support construction with an optional `SkillHotLoader`
+- MUST implement `createServiceExecutor(Service service)` returning a `ServiceExecutor`
+  for the given `Service`
+- When the configured `SkillHotLoader` has an active loader for the service's skill
+  name, `createServiceExecutor(Service service)` MUST load the executor class named by
+  `service.getImplementBy()` from that hot-loaded `ClassLoader`
+- The instantiated hot-loaded executor MUST implement `ServiceExecutor`
+- When no `SkillHotLoader` is configured, or when no active loader exists for the
+  service's skill name, `createServiceExecutor(Service service)` MUST preserve the
+  existing default executor creation behavior
 - MUST be registered via `META-INF/services/com.lealone.db.service.ServiceExecutorFactory`
 - MUST be in the `org.specdriven.skill.executor` package
+
+#### Scenario: hot-loaded executor class is preferred over default instantiation
+
+- GIVEN a configured `SkillHotLoader` has an active loader for the service's skill
+- WHEN `createServiceExecutor(service)` is called
+- THEN the factory MUST instantiate the executor class from the hot-loaded
+  `ClassLoader`
+
+#### Scenario: factory without hot-loader preserves current behavior
+
+- GIVEN `SkillServiceExecutorFactory` is constructed without a `SkillHotLoader`
+- WHEN `createServiceExecutor(service)` is called
+- THEN the factory MUST return the same default executor type as before this change
+
+#### Scenario: absent hot-loaded class falls back to default behavior
+
+- GIVEN a configured `SkillHotLoader` does not have an active loader for the service's
+  skill name
+- WHEN `createServiceExecutor(service)` is called
+- THEN the factory MUST fall back to the existing executor creation path
 
 ### Requirement: SkillServiceExecutor
 

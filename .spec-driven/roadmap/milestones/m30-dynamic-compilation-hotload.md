@@ -38,7 +38,7 @@
 - `class-cache-manager` - Declared: complete - 实现 ClassCacheManager：基于 Service.getClassDir() 模式管理编译产物的磁盘持久化、版本检测与按需加载
 - `skill-hot-loader` - Declared: complete - 实现 SkillHotLoader：运行时 skill 的注册、注销、热替换全生命周期管理，含 ClassLoader 隔离
 - `compile-fallback-isolation` - Declared: complete - 编译失败隔离机制：捕获编译异常、隔离失败 skill、维护健康 skill 的可用性
-- `hot-load-integration` - Declared: planned - 将动态编译与热加载能力集成到 SkillAutoDiscovery 和 BuiltinToolManager，统一 skill 发现与加载流程
+- `hot-load-integration` - Declared: complete - 将动态编译与热加载能力集成到 SkillAutoDiscovery 和 BuiltinToolManager，统一 skill 发现与加载流程
 
 ## Dependencies
 
@@ -56,7 +56,7 @@
 - 若在治理能力落地前直接暴露该能力，动态编译入口仍会带来明显安全风险
 
 ## Status
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -65,6 +65,8 @@
 - 编译缓存 key = skillName + sourceHash，源码不变时直接用缓存
 - 参考 Lealone Service.getExecutor() 的延迟创建 + synchronized 双重检查模式
 - 默认关闭、权限、审计和来源治理由后续 milestone 覆盖；在共享或生产环境开放该能力前应与治理 milestone 配套规划
+
+
 
 
 

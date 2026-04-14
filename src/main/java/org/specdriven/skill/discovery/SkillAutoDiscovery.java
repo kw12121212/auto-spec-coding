@@ -1,20 +1,27 @@
 package org.specdriven.skill.discovery;
 
+import org.specdriven.skill.hotload.SkillHotLoader;
+import org.specdriven.skill.hotload.SkillHotLoaderException;
+import org.specdriven.skill.hotload.SkillLoadResult;
 import org.specdriven.skill.sql.SkillMarkdownParser;
 import org.specdriven.skill.sql.SkillMarkdownParser.ParsedSkill;
 import org.specdriven.skill.sql.SkillSqlConverter;
 import org.specdriven.skill.sql.SkillSqlException;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 
 /**
@@ -23,12 +30,20 @@ import java.util.stream.Stream;
  */
 public final class SkillAutoDiscovery {
 
+    private static final String EXECUTOR_PACKAGE = "org.specdriven.skill.executor";
+
     private final String jdbcUrl;
     private final Path skillsDir;
+    private final SkillHotLoader hotLoader;
 
     public SkillAutoDiscovery(String jdbcUrl, Path skillsDir) {
-        this.jdbcUrl = jdbcUrl;
-        this.skillsDir = skillsDir;
+        this(jdbcUrl, skillsDir, null);
+    }
+
+    public SkillAutoDiscovery(String jdbcUrl, Path skillsDir, SkillHotLoader hotLoader) {
+        this.jdbcUrl = Objects.requireNonNull(jdbcUrl, "jdbcUrl must not be null");
+        this.skillsDir = Objects.requireNonNull(skillsDir, "skillsDir must not be null");
+        this.hotLoader = hotLoader;
     }
 
     /**
@@ -42,11 +57,23 @@ public final class SkillAutoDiscovery {
 
         int registered = 0;
         int failed = 0;
+        int hotLoaded = 0;
+        int hotLoadFailed = 0;
         List<SkillDiscoveryError> errors = new ArrayList<>();
 
         for (Path skillMd : skillFiles) {
             try {
-                registerSkill(skillMd);
+                ParsedSkill parsed = SkillMarkdownParser.parse(skillMd);
+                HotLoadOutcome hotLoadOutcome = hotLoadSkill(skillMd, parsed);
+                if (hotLoadOutcome != null) {
+                    if (hotLoadOutcome.success()) {
+                        hotLoaded++;
+                    } else {
+                        hotLoadFailed++;
+                        errors.add(new SkillDiscoveryError(hotLoadOutcome.path(), hotLoadOutcome.errorMessage()));
+                    }
+                }
+                registerSkill(skillMd, parsed);
                 registered++;
             } catch (SkillSqlException | SQLException e) {
                 failed++;
@@ -54,7 +81,7 @@ public final class SkillAutoDiscovery {
             }
         }
 
-        return new DiscoveryResult(registered, failed, Collections.unmodifiableList(errors));
+        return new DiscoveryResult(registered, failed, hotLoaded, hotLoadFailed, errors);
     }
 
     private List<Path> findSkillFiles() {
@@ -69,13 +96,86 @@ public final class SkillAutoDiscovery {
         }
     }
 
-    private void registerSkill(Path skillMd) throws SQLException {
-        ParsedSkill parsed = SkillMarkdownParser.parse(skillMd);
+    private void registerSkill(Path skillMd, ParsedSkill parsed) throws SQLException {
         String sql = SkillSqlConverter.convert(parsed.frontmatter(), skillMd.getParent());
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl);
              Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(sql);
+        }
+    }
+
+    private HotLoadOutcome hotLoadSkill(Path skillMd, ParsedSkill parsed) {
+        if (hotLoader == null) {
+            return null;
+        }
+
+        Path skillDir = skillMd.getParent();
+        String skillName = parsed.frontmatter().name();
+        String entryClassName = executorClassName(skillName);
+        Path javaSourcePath = skillDir.resolve(simpleExecutorClassName(skillName) + ".java");
+        if (!Files.isRegularFile(javaSourcePath)) {
+            return null;
+        }
+
+        try {
+            String javaSource = Files.readString(javaSourcePath);
+            String sourceHash = sha256(javaSource);
+            SkillLoadResult result = hotLoader.load(skillName, entryClassName, javaSource, sourceHash);
+            if (result.success()) {
+                return HotLoadOutcome.success(javaSourcePath);
+            }
+            return HotLoadOutcome.failure(javaSourcePath, diagnosticMessage(result));
+        } catch (IOException | SkillHotLoaderException e) {
+            return HotLoadOutcome.failure(javaSourcePath, e.getMessage() != null ? e.getMessage() : e.getClass().getName());
+        }
+    }
+
+    private static String diagnosticMessage(SkillLoadResult result) {
+        if (result.diagnostics().isEmpty()) {
+            return "Hot-load failed for executor class " + result.entryClassName();
+        }
+        return result.diagnostics().stream()
+                .map(diagnostic -> diagnostic.message())
+                .filter(message -> message != null && !message.isBlank())
+                .findFirst()
+                .orElse("Hot-load failed for executor class " + result.entryClassName());
+    }
+
+    private static String executorClassName(String skillName) {
+        return EXECUTOR_PACKAGE + "." + simpleExecutorClassName(skillName);
+    }
+
+    private static String simpleExecutorClassName(String skillName) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : skillName.split("-")) {
+            if (!part.isEmpty()) {
+                sb.append(Character.toUpperCase(part.charAt(0)));
+                if (part.length() > 1) {
+                    sb.append(part.substring(1));
+                }
+            }
+        }
+        return sb.append("Executor").toString();
+    }
+
+    private static String sha256(String source) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(source.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private record HotLoadOutcome(boolean success, Path path, String errorMessage) {
+
+        private static HotLoadOutcome success(Path path) {
+            return new HotLoadOutcome(true, path, null);
+        }
+
+        private static HotLoadOutcome failure(Path path, String errorMessage) {
+            return new HotLoadOutcome(false, path, errorMessage);
         }
     }
 }

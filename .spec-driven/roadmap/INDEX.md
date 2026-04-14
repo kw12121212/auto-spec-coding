@@ -24,7 +24,7 @@
 - [m28-dynamic-llm-config.md](milestones/m28-dynamic-llm-config.md) - M28 - 动态 LLM 配置与热切换 - complete
 - [m29-interactive-human-in-loop.md](milestones/m29-interactive-human-in-loop.md) - M29 - SQL+自然语言交互式人机协作 - proposed
 - [m3-builtin-external-tools.md](milestones/m3-builtin-external-tools.md) - M3 - 内置外部工具集成 - complete
-- [m30-dynamic-compilation-hotload.md](milestones/m30-dynamic-compilation-hotload.md) - M30 - 动态编译与 Skill 热加载 - proposed
+- [m30-dynamic-compilation-hotload.md](milestones/m30-dynamic-compilation-hotload.md) - M30 - 动态编译与 Skill 热加载 - complete
 - [m31-orm-integration-enhancement.md](milestones/m31-orm-integration-enhancement.md) - M31 - ORM 集成增强 - proposed
 - [m32-lealone-platform-unification.md](milestones/m32-lealone-platform-unification.md) - M32 - Lealone 平台化统一基础设施 - proposed
 - [m33-llm-config-secret-governance.md](milestones/m33-llm-config-secret-governance.md) - M33 - LLM 配置密钥引用与权限治理 - proposed
