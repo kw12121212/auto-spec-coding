@@ -8,6 +8,7 @@ import org.specdriven.skill.compiler.LealoneSkillSourceCompiler;
 import org.specdriven.skill.compiler.SkillCompilationException;
 import org.specdriven.skill.compiler.SkillSourceCompiler;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
@@ -31,17 +32,38 @@ class SkillHotLoaderTest {
     Path tempDir;
 
     private SkillHotLoader newLoader() {
+        return newLoader(false);
+    }
+
+    private SkillHotLoader newLoader(boolean activationEnabled) {
         SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
-        return new LealoneSkillHotLoader(compiler, cacheManager);
+        return new LealoneSkillHotLoader(compiler, cacheManager, activationEnabled);
     }
 
     @Test
-    void loadSucceedsAndRegistersActiveLoader() {
+    void disabledLoaderRejectsLoadActivation() {
         SkillHotLoader loader = newLoader();
 
         SkillLoadResult result = loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
+        assertFalse(loader.isActivationEnabled());
+        assertFalse(result.success());
+        assertFalse(result.diagnostics().isEmpty());
+        assertTrue(result.diagnostics().getFirst().message().contains("disabled"));
+        assertTrue(loader.activeLoader("hello").isEmpty());
+        assertFalse(loader.loadedSkillNames().contains("hello"));
+        assertTrue(loader.failedSkillNames().isEmpty());
+        assertFalse(Files.exists(tempDir.resolve("hello").resolve("hash1")));
+    }
+
+    @Test
+    void loadSucceedsAndRegistersActiveLoaderWhenEnabled() {
+        SkillHotLoader loader = newLoader(true);
+
+        SkillLoadResult result = loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        assertTrue(loader.isActivationEnabled());
         assertTrue(result.success());
         assertEquals(VALID_CLASS_NAME, result.entryClassName());
         assertTrue(result.diagnostics().isEmpty());
@@ -51,7 +73,7 @@ class SkillHotLoaderTest {
 
     @Test
     void loadRejectsDuplicateRegistration() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
         ClassLoader original = loader.activeLoader("hello").orElseThrow();
 
@@ -65,7 +87,7 @@ class SkillHotLoaderTest {
 
     @Test
     void loadWithInvalidSourceReturnsFalseWithDiagnosticsAndDoesNotRegister() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
 
         SkillLoadResult result = loader.load("bad", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
 
@@ -76,8 +98,35 @@ class SkillHotLoaderTest {
     }
 
     @Test
-    void replaceWithValidSourceSwapsActiveLoader() {
+    void disabledLoaderRejectsReplaceActivation() {
         SkillHotLoader loader = newLoader();
+
+        SkillLoadResult result = loader.replace("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash2");
+
+        assertFalse(result.success());
+        assertTrue(result.diagnostics().getFirst().message().contains("disabled"));
+        assertEquals(Optional.empty(), loader.activeLoader("hello"));
+        assertTrue(loader.failedSkillNames().isEmpty());
+        assertFalse(Files.exists(tempDir.resolve("hello").resolve("hash2")));
+    }
+
+    @Test
+    void disabledLoaderDoesNotActivateExistingCachedClasses() {
+        SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
+        ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
+        SkillHotLoader enabledLoader = new LealoneSkillHotLoader(compiler, cacheManager, true);
+        assertTrue(enabledLoader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+
+        SkillHotLoader disabledLoader = new LealoneSkillHotLoader(compiler, cacheManager, false);
+        SkillLoadResult result = disabledLoader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        assertFalse(result.success());
+        assertTrue(disabledLoader.activeLoader("hello").isEmpty());
+    }
+
+    @Test
+    void replaceWithValidSourceSwapsActiveLoader() {
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
         ClassLoader original = loader.activeLoader("hello").orElseThrow();
 
@@ -93,7 +142,7 @@ class SkillHotLoaderTest {
 
     @Test
     void replaceWithInvalidSourcePreservesExistingActiveLoader() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
         ClassLoader original = loader.activeLoader("hello").orElseThrow();
 
@@ -106,7 +155,7 @@ class SkillHotLoaderTest {
 
     @Test
     void unloadRemovesSkillFromRegistry() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         loader.unload("hello");
@@ -124,7 +173,7 @@ class SkillHotLoaderTest {
 
     @Test
     void twoSkillsWithSameEntryClassNameUseIndependentClassLoaders() throws Exception {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         String sourceA = "package demo; public class HelloSkill { public static String name() { return \"A\"; } }";
         String sourceB = "package demo; public class HelloSkill { public static String name() { return \"B\"; } }";
 
@@ -146,11 +195,11 @@ class SkillHotLoaderTest {
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
 
         // Prime the cache by loading once
-        SkillHotLoader loaderA = new LealoneSkillHotLoader(compiler, cacheManager);
+        SkillHotLoader loaderA = new LealoneSkillHotLoader(compiler, cacheManager, true);
         loaderA.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         // Second loader shares the same cache manager — should hit cache without recompiling
-        SkillHotLoader loaderB = new LealoneSkillHotLoader(compiler, cacheManager);
+        SkillHotLoader loaderB = new LealoneSkillHotLoader(compiler, cacheManager, true);
         SkillLoadResult result = loaderB.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         assertTrue(result.success(), "Load must succeed via cache hit");
@@ -159,7 +208,7 @@ class SkillHotLoaderTest {
 
     @Test
     void loadedSkillNamesIsUnmodifiable() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         assertThrows(UnsupportedOperationException.class,
@@ -172,7 +221,7 @@ class SkillHotLoaderTest {
             throw new SkillCompilationException("javac unavailable in test environment");
         };
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
-        SkillHotLoader loader = new LealoneSkillHotLoader(throwingCompiler, cacheManager);
+        SkillHotLoader loader = new LealoneSkillHotLoader(throwingCompiler, cacheManager, true);
 
         assertThrows(SkillHotLoaderException.class,
                 () -> loader.load("broken", VALID_CLASS_NAME, VALID_SOURCE, "hash-infra"));
@@ -181,7 +230,7 @@ class SkillHotLoaderTest {
 
     @Test
     void failedLoadTrackedInFailedSkillNames() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
 
         SkillLoadResult result = loader.load("bad", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
 
@@ -192,7 +241,7 @@ class SkillHotLoaderTest {
 
     @Test
     void successfulReplaceRemovesFromFailedSkillNames() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("skill", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
         assertTrue(loader.failedSkillNames().contains("skill"));
 
@@ -204,7 +253,7 @@ class SkillHotLoaderTest {
 
     @Test
     void unloadClearsFailedEntry() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("skill", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
         assertTrue(loader.failedSkillNames().contains("skill"));
 
@@ -215,7 +264,7 @@ class SkillHotLoaderTest {
 
     @Test
     void failureInSkillADoesNotAffectSkillB() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("skillB", VALID_CLASS_NAME, VALID_SOURCE, "hashB");
         assertTrue(loader.activeLoader("skillB").isPresent());
 
@@ -229,7 +278,7 @@ class SkillHotLoaderTest {
 
     @Test
     void failedSkillNamesIsUnmodifiable() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("bad", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
 
         assertThrows(UnsupportedOperationException.class,
@@ -238,7 +287,7 @@ class SkillHotLoaderTest {
 
     @Test
     void duplicateRegistrationDoesNotCorruptFailedSkillNames() {
-        SkillHotLoader loader = newLoader();
+        SkillHotLoader loader = newLoader(true);
         loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         SkillLoadResult duplicate = loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");

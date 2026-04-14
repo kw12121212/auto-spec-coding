@@ -31,6 +31,7 @@ mapping:
 - When no `SkillHotLoader` is configured, or when no active loader exists for the
   service's skill name, `createServiceExecutor(Service service)` MUST preserve the
   existing default executor creation behavior
+- The same default executor fallback MUST apply when a configured `SkillHotLoader` remains in the default-disabled activation state and therefore exposes no active loader
 - MUST be registered via `META-INF/services/com.lealone.db.service.ServiceExecutorFactory`
 - MUST be in the `org.specdriven.skill.executor` package
 
@@ -53,6 +54,13 @@ mapping:
   skill name
 - WHEN `createServiceExecutor(service)` is called
 - THEN the factory MUST fall back to the existing executor creation path
+
+#### Scenario: disabled hot-loader still falls back to default behavior
+
+- GIVEN `SkillServiceExecutorFactory` is constructed with a configured `SkillHotLoader`
+- AND that hot-loader has activation disabled and therefore exposes no active loader for the service's skill name
+- WHEN `createServiceExecutor(service)` is called
+- THEN the factory MUST return the same default executor type as before this change
 
 ### Requirement: SkillServiceExecutor
 

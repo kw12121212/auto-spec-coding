@@ -211,11 +211,22 @@ class SkillAutoDiscoveryTest {
     }
 
     private static final class RecordingHotLoader implements SkillHotLoader {
+        private final boolean activationEnabled;
         private final SkillLoadResult nextResult;
         private final List<LoadCall> calls = new ArrayList<>();
 
         private RecordingHotLoader(SkillLoadResult nextResult) {
+            this(true, nextResult);
+        }
+
+        private RecordingHotLoader(boolean activationEnabled, SkillLoadResult nextResult) {
+            this.activationEnabled = activationEnabled;
             this.nextResult = nextResult;
+        }
+
+        @Override
+        public boolean isActivationEnabled() {
+            return activationEnabled;
         }
 
         @Override
@@ -247,5 +258,24 @@ class SkillAutoDiscoveryTest {
         public Set<String> failedSkillNames() {
             return Set.of();
         }
+    }
+
+    @Test
+    void disabledHotLoader_doesNotBlockSqlRegistration() throws Exception {
+        createSkill("good-skill");
+        Path javaSource = writeExecutorJavaSource("good-skill", "GoodSkillExecutor");
+        RecordingHotLoader hotLoader = new RecordingHotLoader(false, new SkillLoadResult(false,
+                "org.specdriven.skill.executor.GoodSkillExecutor",
+                List.of(new SkillCompilationDiagnostic("Hot-loading is disabled; explicit programmatic enablement is required", -1, -1))));
+
+        DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, skillsDir, hotLoader).discoverAndRegister();
+
+        assertEquals(1, result.registeredCount());
+        assertEquals(0, result.failedCount());
+        assertEquals(0, result.hotLoadedCount());
+        assertEquals(1, result.hotLoadFailedCount());
+        assertEquals(1, result.errors().size());
+        assertEquals(javaSource, result.errors().getFirst().path());
+        assertTrue(result.errors().getFirst().errorMessage().contains("disabled"));
     }
 }

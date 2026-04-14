@@ -16,14 +16,28 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class LealoneSkillHotLoader implements SkillHotLoader {
 
+    private static final String HOT_LOADING_DISABLED_MESSAGE =
+            "Hot-loading is disabled; explicit programmatic enablement is required";
+
     private final SkillSourceCompiler compiler;
     private final ClassCacheManager cacheManager;
+    private final boolean activationEnabled;
     private final ConcurrentHashMap<String, ActiveEntry> registry = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillLoadResult> failedRegistry = new ConcurrentHashMap<>();
 
     public LealoneSkillHotLoader(SkillSourceCompiler compiler, ClassCacheManager cacheManager) {
+        this(compiler, cacheManager, false);
+    }
+
+    public LealoneSkillHotLoader(SkillSourceCompiler compiler, ClassCacheManager cacheManager, boolean activationEnabled) {
         this.compiler = Objects.requireNonNull(compiler, "compiler must not be null");
         this.cacheManager = Objects.requireNonNull(cacheManager, "cacheManager must not be null");
+        this.activationEnabled = activationEnabled;
+    }
+
+    @Override
+    public boolean isActivationEnabled() {
+        return activationEnabled;
     }
 
     @Override
@@ -32,6 +46,10 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         Objects.requireNonNull(entryClassName, "entryClassName must not be null");
         Objects.requireNonNull(javaSource, "javaSource must not be null");
         Objects.requireNonNull(sourceHash, "sourceHash must not be null");
+
+        if (!activationEnabled) {
+            return disabledResult(entryClassName);
+        }
 
         if (registry.containsKey(skillName)) {
             return new SkillLoadResult(false, entryClassName,
@@ -57,6 +75,10 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         Objects.requireNonNull(entryClassName, "entryClassName must not be null");
         Objects.requireNonNull(javaSource, "javaSource must not be null");
         Objects.requireNonNull(sourceHash, "sourceHash must not be null");
+
+        if (!activationEnabled) {
+            return disabledResult(entryClassName);
+        }
 
         LoadOutcome outcome = resolveLoader(skillName, entryClassName, javaSource, sourceHash);
         if (!outcome.success()) {
@@ -92,6 +114,11 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     @Override
     public Set<String> failedSkillNames() {
         return Set.copyOf(failedRegistry.keySet());
+    }
+
+    private static SkillLoadResult disabledResult(String entryClassName) {
+        return new SkillLoadResult(false, entryClassName,
+                List.of(new SkillCompilationDiagnostic(HOT_LOADING_DISABLED_MESSAGE, -1, -1)));
     }
 
     /**

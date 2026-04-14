@@ -52,6 +52,8 @@ mapping:
 - MUST continue processing remaining skills when one skill fails (partial success)
 - MUST collect per-skill `SkillSqlException` and `SQLException` failures into `DiscoveryResult.errors`
 - MUST append per-skill hot-load failures to `DiscoveryResult.errors`
+- When a `SkillHotLoader` is configured but hot-loading activation is disabled, discovery MUST continue processing skills instead of treating disabled activation as a directory-level failure
+- When a `SkillHotLoader` is configured but hot-loading activation is disabled, discovery MUST leave SQL registration behavior unchanged
 - A hot-load failure MUST NOT increment `failedCount` unless SQL registration itself
   also fails for that skill
 - MUST throw `SkillSqlException` when the skillsDir itself cannot be listed (directory-level failure)
@@ -88,3 +90,20 @@ mapping:
 - THEN `hotLoadFailedCount` MUST increase
 - AND `failedCount` MUST remain unchanged for that skill
 - AND `errors` MUST include a `SkillDiscoveryError` describing the hot-load failure
+
+#### Scenario: disabled hot-loader does not block SQL registration
+
+- GIVEN a discovered skill directory contains `SKILL.md` and the expected executor Java source file
+- AND `SkillAutoDiscovery` is constructed with a `SkillHotLoader` whose activation is still disabled
+- WHEN `discoverAndRegister()` is called
+- THEN SQL registration for that skill MUST still proceed normally
+- AND `registeredCount` MUST increase for the successful SQL registration
+- AND `hotLoadFailedCount` MUST increase for the disabled activation attempt
+
+#### Scenario: disabled hot-loader failure is reported as a hot-load error only
+
+- GIVEN a discovered skill directory contains matching Java source
+- AND the configured `SkillHotLoader` remains disabled
+- WHEN `discoverAndRegister()` is called
+- THEN `errors` MUST include a `SkillDiscoveryError` describing that hot-loading is disabled
+- AND `failedCount` MUST remain unchanged unless SQL registration itself also fails

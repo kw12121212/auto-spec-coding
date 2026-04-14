@@ -44,7 +44,7 @@ class SkillServiceExecutorFactoryTest {
     @Test
     void factoryPrefersHotLoadedExecutorClass() throws Exception {
         SkillHotLoader hotLoader = new LealoneSkillHotLoader(
-                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir));
+                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir), true);
         String executorClassName = "org.specdriven.skill.executor.DemoExecutor";
         String javaSource = """
                 package org.specdriven.skill.executor;
@@ -111,6 +111,11 @@ class SkillServiceExecutorFactoryTest {
     }
 
     private static final class NoOpHotLoader implements SkillHotLoader {
+        @Override
+        public boolean isActivationEnabled() {
+            return false;
+        }
+
         @Override
         public SkillLoadResult load(String skillName, String entryClassName, String javaSource, String sourceHash) {
             throw new UnsupportedOperationException("load not used in this test");

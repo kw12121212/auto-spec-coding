@@ -29,6 +29,7 @@ mapping:
 ### Requirement: SkillHotLoader interface
 
 - MUST be an interface in the `org.specdriven.skill.hotload` package
+- MUST expose whether hot-loading activation is currently enabled
 - MUST provide `load(String skillName, String entryClassName, String javaSource, String sourceHash)` returning `SkillLoadResult`
 - MUST provide `replace(String skillName, String entryClassName, String javaSource, String sourceHash)` returning `SkillLoadResult`
 - MUST provide `unload(String skillName)` returning `void`
@@ -40,6 +41,8 @@ mapping:
 
 #### Requirement: load
 
+- MUST return `success = false` when hot-loading activation is disabled
+- MUST NOT compile source, read or populate the class cache, register an active loader entry, or add the skill name to `failedSkillNames()` when hot-loading activation is disabled
 - MUST return `success = false` if `skillName` is already registered
 - MUST use the cached `ClassLoader` if `ClassCacheManager.isCached(skillName, sourceHash)` returns `true`
 - MUST compile via `SkillSourceCompiler` on cache miss and persist output to `ClassCacheManager.resolveClassDir(skillName, sourceHash)`
@@ -48,6 +51,8 @@ mapping:
 
 #### Requirement: replace
 
+- MUST return `success = false` when hot-loading activation is disabled
+- MUST NOT compile source, read or populate the class cache, modify any existing active loader entry, or add the skill name to `failedSkillNames()` when hot-loading activation is disabled
 - MUST follow the same compile-or-cache-hit logic as `load`
 - MUST swap the active registry entry only when compilation (or cache lookup) succeeds
 - MUST return `success = false` with forwarded diagnostics on compilation failure and MUST NOT modify the existing active entry
@@ -84,6 +89,8 @@ mapping:
 
 - MUST implement `SkillHotLoader`
 - MUST be constructable with a `SkillSourceCompiler` and a `ClassCacheManager`
+- MUST start with hot-loading activation disabled by default
+- MUST support explicit programmatic enablement by the constructing code path
 - MUST use a `ConcurrentHashMap` as the internal active-entry registry
 - MUST maintain a second `ConcurrentHashMap` as the internal failed-skill registry
 - MUST be in the `org.specdriven.skill.hotload` package
@@ -98,10 +105,20 @@ mapping:
 #### Scenario: load succeeds and registers active loader
 
 - GIVEN a valid Java source string for `skillName`
+- AND hot-loading activation has been explicitly enabled
 - WHEN `load(skillName, entryClassName, javaSource, sourceHash)` is called
 - THEN `SkillLoadResult.success` MUST be `true`
 - AND `activeLoader(skillName)` MUST return a non-empty `Optional`
 - AND `loadedSkillNames()` MUST contain `skillName`
+
+#### Scenario: default-disabled loader rejects load activation
+
+- GIVEN a newly constructed `LealoneSkillHotLoader`
+- WHEN `load(skillName, entryClassName, javaSource, sourceHash)` is called before explicit enablement
+- THEN `SkillLoadResult.success` MUST be `false`
+- AND `activeLoader(skillName)` MUST return `Optional.empty()`
+- AND `loadedSkillNames()` MUST NOT contain `skillName`
+- AND `failedSkillNames()` MUST NOT contain `skillName`
 
 #### Scenario: load rejects duplicate registration
 
@@ -121,9 +138,18 @@ mapping:
 #### Scenario: replace with valid source swaps active loader
 
 - GIVEN `skillName` is already registered with version A
+- AND hot-loading activation has been explicitly enabled
 - WHEN `replace(skillName, entryClassName, newJavaSource, newSourceHash)` is called with valid source
 - THEN `SkillLoadResult.success` MUST be `true`
 - AND `activeLoader(skillName)` MUST return the new `ClassLoader`
+
+#### Scenario: default-disabled loader rejects replace activation
+
+- GIVEN a newly constructed `LealoneSkillHotLoader`
+- WHEN `replace(skillName, entryClassName, javaSource, sourceHash)` is called before explicit enablement
+- THEN `SkillLoadResult.success` MUST be `false`
+- AND `activeLoader(skillName)` MUST return `Optional.empty()`
+- AND `failedSkillNames()` MUST NOT contain `skillName`
 
 #### Scenario: replace with invalid source preserves existing active loader
 
@@ -195,3 +221,11 @@ mapping:
 - WHEN `load(skillName, ...)` is called again (duplicate registration, returns `success = false`)
 - THEN `failedSkillNames()` MUST NOT contain `skillName`
 - AND `activeLoader(skillName)` MUST still return a non-empty `Optional`
+
+#### Scenario: explicit programmatic enablement restores normal load behavior
+
+- GIVEN a `LealoneSkillHotLoader` whose constructing code path explicitly enabled hot-loading activation
+- WHEN `load(skillName, entryClassName, javaSource, sourceHash)` is called with valid source
+- THEN `SkillLoadResult.success` MUST be `true`
+- AND `activeLoader(skillName)` MUST return a non-empty `Optional`
+- AND existing cache and registry semantics MUST remain unchanged
