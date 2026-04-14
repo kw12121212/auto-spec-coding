@@ -38,7 +38,7 @@ public final class SkillMarkdownParser {
 
         Map<String, Object> data = parseYaml(yamlBlock, path);
 
-        String skillId = requireString(data, "skill_id", path);
+        String skillId = requireMetadataString(data, "skill_id", path);
         String name = requireString(data, "name", path);
 
         return new ParsedSkill(
@@ -46,9 +46,9 @@ public final class SkillMarkdownParser {
                         skillId,
                         name,
                         asString(data.get("description")),
-                        asString(data.get("author")),
-                        asString(data.get("type")),
-                        asString(data.get("version"))),
+                        metadataString(data, "author"),
+                        metadataString(data, "type"),
+                        metadataString(data, "version")),
                 instructionBody);
     }
 
@@ -90,6 +90,29 @@ public final class SkillMarkdownParser {
                     "Missing required field '" + key + "' in SKILL.md: " + path.toAbsolutePath());
         }
         return value.toString();
+    }
+
+    private static String requireMetadataString(Map<String, Object> data, String key, Path path) {
+        String value = metadataString(data, key);
+        if (value == null) {
+            throw new SkillSqlException(
+                    "Missing required field '" + key + "' in SKILL.md: " + path.toAbsolutePath());
+        }
+        return value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String metadataString(Map<String, Object> data, String key) {
+        Object topLevel = data.get(key);
+        if (topLevel != null) {
+            return topLevel.toString();
+        }
+        Object metadata = data.get("metadata");
+        if (metadata instanceof Map<?, ?> metadataMap) {
+            Object nested = metadataMap.get(key);
+            return nested != null ? nested.toString() : null;
+        }
+        return null;
     }
 
     private static String asString(Object value) {

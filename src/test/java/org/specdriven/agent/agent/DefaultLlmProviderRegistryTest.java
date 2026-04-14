@@ -406,6 +406,7 @@ class DefaultLlmProviderRegistryTest {
         assertEquals("llm-runtime-config", event.source());
         assertEquals("default", event.metadata().get("scope"));
         assertFalse(event.metadata().containsKey("sessionId"));
+        assertEquals("system", event.metadata().get("operator"));
         assertEquals("openai", event.metadata().get("provider"));
         assertEquals("baseUrl,model,timeout,maxRetries", event.metadata().get("changedKeys"));
         registry.close();
@@ -433,6 +434,7 @@ class DefaultLlmProviderRegistryTest {
         Event event = events.get(0);
         assertEquals("session", event.metadata().get("scope"));
         assertEquals("session-a", event.metadata().get("sessionId"));
+        assertEquals("session:session-a", event.metadata().get("operator"));
         assertEquals("claude", event.metadata().get("provider"));
         assertEquals("provider,baseUrl,model,timeout,maxRetries", event.metadata().get("changedKeys"));
         registry.close();
@@ -527,6 +529,7 @@ class DefaultLlmProviderRegistryTest {
         Event event = events.get(0);
         assertEquals("session", event.metadata().get("scope"));
         assertEquals("session-a", event.metadata().get("sessionId"));
+        assertEquals("session:session-a", event.metadata().get("operator"));
         assertEquals("claude", event.metadata().get("provider"));
         assertEquals("provider,model,timeout", event.metadata().get("changedKeys"));
         registry.close();
@@ -861,6 +864,24 @@ class DefaultLlmProviderRegistryTest {
     }
 
     @Test
+    void applySetLlmStatement_permissionDeniedPublishesRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        PermissionProvider denying = stubPermissionProvider(PermissionDecision.DENY);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus, denying);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'"));
+
+        Event event = onlyEvent(rejectedEvents);
+        assertRejectedEvent(event, "session-a", "denied");
+        registry.close();
+    }
+
+    @Test
     void applySetLlmStatement_rejected_whenConfirmRequired() {
         PermissionProvider confirming = stubPermissionProvider(PermissionDecision.CONFIRM);
         DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, null, confirming);
@@ -870,6 +891,86 @@ class DefaultLlmProviderRegistryTest {
         SetLlmSqlException ex = assertThrows(SetLlmSqlException.class,
                 () -> registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'"));
         assertTrue(ex.getMessage().contains("confirmation is required"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_confirmRequiredPublishesRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        PermissionProvider confirming = stubPermissionProvider(PermissionDecision.CONFIRM);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus, confirming);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'"));
+
+        assertRejectedEvent(onlyEvent(rejectedEvents), "session-a", "confirm_required");
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_unsupportedKeyPublishesValidationRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM api_key='secret'"));
+
+        assertRejectedEvent(onlyEvent(rejectedEvents), "session-a", "validation_failed");
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_invalidValuePublishesValidationRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM timeout=0"));
+
+        assertRejectedEvent(onlyEvent(rejectedEvents), "session-a", "validation_failed");
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_parseErrorPublishesRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM model='unterminated"));
+
+        assertRejectedEvent(onlyEvent(rejectedEvents), "session-a", "parse_error");
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_successDoesNotPublishRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'");
+
+        assertTrue(rejectedEvents.isEmpty());
         registry.close();
     }
 
@@ -922,6 +1023,28 @@ class DefaultLlmProviderRegistryTest {
     }
 
     @Test
+    void clearSessionSnapshot_permissionDeniedPublishesRejectedEvent() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        PermissionProvider denying = stubPermissionProvider(PermissionDecision.DENY);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus, denying);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+        LlmConfigSnapshot override = new LlmConfigSnapshot(
+                "claude", "https://api.anthropic.com/v1", "claude-opus", 20, 1);
+        registry.replaceSessionSnapshot("session-a", override);
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.clearSessionSnapshot("session-a"));
+
+        assertEquals(override, registry.snapshot("session-a"));
+        assertRejectedEvent(onlyEvent(rejectedEvents), "session-a", "denied");
+        registry.close();
+    }
+
+    @Test
     void replaceDefaultSnapshot_eventMetadataExcludesApiKey() {
         SimpleEventBus eventBus = new SimpleEventBus();
         List<Event> events = new CopyOnWriteArrayList<>();
@@ -943,7 +1066,52 @@ class DefaultLlmProviderRegistryTest {
         registry.close();
     }
 
+    @Test
+    void rejectedConfigChangeEventMetadataExcludesApiKeyAndVaultReference() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> rejectedEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGE_REJECTED, rejectedEvents::add);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "sk-real-key"));
+        registry.setDefault("openai");
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM provider='vault:openai_key'"));
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM provider='sk-real-key'"));
+
+        assertEquals(2, rejectedEvents.size());
+        for (Event event : rejectedEvents) {
+            assertRejectedEvent(event, "session-a", "validation_failed");
+            for (Object value : event.metadata().values()) {
+                assertNotEquals("sk-real-key", value);
+                assertNotEquals("vault:openai_key", value);
+                if (value instanceof String s) {
+                    assertFalse(s.contains("sk-real-key"));
+                    assertFalse(s.contains("vault:openai_key"));
+                }
+            }
+        }
+        registry.close();
+    }
+
     // --- stub ---
+
+    private static Event onlyEvent(List<Event> events) {
+        assertEquals(1, events.size());
+        return events.get(0);
+    }
+
+    private static void assertRejectedEvent(Event event, String sessionId, String result) {
+        assertEquals(EventType.LLM_CONFIG_CHANGE_REJECTED, event.type());
+        assertEquals("llm-runtime-config", event.source());
+        assertEquals("session", event.metadata().get("scope"));
+        assertEquals(sessionId, event.metadata().get("sessionId"));
+        assertEquals("session:" + sessionId, event.metadata().get("operator"));
+        assertEquals(result, event.metadata().get("result"));
+        assertInstanceOf(String.class, event.metadata().get("reason"));
+        assertFalse(((String) event.metadata().get("reason")).isBlank());
+    }
 
     static class StubProvider implements LlmProvider {
         final LlmConfig config;

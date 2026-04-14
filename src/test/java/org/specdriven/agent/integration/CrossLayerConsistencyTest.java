@@ -166,6 +166,12 @@ class CrossLayerConsistencyTest {
 
         // HTTP layer
         toolInvocationCount.set(0);
+        stubProvider.resetResponses(
+                new LlmResponse.ToolCallResponse(List.of(
+                        new ToolCall(STUB_TOOL_NAME, Map.of("text", "ping"), "call-1")
+                )),
+                new LlmResponse.TextResponse("Tool said: echo-ping")
+        );
         HttpResponse<String> resp = postWithAuth("/agent/run", "{\"prompt\":\"use the tool\"}");
         assertEquals(200, resp.statusCode());
         assertTrue(resp.body().contains("\"state\":\"STOPPED\""));
@@ -558,9 +564,11 @@ class CrossLayerConsistencyTest {
                 new LlmResponse.TextResponse("stub response")
         };
         private final LlmConfig config = new LlmConfig("http://localhost:0", "stub-key", "stub-model", 10, 0);
+        private final AtomicInteger cursor = new AtomicInteger(0);
 
         void resetResponses(LlmResponse... responses) {
             this.responses = responses;
+            cursor.set(0);
         }
 
         @Override
@@ -568,7 +576,7 @@ class CrossLayerConsistencyTest {
 
         @Override
         public LlmClient createClient() {
-            return new StubLlmClient(responses.clone());
+            return new StubLlmClient(this);
         }
 
         @Override
@@ -579,22 +587,27 @@ class CrossLayerConsistencyTest {
             reg.register("stub", this);
             return reg;
         }
+
+        LlmResponse nextResponse() {
+            LlmResponse[] current = responses;
+            int index = cursor.getAndIncrement();
+            if (index < current.length) {
+                return current[index];
+            }
+            return new LlmResponse.TextResponse("stub fallback");
+        }
     }
 
     static class StubLlmClient implements LlmClient {
-        private final LlmResponse[] responses;
-        private int cursor = 0;
+        private final StubLlmProvider provider;
 
-        StubLlmClient(LlmResponse[] responses) {
-            this.responses = responses;
+        StubLlmClient(StubLlmProvider provider) {
+            this.provider = provider;
         }
 
         @Override
         public LlmResponse chat(List<Message> messages) {
-            if (cursor < responses.length) {
-                return responses[cursor++];
-            }
-            return new LlmResponse.TextResponse("stub fallback");
+            return provider.nextResponse();
         }
     }
 

@@ -27,7 +27,9 @@ mapping:
 - MUST parse the YAML block into a `SkillFrontmatter` record
 - MUST extract all content after the second `---` marker as the instruction body (String, may be empty)
 - MUST throw `SkillSqlException` if the file does not contain valid frontmatter with both `---` markers
-- MUST throw `SkillSqlException` if required fields `skill_id` or `name` are missing from the frontmatter
+- MUST accept `skill_id`, `author`, `type`, and `version` either as top-level frontmatter fields or as fields under a top-level `metadata` object, with top-level fields taking precedence when both forms are present
+- MUST throw `SkillSqlException` if required field `skill_id` is missing from both the top-level frontmatter and `metadata`
+- MUST throw `SkillSqlException` if required field `name` is missing from the top-level frontmatter
 
 ### Requirement: SkillSqlConverter SQL generation
 

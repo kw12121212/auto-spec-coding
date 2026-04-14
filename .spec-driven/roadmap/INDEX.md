@@ -33,6 +33,6 @@
 - [m30-dynamic-compilation-hotload.md](milestones/m30-dynamic-compilation-hotload.md) - M30 - 动态编译与 Skill 热加载 - complete
 - [m31-orm-integration-enhancement.md](milestones/m31-orm-integration-enhancement.md) - M31 - ORM 集成增强 - proposed
 - [m32-lealone-platform-unification.md](milestones/m32-lealone-platform-unification.md) - M32 - Lealone 平台化统一基础设施 - proposed
-- [m33-llm-config-secret-governance.md](milestones/m33-llm-config-secret-governance.md) - M33 - LLM 配置密钥引用与权限治理 - proposed
+- [m33-llm-config-secret-governance.md](milestones/m33-llm-config-secret-governance.md) - M33 - LLM 配置密钥引用与权限治理 - complete
 - [m34-skill-hotload-governance.md](milestones/m34-skill-hotload-governance.md) - M34 - Skill 动态编译治理与审计 - complete
 - [m35-loop-skill-pipeline-context-boundaries.md](milestones/m35-loop-skill-pipeline-context-boundaries.md) - M35 - 自主循环 Skill 化阶段流水线与上下文边界 - proposed

@@ -172,9 +172,21 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     public LlmConfigSnapshot applySetLlmStatement(String sessionId, String sql) {
         requireSessionId(sessionId);
         requirePermission(sessionId, "set");
-        Map<String, String> assignments = setLlmStatementParser.parseAssignments(sql);
+        Map<String, String> assignments;
+        try {
+            assignments = setLlmStatementParser.parseAssignments(sql);
+        } catch (SetLlmSqlException e) {
+            publishConfigRejected(SESSION_SCOPE, sessionId, "parse_error", e.getMessage());
+            throw e;
+        }
         LlmConfigSnapshot current = snapshot(sessionId);
-        LlmConfigSnapshot replacement = buildReplacementSnapshot(current, assignments);
+        LlmConfigSnapshot replacement;
+        try {
+            replacement = buildReplacementSnapshot(current, assignments);
+        } catch (SetLlmSqlException e) {
+            publishConfigRejected(SESSION_SCOPE, sessionId, "validation_failed", e.getMessage());
+            throw e;
+        }
         sessionSnapshots.put(sessionId, replacement);
         publishConfigChanged(SESSION_SCOPE, sessionId, current, replacement);
         return replacement;
@@ -269,6 +281,8 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             String reason = decision == PermissionDecision.CONFIRM
                     ? "explicit confirmation is required for LLM config mutation"
                     : "permission denied for LLM config mutation";
+            String result = decision == PermissionDecision.CONFIRM ? "confirm_required" : "denied";
+            publishConfigRejected(SESSION_SCOPE, sessionId, result, reason);
             throw new SetLlmSqlException(reason + " (action: " + ACTION_LLM_CONFIG_SET + ", session: " + sessionId + ")");
         }
     }
@@ -597,6 +611,7 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         if (SESSION_SCOPE.equals(scope)) {
             metadata.put("sessionId", sessionId);
         }
+        metadata.put("operator", operator(scope, sessionId));
         metadata.put("provider", after.providerName());
         metadata.put("changedKeys", String.join(",", changedKeys(before, after)));
 
@@ -609,6 +624,44 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         }
     }
 
+    private void publishConfigRejected(String scope, String sessionId, String result, String reason) {
+        if (eventBus == null) {
+            return;
+        }
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("scope", scope);
+        if (SESSION_SCOPE.equals(scope)) {
+            metadata.put("sessionId", sessionId);
+        }
+        metadata.put("operator", operator(scope, sessionId));
+        metadata.put("result", result);
+        metadata.put("reason", sanitizeAuditReason(reason));
+
+        assertMetadataExcludesKnownSecrets(metadata);
+
+        try {
+            eventBus.publish(new Event(EventType.LLM_CONFIG_CHANGE_REJECTED, System.currentTimeMillis(), EVENT_SOURCE, metadata));
+        } catch (RuntimeException e) {
+            LOG.log(System.Logger.Level.WARNING, "Failed to publish runtime LLM config rejected event", e);
+        }
+    }
+
+    private String operator(String scope, String sessionId) {
+        return SESSION_SCOPE.equals(scope) ? "session:" + sessionId : "system";
+    }
+
+    private String sanitizeAuditReason(String reason) {
+        String sanitized = reason == null || reason.isBlank() ? "LLM config change rejected" : reason;
+        for (LlmProvider provider : providers.values()) {
+            String apiKey = provider.config().apiKey();
+            if (apiKey != null && !apiKey.isBlank()) {
+                sanitized = sanitized.replace(apiKey, "[REDACTED]");
+            }
+        }
+        return sanitized.replaceAll("vault:[A-Za-z0-9_.:-]+", "[REDACTED]");
+    }
+
     private void assertMetadataExcludesSecrets(Map<String, Object> metadata, String providerName) {
         LlmProvider provider = providers.get(providerName);
         if (provider == null) return;
@@ -616,6 +669,20 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         for (Object value : metadata.values()) {
             if (value instanceof String s && s.equals(apiKey)) {
                 throw new IllegalStateException("LLM_CONFIG_CHANGED event metadata must not contain API key");
+            }
+        }
+    }
+
+    private void assertMetadataExcludesKnownSecrets(Map<String, Object> metadata) {
+        for (LlmProvider provider : providers.values()) {
+            String apiKey = provider.config().apiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                continue;
+            }
+            for (Object value : metadata.values()) {
+                if (value instanceof String s && s.equals(apiKey)) {
+                    throw new IllegalStateException("LLM_CONFIG_CHANGE_REJECTED event metadata must not contain API key");
+                }
             }
         }
     }

@@ -262,15 +262,16 @@ class SkillAutoDiscoveryTest {
         Path skillDir = Files.createDirectory(skillsDir.resolve(skillName));
         Files.writeString(skillDir.resolve("SKILL.md"), """
                 ---
-                skill_id: %s
                 name: %s
                 description: A valid skill
-                author: test
-                type: agent_skill
-                version: 1.0.0
+                metadata:
+                  skill_id: %s
+                  author: test
+                  type: agent_skill
+                  version: 1.0.0
                 ---
                 Do something useful.
-                """.formatted(skillName.replace('-', '_'), skillName));
+                """.formatted(skillName, skillName.replace('-', '_')));
         return skillDir;
     }
 
