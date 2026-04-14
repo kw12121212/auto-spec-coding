@@ -72,6 +72,7 @@
 - [class-cache-manager.md](skill/class-cache-manager.md) - ClassCacheManager, ClassCacheException, LealoneClassCacheManager — disk-backed compiled skill class cache
 - [skill-source-compiler.md](skill/skill-source-compiler.md) - SkillSourceCompiler, SkillCompilationResult, SkillCompilationDiagnostic, LealoneSkillSourceCompiler
 - [skill-sql-converter.md](skill/skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter
+- [skill-hot-loader.md](skill/skill-hot-loader.md) - SkillHotLoader, SkillHotLoaderException, SkillLoadResult, LealoneSkillHotLoader — runtime registry of compiled skill ClassLoaders with hot-replace
 
 ## SDK (SDK 公共 API)
 
