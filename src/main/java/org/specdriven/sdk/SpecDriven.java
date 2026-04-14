@@ -83,7 +83,7 @@ public class SpecDriven implements AutoCloseable {
      * Returns the question delivery service, initializing lazily on first access.
      * Returns null if initialization fails (e.g., Lealone not available).
      */
-    QuestionDeliveryService deliveryService() {
+    public QuestionDeliveryService deliveryService() {
         if (deliveryService == null) {
             synchronized (this) {
                 if (deliveryService == null) {

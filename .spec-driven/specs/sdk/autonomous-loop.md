@@ -6,6 +6,7 @@ mapping:
     - src/main/java/org/specdriven/agent/loop/ContextBudget.java
     - src/main/java/org/specdriven/agent/loop/DefaultLoopAnswerAgent.java
     - src/main/java/org/specdriven/agent/loop/DefaultLoopDriver.java
+    - src/main/java/org/specdriven/agent/loop/InteractiveSessionFactory.java
     - src/main/java/org/specdriven/agent/loop/IterationResult.java
     - src/main/java/org/specdriven/agent/loop/IterationStatus.java
     - src/main/java/org/specdriven/agent/loop/LealoneLoopIterationStore.java
@@ -463,3 +464,44 @@ Smart context integration MUST NOT require a new public `DefaultOrchestrator.run
 - WHEN a later roadmap change bridges loop escalation into interactive mode
 - THEN that bridge MUST be able to depend on `InteractiveSession` as the session boundary
 - AND this change MUST NOT predefine the later bridge's runtime behavior beyond that contract dependency
+
+### Requirement: InteractiveSessionFactory interface
+
+- MUST be a functional interface in `org.specdriven.agent.loop`
+- MUST define `InteractiveSession create(String sessionId)`
+- `sessionId` MUST be non-null and non-blank
+- `create()` MUST return a non-null `InteractiveSession` in `NEW` state
+- `create()` MUST NOT throw checked exceptions — factory failures MUST be captured in the returned session (which enters `ERROR` state on `start()`)
+
+### Requirement: DefaultLoopDriver interactive session bridge
+
+- The DefaultLoopDriver MUST accept an additional optional constructor parameter `InteractiveSessionFactory` (nullable).
+- When `InteractiveSessionFactory` is null, human-escalated pause behavior MUST remain identical to current behavior — no interactive session is created.
+- When `InteractiveSessionFactory` is non-null and the loop transitions to `PAUSED` due to a human-escalated question:
+  1. MUST call `factory.create(sessionId)` where `sessionId` is the current loop session identifier
+  2. MUST call `start()` on the created `InteractiveSession`
+  3. MUST publish `LOOP_INTERACTIVE_ENTERED` event with metadata: `sessionId` (String), `questionId` (String), `changeName` (String)
+  4. MUST block the scheduling thread while the interactive session state is `ACTIVE`
+  5. MUST periodically check whether the session has transitioned to `CLOSED` or `ERROR`
+  6. When the session transitions to `CLOSED` or `ERROR`, MUST publish `LOOP_INTERACTIVE_EXITED` event with metadata: `sessionId` (String), `questionId` (String), `sessionEndState` (String — "CLOSED" or "ERROR")
+  7. MUST NOT add the paused change name to `completedChangeNames` during the interactive session
+  8. After session exit, the loop MUST remain in `PAUSED` state; resume MUST be triggered externally (via `resume()` call or stop via `stop()` call)
+- The scheduling thread MUST react to `stop()` being called while an interactive session is active: MUST close the interactive session and exit the scheduling loop.
+
+### Requirement: LOOP_INTERACTIVE_ENTERED EventType
+
+- MUST add `LOOP_INTERACTIVE_ENTERED` to the existing `EventType` enum in `org.specdriven.agent.event`
+- MUST include metadata: `sessionId` (String), `questionId` (String), `changeName` (String)
+- Existing EventType values MUST NOT change
+
+### Requirement: LOOP_INTERACTIVE_EXITED EventType
+
+- MUST add `LOOP_INTERACTIVE_EXITED` to the existing `EventType` enum in `org.specdriven.agent.event`
+- MUST include metadata: `sessionId` (String), `questionId` (String), `sessionEndState` (String — "CLOSED" or "ERROR")
+- Existing EventType values MUST NOT change
+
+### Requirement: Interactive session factory backward compatibility
+
+- All existing `DefaultLoopDriver` constructors MUST remain valid and MUST behave as if `InteractiveSessionFactory` is null
+- A new constructor overload MUST accept the additional `InteractiveSessionFactory` parameter
+- Code that does not pass `InteractiveSessionFactory` MUST compile and run unchanged

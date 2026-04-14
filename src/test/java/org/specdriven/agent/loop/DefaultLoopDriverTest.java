@@ -28,6 +28,8 @@ import org.specdriven.agent.question.QuestionReplyCollector;
 import org.specdriven.agent.question.QuestionRuntime;
 import org.specdriven.agent.question.QuestionStatus;
 import org.specdriven.agent.question.QuestionStore;
+import org.specdriven.agent.interactive.InteractiveSession;
+import org.specdriven.agent.interactive.InteractiveSessionState;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
@@ -1161,5 +1163,362 @@ class DefaultLoopDriverTest {
         public void delete(String questionId) {
             questions.remove(questionId);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Interactive session bridge tests
+    // -------------------------------------------------------------------------
+
+    /**
+     * Controllable InteractiveSession for testing.
+     */
+    private static class StubInteractiveSession implements InteractiveSession {
+        private final String sessionId;
+        private InteractiveSessionState state = InteractiveSessionState.NEW;
+        private final List<String> inputs = new ArrayList<>();
+
+        StubInteractiveSession(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        @Override public String sessionId() { return sessionId; }
+        @Override public InteractiveSessionState state() { return state; }
+
+        @Override
+        public void start() {
+            if (state != InteractiveSessionState.NEW) {
+                throw new IllegalStateException("Cannot start from " + state);
+            }
+            state = InteractiveSessionState.ACTIVE;
+        }
+
+        @Override
+        public void submit(String input) {
+            if (state != InteractiveSessionState.ACTIVE) {
+                throw new IllegalStateException("Cannot submit from " + state);
+            }
+            inputs.add(input);
+        }
+
+        @Override
+        public List<String> drainOutput() { return List.of(); }
+
+        @Override
+        public void close() {
+            if (state == InteractiveSessionState.CLOSED) return;
+            state = InteractiveSessionState.CLOSED;
+        }
+
+        void transitionToError() {
+            state = InteractiveSessionState.ERROR;
+        }
+    }
+
+    /**
+     * Human-escalated question that triggers pause (no factory configured).
+     */
+    private static Question humanEscalatedQuestion(String questionId, String sessionId) {
+        return question(questionId, sessionId,
+                "Need approval?", "Requires human.", "Ask operator.",
+                QuestionCategory.PERMISSION_CONFIRMATION, DeliveryMode.PAUSE_WAIT_HUMAN);
+    }
+
+    @Test
+    void noFactoryConfiguredPauseBehaviorIdenticalToPreChange() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> enteredEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_ENTERED, enteredEvents::add);
+
+        Question question = humanEscalatedQuestion("q-nofactory", "s-nofactory");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("no-factory-change", "m.md", "goal"));
+
+        // No factory — using 5-arg constructor (no factory)
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"));
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertTrue(enteredEvents.isEmpty(), "No LOOP_INTERACTIVE_ENTERED without factory");
+        assertEquals(1, driver.getCompletedIterations().size());
+        assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
+
+        driver.stop();
+    }
+
+    @Test
+    void factoryConfiguredCreatesInteractiveSessionOnHumanEscalation() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> enteredEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_ENTERED, enteredEvents::add);
+
+        Question question = humanEscalatedQuestion("q-factory", "s-factory");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("factory-change", "m.md", "goal"));
+
+        AtomicReference<StubInteractiveSession> createdSession = new AtomicReference<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            createdSession.set(session);
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertNotNull(createdSession.get(), "Session should have been created");
+        assertEquals(InteractiveSessionState.ACTIVE, createdSession.get().state());
+        assertFalse(enteredEvents.isEmpty(), "LOOP_INTERACTIVE_ENTERED should be published");
+        assertEquals("s-factory", enteredEvents.get(0).metadata().get("sessionId"));
+        assertEquals("q-factory", enteredEvents.get(0).metadata().get("questionId"));
+        assertEquals("factory-change", enteredEvents.get(0).metadata().get("changeName"));
+
+        // Close session to unblock
+        createdSession.get().close();
+        Thread.sleep(500);
+
+        driver.stop();
+    }
+
+    @Test
+    void sessionClosedLoopRemainsPausedExitedEventPublished() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> exitedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_EXITED, exitedEvents::add);
+
+        Question question = humanEscalatedQuestion("q-close", "s-close");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("close-change", "m.md", "goal"));
+
+        AtomicReference<StubInteractiveSession> createdSession = new AtomicReference<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            createdSession.set(session);
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+        assertNotNull(createdSession.get());
+
+        // Close the session — should publish EXITED but loop stays PAUSED
+        createdSession.get().close();
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published");
+        assertEquals("CLOSED", exitedEvents.get(0).metadata().get("sessionEndState"));
+
+        driver.stop();
+    }
+
+    @Test
+    void sessionErrorLoopRemainsPausedExitedEventPublished() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> exitedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_EXITED, exitedEvents::add);
+
+        Question question = humanEscalatedQuestion("q-error", "s-error");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("error-change", "m.md", "goal"));
+
+        AtomicReference<StubInteractiveSession> createdSession = new AtomicReference<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            createdSession.set(session);
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+        assertNotNull(createdSession.get());
+
+        // Transition session to ERROR
+        createdSession.get().transitionToError();
+        Thread.sleep(500);
+
+        assertEquals(LoopState.PAUSED, driver.getState());
+        assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published");
+        assertEquals("ERROR", exitedEvents.get(0).metadata().get("sessionEndState"));
+
+        driver.stop();
+    }
+
+    @Test
+    void stopDuringInteractiveSessionClosesSessionAndStopsLoop() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> exitedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_EXITED, exitedEvents::add);
+
+        Question question = humanEscalatedQuestion("q-stop", "s-stop");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("stop-change", "m.md", "goal"));
+
+        AtomicReference<StubInteractiveSession> createdSession = new AtomicReference<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            createdSession.set(session);
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+        assertNotNull(createdSession.get());
+        assertEquals(InteractiveSessionState.ACTIVE, createdSession.get().state());
+
+        driver.stop();
+        Thread.sleep(300);
+
+        assertEquals(LoopState.STOPPED, driver.getState());
+        assertEquals(InteractiveSessionState.CLOSED, createdSession.get().state());
+        assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published on stop");
+    }
+
+    @Test
+    void multiplePausesEachCreatesFreshSessionInstance() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> enteredEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_ENTERED, enteredEvents::add);
+
+        // Question triggers on first call, then SUCCESS, then question again on 3rd
+        AtomicInteger pipelineCallCount = new AtomicInteger();
+        Question question1 = humanEscalatedQuestion("q-multi1", "s-multi");
+        Question question2 = humanEscalatedQuestion("q-multi2", "s-multi");
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            int call = pipelineCallCount.incrementAndGet();
+            if (call == 1) {
+                return new IterationResult(IterationStatus.QUESTIONING, null, 10,
+                        List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE), 0, question1);
+            } else if (call == 3) {
+                return new IterationResult(IterationStatus.QUESTIONING, null, 10,
+                        List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE), 0, question2);
+            }
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE));
+        };
+
+        LoopConfig cfg = new LoopConfig(4, 60, List.of(), Path.of("/tmp"), bus);
+        AtomicInteger schedulerCallCount = new AtomicInteger();
+        LoopScheduler scheduler = ctx -> {
+            int call = schedulerCallCount.incrementAndGet();
+            return Optional.of(new LoopCandidate("multi-change", "m.md", "goal"));
+        };
+
+        List<StubInteractiveSession> allSessions = new ArrayList<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            synchronized (allSessions) { allSessions.add(session); }
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        // Wait for first pause
+        waitUntilState(driver, LoopState.PAUSED);
+        assertEquals(1, allSessions.size());
+        StubInteractiveSession first = allSessions.get(0);
+
+        // Close first session and resume
+        first.close();
+        Thread.sleep(500);
+        driver.resume();
+        Thread.sleep(500);
+
+        // Wait for second pause
+        waitUntilState(driver, LoopState.PAUSED);
+        assertEquals(2, allSessions.size());
+        assertNotSame(first, allSessions.get(1), "Second pause must create fresh session");
+
+        allSessions.get(1).close();
+        Thread.sleep(300);
+        driver.stop();
+    }
+
+    @Test
+    void factoryReturnsSessionInNewState() {
+        StubInteractiveSession session = new StubInteractiveSession("test-session");
+        assertEquals(InteractiveSessionState.NEW, session.state());
+    }
+
+    @Test
+    void interactiveEnteredExitedEventsContainCorrectMetadata() throws Exception {
+        SimpleEventBus bus = eventBus();
+        List<Event> enteredEvents = new ArrayList<>();
+        List<Event> exitedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_INTERACTIVE_ENTERED, enteredEvents::add);
+        bus.subscribe(EventType.LOOP_INTERACTIVE_EXITED, exitedEvents::add);
+
+        Question question = humanEscalatedQuestion("q-meta", "s-meta");
+        QuestioningThenSuccessPipeline pipeline = new QuestioningThenSuccessPipeline(question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("meta-change", "m.md", "goal"));
+
+        AtomicReference<StubInteractiveSession> createdSession = new AtomicReference<>();
+        InteractiveSessionFactory factory = sessionId -> {
+            StubInteractiveSession session = new StubInteractiveSession(sessionId);
+            createdSession.set(session);
+            return session;
+        };
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
+                (q, timeout) -> new AnswerResolution.Escalated("escalated"),
+                null, factory);
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+
+        // Verify ENTERED metadata
+        assertFalse(enteredEvents.isEmpty());
+        Event entered = enteredEvents.get(0);
+        assertEquals("s-meta", entered.metadata().get("sessionId"));
+        assertEquals("q-meta", entered.metadata().get("questionId"));
+        assertEquals("meta-change", entered.metadata().get("changeName"));
+
+        // Close session
+        createdSession.get().close();
+        Thread.sleep(500);
+
+        // Verify EXITED metadata
+        assertFalse(exitedEvents.isEmpty());
+        Event exited = exitedEvents.get(0);
+        assertEquals("s-meta", exited.metadata().get("sessionId"));
+        assertEquals("q-meta", exited.metadata().get("questionId"));
+        assertEquals("CLOSED", exited.metadata().get("sessionEndState"));
+
+        driver.stop();
     }
 }

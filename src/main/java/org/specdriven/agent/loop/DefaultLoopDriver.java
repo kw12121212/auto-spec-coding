@@ -4,6 +4,8 @@ import org.specdriven.agent.agent.ContextWindowManager;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.interactive.InteractiveSession;
+import org.specdriven.agent.interactive.InteractiveSessionState;
 import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.question.Question;
 import org.specdriven.agent.question.QuestionDeliveryService;
@@ -34,6 +36,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private final LoopIterationStore store;
     private final LoopAnswerAgent answerAgent;
     private final QuestionDeliveryService questionDeliveryService;
+    private final InteractiveSessionFactory interactiveSessionFactory;
     private final Object stateLock = new Object();
 
     private LoopState state = LoopState.IDLE;
@@ -44,34 +47,43 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile boolean stopRequested = false;
     private volatile ContextWindowManager contextManager;
     private volatile long accumulatedTokenUsage = 0;
+    private volatile InteractiveSession activeInteractiveSession;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
-        this(config, scheduler, new StubLoopPipeline(), null, null, null);
+        this(config, scheduler, new StubLoopPipeline(), null, null, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline) {
-        this(config, scheduler, pipeline, null, null, null);
+        this(config, scheduler, pipeline, null, null, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
                              LoopIterationStore store) {
-        this(config, scheduler, pipeline, store, null, null);
+        this(config, scheduler, pipeline, store, null, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
                              LoopIterationStore store, LoopAnswerAgent answerAgent) {
-        this(config, scheduler, pipeline, store, answerAgent, null);
+        this(config, scheduler, pipeline, store, answerAgent, null, null);
     }
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
                              LoopIterationStore store, LoopAnswerAgent answerAgent,
                              QuestionDeliveryService questionDeliveryService) {
+        this(config, scheduler, pipeline, store, answerAgent, questionDeliveryService, null);
+    }
+
+    public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler, LoopPipeline pipeline,
+                             LoopIterationStore store, LoopAnswerAgent answerAgent,
+                             QuestionDeliveryService questionDeliveryService,
+                             InteractiveSessionFactory interactiveSessionFactory) {
         this.config = config;
         this.scheduler = scheduler;
         this.pipeline = pipeline;
         this.store = store;
         this.answerAgent = answerAgent;
         this.questionDeliveryService = questionDeliveryService;
+        this.interactiveSessionFactory = interactiveSessionFactory;
     }
 
     @Override
@@ -130,12 +142,20 @@ public class DefaultLoopDriver implements LoopDriver {
 
     @Override
     public void stop() {
+        InteractiveSession sessionToClose = activeInteractiveSession;
         synchronized (stateLock) {
             if (state == LoopState.STOPPED) return;
             state = LoopState.STOPPED;
             stateLock.notifyAll();
         }
         stopRequested = true;
+        if (sessionToClose != null) {
+            try {
+                sessionToClose.close();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to close interactive session on stop", e);
+            }
+        }
         if (loopThread != null) {
             loopThread.interrupt();
         }
@@ -289,6 +309,45 @@ public class DefaultLoopDriver implements LoopDriver {
                             store.saveIteration(partial);
                             store.saveProgress(buildSnapshot());
                         }
+
+                        // Interactive session bridge
+                        if (interactiveSessionFactory != null) {
+                            InteractiveSession session = interactiveSessionFactory.create(question.sessionId());
+                            session.start();
+                            activeInteractiveSession = session;
+                            publishEvent(EventType.LOOP_INTERACTIVE_ENTERED, Map.of(
+                                    "sessionId", question.sessionId(),
+                                    "questionId", question.questionId(),
+                                    "changeName", c.changeName()
+                            ));
+                            synchronized (stateLock) {
+                                try {
+                                    while (session.state() == InteractiveSessionState.ACTIVE && !stopRequested) {
+                                        stateLock.wait(500);
+                                    }
+                                } catch (InterruptedException e) {
+                                    if (stopRequested) {
+                                        closeInteractiveSession(question, c.changeName());
+                                        return;
+                                    }
+                                    Thread.currentThread().interrupt();
+                                    closeInteractiveSession(question, c.changeName());
+                                    return;
+                                }
+                            }
+                            if (stopRequested) {
+                                closeInteractiveSession(question, c.changeName());
+                                return;
+                            }
+                            InteractiveSessionState endState = session.state();
+                            publishEvent(EventType.LOOP_INTERACTIVE_EXITED, Map.of(
+                                    "sessionId", question.sessionId(),
+                                    "questionId", question.questionId(),
+                                    "sessionEndState", endState.name()
+                            ));
+                            activeInteractiveSession = null;
+                        }
+
                         synchronized (stateLock) {
                             try {
                                 while (state == LoopState.PAUSED && !stopRequested) {
@@ -479,6 +538,23 @@ public class DefaultLoopDriver implements LoopDriver {
                 new org.specdriven.agent.agent.LlmUsage(0, 0,
                         (int) Math.min(iterationTokenUsage, Integer.MAX_VALUE)));
         accumulatedTokenUsage += iterationTokenUsage;
+    }
+
+    private void closeInteractiveSession(Question question, String changeName) {
+        InteractiveSession session = activeInteractiveSession;
+        if (session != null) {
+            try {
+                session.close();
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to close interactive session", e);
+            }
+            publishEvent(EventType.LOOP_INTERACTIVE_EXITED, Map.of(
+                    "sessionId", question.sessionId(),
+                    "questionId", question.questionId(),
+                    "sessionEndState", session.state().name()
+            ));
+            activeInteractiveSession = null;
+        }
     }
 
     private void publishEvent(EventType type, Map<String, Object> metadata) {

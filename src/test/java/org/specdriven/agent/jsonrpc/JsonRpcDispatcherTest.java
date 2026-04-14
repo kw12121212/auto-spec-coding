@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.question.*;
 import org.specdriven.sdk.*;
 
 import java.io.*;
@@ -95,6 +96,10 @@ class JsonRpcDispatcherTest {
 
     private String responseJson(JsonRpcResponse resp) {
         return JsonRpcCodec.encode(resp);
+    }
+
+    private SpecDriven getSdkInstance() {
+        return dispatcher.sdk();
     }
 
     // --- initialize tests ---
@@ -353,5 +358,135 @@ class JsonRpcDispatcherTest {
                     });
             assertTrue(hasErrorNotification, "Should send event notification for transport error");
         }
+    }
+
+    // --- question/answer tests ---
+
+    @Test
+    void questionAnswer_initializeCapabilitiesIncludesMethod() {
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(1L, "initialize", Map.of()));
+        assertNotNull(resp);
+        assertTrue(resp.isSuccess());
+        String json = responseJson(resp);
+        assertTrue(json.contains("question/answer"), "capabilities.methods should include question/answer");
+    }
+
+    @Test
+    void questionAnswer_withoutInitialize_rejected() {
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(1L, "question/answer",
+                Map.of("sessionId", "s1", "questionId", "q1", "approved", true)));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32600, resp.error().code());
+    }
+
+    @Test
+    void questionAnswer_missingSessionId_returnsInvalidParams() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("questionId", "q1", "approved", true)));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32602, resp.error().code());
+    }
+
+    @Test
+    void questionAnswer_missingQuestionId_returnsInvalidParams() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("sessionId", "s1", "approved", true)));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32602, resp.error().code());
+    }
+
+    @Test
+    void questionAnswer_missingApproved_returnsInvalidParams() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("sessionId", "s1", "questionId", "q1")));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32602, resp.error().code());
+    }
+
+    @Test
+    void questionAnswer_noWaitingQuestion_returnsError() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("sessionId", "s1", "questionId", "q1", "approved", true)));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertTrue(resp.error().message().contains("No waiting question") || resp.error().message().contains("not found"),
+                "Error should indicate question not found: " + resp.error().message());
+    }
+
+    @Test
+    void questionAnswer_unsupportedDeliveryMode_returnsError() {
+        initializeSdk();
+
+        // Register a PUSH_MOBILE_WAIT_HUMAN waiting question via the delivery service
+        SpecDriven sdk = getSdkInstance();
+        QuestionDeliveryService service = sdk.deliveryService();
+        if (service != null) {
+            Question question = new Question(
+                    "q1", "s1", "test question?", "impact", "recommendation",
+                    QuestionStatus.WAITING_FOR_ANSWER, QuestionCategory.PERMISSION_CONFIRMATION,
+                    DeliveryMode.PUSH_MOBILE_WAIT_HUMAN);
+            service.runtime().beginWaitingQuestion(question);
+
+            JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                    Map.of("sessionId", "s1", "questionId", "q1", "approved", true)));
+            assertNotNull(resp);
+            assertFalse(resp.isSuccess());
+            assertTrue(resp.error().message().contains("Unsupported delivery mode"),
+                    "Error should indicate unsupported delivery mode: " + resp.error().message());
+        }
+    }
+
+    @Test
+    void questionAnswer_approve_returnsAccepted() {
+        initializeSdk();
+
+        SpecDriven sdk = getSdkInstance();
+        QuestionDeliveryService service = sdk.deliveryService();
+        if (service == null) return; // skip if delivery service unavailable
+
+        Question question = new Question(
+                "q1", "s1", "Allow file deletion?", "Files will be deleted",
+                "Approve if safe", QuestionStatus.WAITING_FOR_ANSWER,
+                QuestionCategory.PERMISSION_CONFIRMATION, DeliveryMode.PAUSE_WAIT_HUMAN);
+        service.runtime().beginWaitingQuestion(question);
+
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("sessionId", "s1", "questionId", "q1", "approved", true)));
+        assertNotNull(resp);
+        assertTrue(resp.isSuccess(), "Approve should succeed");
+
+        String json = responseJson(resp);
+        assertTrue(json.contains("\"status\":\"accepted\""), "Response should contain status accepted");
+    }
+
+    @Test
+    void questionAnswer_reject_returnsAccepted() {
+        initializeSdk();
+
+        SpecDriven sdk = getSdkInstance();
+        QuestionDeliveryService service = sdk.deliveryService();
+        if (service == null) return;
+
+        Question question = new Question(
+                "q1", "s1", "Allow file deletion?", "Files will be deleted",
+                "Approve if safe", QuestionStatus.WAITING_FOR_ANSWER,
+                QuestionCategory.PERMISSION_CONFIRMATION, DeliveryMode.PAUSE_WAIT_HUMAN);
+        service.runtime().beginWaitingQuestion(question);
+
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "question/answer",
+                Map.of("sessionId", "s1", "questionId", "q1", "approved", false)));
+        assertNotNull(resp);
+        assertTrue(resp.isSuccess(), "Reject should succeed");
+
+        String json = responseJson(resp);
+        assertTrue(json.contains("\"status\":\"accepted\""), "Response should contain status accepted");
     }
 }

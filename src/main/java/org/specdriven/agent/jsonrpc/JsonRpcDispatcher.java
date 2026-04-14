@@ -2,6 +2,7 @@ package org.specdriven.agent.jsonrpc;
 
 import org.specdriven.agent.agent.AgentState;
 import org.specdriven.agent.event.Event;
+import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
 import org.specdriven.sdk.*;
@@ -44,6 +45,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 case "agent/stop" -> handleAgentStop(request);
                 case "agent/state" -> handleAgentState(request);
                 case "tools/list" -> handleToolsList(request);
+                case "question/answer" -> handleQuestionAnswer(request);
                 default -> sendError(request.id(), JsonRpcError.methodNotFound());
             }
         } catch (Exception e) {
@@ -101,7 +103,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", VERSION);
         result.put("capabilities", Map.of(
-                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list"),
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer"),
                 "notifications", List.of("$/cancel", "event")
         ));
         sendSuccess(request.id(), result);
@@ -214,6 +216,66 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         }
     }
 
+    private void handleQuestionAnswer(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        QuestionDeliveryService service = sdk.deliveryService();
+        if (service == null) {
+            sendError(request.id(), new JsonRpcError(-32603, "Question service not available", null));
+            return;
+        }
+
+        Object params = request.params();
+        if (!(params instanceof Map<?, ?> map)) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        String sessionId = map.get("sessionId") instanceof String s ? s : null;
+        String questionId = map.get("questionId") instanceof String s ? s : null;
+        Boolean approved = map.get("approved") instanceof Boolean b ? b : null;
+
+        if (sessionId == null || questionId == null || approved == null) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        Optional<Question> pending = service.pendingQuestion(sessionId);
+        if (pending.isEmpty()) {
+            sendError(request.id(), new JsonRpcError(-32603, "No waiting question found for session", null));
+            return;
+        }
+
+        Question question = pending.get();
+        if (!question.questionId().equals(questionId)) {
+            sendError(request.id(), new JsonRpcError(-32603, "Question not found or expired", null));
+            return;
+        }
+
+        if (question.deliveryMode() != DeliveryMode.PAUSE_WAIT_HUMAN) {
+            sendError(request.id(), new JsonRpcError(-32603,
+                    "Unsupported delivery mode: " + question.deliveryMode(), null));
+            return;
+        }
+
+        QuestionDecision decision = approved ? QuestionDecision.ANSWER_ACCEPTED : QuestionDecision.CANCELLED;
+        String content = approved ? "Approved" : "Rejected";
+        Answer answer = new Answer(
+                content,
+                "Human inline response via JSON-RPC",
+                "json-rpc",
+                AnswerSource.HUMAN_INLINE,
+                1.0,
+                decision,
+                question.deliveryMode(),
+                "Human inline response via JSON-RPC question/answer",
+                System.currentTimeMillis()
+        );
+
+        service.submitReply(sessionId, questionId, answer);
+        sendSuccess(request.id(), Map.of("status", "accepted"));
+    }
+
     // --- Event forwarding ---
 
     private void forwardEvent(Event event) {
@@ -259,6 +321,10 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
     }
 
     // --- Helpers ---
+
+    SpecDriven sdk() {
+        return sdk;
+    }
 
     private boolean requireInitialized(Object requestId) {
         if (sdk == null || shutdown) {
