@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,7 +57,7 @@ public class SequentialMilestoneScheduler implements LoopScheduler {
 
             // Find first planned change not in completedChangeNames
             for (PlannedChange change : data.plannedChanges) {
-                if ("complete".equalsIgnoreCase(change.status())) {
+                if (!"planned".equalsIgnoreCase(change.status())) {
                     continue;
                 }
                 if (context.completedChangeNames().contains(change.name())) {
@@ -67,7 +66,8 @@ public class SequentialMilestoneScheduler implements LoopScheduler {
                 return Optional.of(new LoopCandidate(
                         change.name(),
                         milestoneFile,
-                        data.goal
+                        data.goal,
+                        change.summary()
                 ));
             }
         }

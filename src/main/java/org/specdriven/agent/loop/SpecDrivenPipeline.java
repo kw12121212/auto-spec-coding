@@ -43,7 +43,7 @@ import java.util.logging.Logger;
 
 /**
  * Pipeline implementation that executes the spec-driven workflow
- * (propose → implement → verify → review → archive) for a single change.
+ * (recommend → propose → implement → verify → review → archive) for a single change.
  */
 public class SpecDrivenPipeline implements LoopPipeline {
 
@@ -179,6 +179,7 @@ public class SpecDrivenPipeline implements LoopPipeline {
         return template
                 .replace("${changeName}", candidate.changeName())
                 .replace("${milestoneGoal}", candidate.milestoneGoal() != null ? candidate.milestoneGoal() : "")
+                .replace("${plannedChangeSummary}", candidate.plannedChangeSummary())
                 .replace("${projectRoot}", config.projectRoot().toAbsolutePath().toString());
     }
 
@@ -187,6 +188,7 @@ public class SpecDrivenPipeline implements LoopPipeline {
                                    LoopConfig config) {
         return "Execute the " + phase.name() + " phase for change '" + candidate.changeName()
                 + "' from milestone '" + candidate.milestoneFile() + "'."
+                + "\nPlanned change summary: " + candidate.plannedChangeSummary()
                 + "\nProject root: " + config.projectRoot().toAbsolutePath();
     }
 

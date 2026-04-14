@@ -6,6 +6,7 @@ import java.util.List;
  * Phases of the spec-driven pipeline, executed in declaration order.
  */
 public enum PipelinePhase {
+    RECOMMEND,
     PROPOSE,
     IMPLEMENT,
     VERIFY,

@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.specdriven.agent.question.Answer;
 import org.specdriven.agent.question.AnswerSource;
@@ -133,6 +134,40 @@ class DefaultLoopDriverTest {
         assertFalse(events.isEmpty());
         assertEquals(EventType.LOOP_ITERATION_COMPLETED, events.get(0).type());
         assertEquals("LoopDriver", events.get(0).source());
+    }
+
+    @Test
+    void pipelineReceivesSchedulerSelectedCandidateWithoutReselection() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LoopCandidate selected = new LoopCandidate("selected-change", "m1.md", "goal", "summary");
+        AtomicInteger schedulerCalls = new AtomicInteger();
+        AtomicReference<LoopCandidate> pipelineCandidate = new AtomicReference<>();
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+
+        LoopScheduler scheduler = ctx -> {
+            schedulerCalls.incrementAndGet();
+            return Optional.of(selected);
+        };
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            pipelineCandidate.set(candidate);
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.SUCCESS, null, 1,
+                    List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE,
+                            PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE));
+        };
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        assertEquals(1, schedulerCalls.get());
+        assertEquals(selected, pipelineCandidate.get());
+        assertEquals("summary", pipelineCandidate.get().plannedChangeSummary());
+        assertEquals(LoopState.STOPPED, driver.getState());
     }
 
     @Test
@@ -426,7 +461,7 @@ class DefaultLoopDriverTest {
         @Override
         public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
             return new IterationResult(IterationStatus.SUCCESS, null, 10,
-                    List.of(PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
+                    List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
                             PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
                     tokensPerIteration.get());
         }
@@ -606,7 +641,7 @@ class DefaultLoopDriverTest {
         public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
             if (callCount.incrementAndGet() == 1) {
                 return new IterationResult(IterationStatus.QUESTIONING, null, 10,
-                        List.of(PipelinePhase.PROPOSE), 0, question);
+                        List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE), 0, question);
             }
             return new IterationResult(IterationStatus.SUCCESS, null, 10,
                     List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
@@ -632,7 +667,7 @@ class DefaultLoopDriverTest {
         public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
             if (callCount.incrementAndGet() == 1) {
                 return new IterationResult(IterationStatus.QUESTIONING, null, 10,
-                        List.of(PipelinePhase.PROPOSE), initialTokenUsage, question);
+                        List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE), initialTokenUsage, question);
             }
             return new IterationResult(IterationStatus.SUCCESS, null, 10,
                     List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,

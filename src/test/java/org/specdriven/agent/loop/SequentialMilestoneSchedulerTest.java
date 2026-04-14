@@ -43,6 +43,7 @@ class SequentialMilestoneSchedulerTest {
         assertEquals("change-a", result.get().changeName());
         assertEquals("m2.md", result.get().milestoneFile());
         assertEquals("Build feature", result.get().milestoneGoal());
+        assertEquals("first", result.get().plannedChangeSummary());
     }
 
     @Test
@@ -57,6 +58,21 @@ class SequentialMilestoneSchedulerTest {
 
         assertTrue(result.isPresent());
         assertEquals("change-b", result.get().changeName());
+    }
+
+    @Test
+    void skipsNonPlannedChanges() throws Exception {
+        writeIndex("- [m2.md](milestones/m2.md) - M2 - proposed\n");
+        writeMilestone("m2.md", "# M2\n## Goal\nGoal\n## Status\n- Declared: proposed\n## Planned Changes\n" +
+                "- `change-a` - Declared: blocked - wait\n- `change-b` - Declared: planned - next\n");
+
+        SequentialMilestoneScheduler scheduler = new SequentialMilestoneScheduler(tempDir, List.of());
+        LoopContext ctx = new LoopContext("", "", List.of(), Set.of());
+        Optional<LoopCandidate> result = scheduler.selectNext(ctx);
+
+        assertTrue(result.isPresent());
+        assertEquals("change-b", result.get().changeName());
+        assertEquals("next", result.get().plannedChangeSummary());
     }
 
     @Test

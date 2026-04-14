@@ -12,6 +12,7 @@ class PipelinePhaseTest {
     void orderedReturnsAllPhasesInSequence() {
         List<PipelinePhase> phases = PipelinePhase.ordered();
         assertEquals(List.of(
+                PipelinePhase.RECOMMEND,
                 PipelinePhase.PROPOSE,
                 PipelinePhase.IMPLEMENT,
                 PipelinePhase.VERIFY,
@@ -33,6 +34,11 @@ class PipelinePhaseTest {
     @Test
     void templateResourceForPropose() {
         assertEquals("/loop-phases/propose.txt", PipelinePhase.PROPOSE.templateResource());
+    }
+
+    @Test
+    void templateResourceForRecommend() {
+        assertEquals("/loop-phases/recommend.txt", PipelinePhase.RECOMMEND.templateResource());
     }
 
     @Test

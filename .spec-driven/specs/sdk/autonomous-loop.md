@@ -31,6 +31,7 @@ mapping:
     - src/main/resources/loop-phases/archive.txt
     - src/main/resources/loop-phases/implement.txt
     - src/main/resources/loop-phases/propose.txt
+    - src/main/resources/loop-phases/recommend.txt
     - src/main/resources/loop-phases/review.txt
     - src/main/resources/loop-phases/verify.txt
   tests:
@@ -99,9 +100,11 @@ mapping:
 
 ### Requirement: LoopCandidate record
 
-- MUST be a Java record in `org.specdriven.agent.loop` with fields: `changeName` (String), `milestoneFile` (String), `milestoneGoal` (String)
+- MUST be a Java record in `org.specdriven.agent.loop` with fields: `changeName` (String), `milestoneFile` (String), `milestoneGoal` (String), `plannedChangeSummary` (String)
 - MUST be immutable
 - Compact constructor MUST reject null `changeName` and null `milestoneFile` with `NullPointerException`
+- Compact constructor MUST normalize null `plannedChangeSummary` to an empty string
+- MUST provide a backward-compatible constructor accepting only `changeName`, `milestoneFile`, and `milestoneGoal`, defaulting `plannedChangeSummary` to an empty string
 
 ### Requirement: LoopContext record
 
@@ -135,8 +138,25 @@ mapping:
 - MUST select the first non-complete milestone from the eligible set
 - Within a milestone, MUST select the first planned change not in `completedChangeNames`
 - MUST skip milestones with declared status `complete`
-- MUST skip changes with status `complete` or already in `completedChangeNames`
+- MUST skip changes whose status is not `planned` or already in `completedChangeNames`
+- MUST include the selected planned change summary in the returned `LoopCandidate`
 - MUST return `Optional.empty()` when all milestones have no eligible changes
+
+### Requirement: Loop auto recommend phase
+
+- The autonomous loop MUST include a first-class recommend phase before proposal work begins
+- The recommend phase MUST run before the propose phase when an autonomous loop iteration has an eligible roadmap planned change
+- The recommend phase order MUST be auditable as `RECOMMEND → PROPOSE → IMPLEMENT → VERIFY → REVIEW → ARCHIVE`
+- Loop auto recommend MUST only select a roadmap planned change declared as `planned` and not already present in completed change names
+- Loop auto recommend MUST NOT select completed milestones, completed changes, or changes already present in completed change names
+- Loop auto recommend MUST preserve target milestone filtering
+- The propose phase in the same iteration MUST use the same change name and milestone file selected by the recommend phase and MUST NOT reselect a different roadmap candidate
+
+### Requirement: Loop-only no-confirm recommend path
+
+- The autonomous loop MUST provide a recommend path that does not wait for human confirmation
+- When an autonomous loop is running and at least one eligible roadmap planned change exists, the loop MUST be able to proceed from recommend to propose without a human confirmation checkpoint
+- Manual roadmap recommendation workflows MUST NOT scaffold proposal artifacts until the user explicitly confirms the change name and scope
 
 ### Requirement: DefaultLoopDriver
 
@@ -183,10 +203,10 @@ mapping:
 
 ### Requirement: PipelinePhase enum
 
-- MUST be a public enum in `org.specdriven.agent.loop` with values: PROPOSE, IMPLEMENT, VERIFY, REVIEW, ARCHIVE
+- MUST be a public enum in `org.specdriven.agent.loop` with values: RECOMMEND, PROPOSE, IMPLEMENT, VERIFY, REVIEW, ARCHIVE
 - Each value MUST provide a `templateResource()` method returning a `String` classpath path to its instruction template file
 - Template resource paths MUST follow the pattern `/loop-phases/<lowercase-name>.txt`
-- MUST provide a static `ordered()` method returning phases in execution order (PROPOSE → IMPLEMENT → VERIFY → REVIEW → ARCHIVE)
+- MUST provide a static `ordered()` method returning phases in execution order (RECOMMEND → PROPOSE → IMPLEMENT → VERIFY → REVIEW → ARCHIVE)
 
 ### Requirement: IterationResult record
 
@@ -215,7 +235,7 @@ mapping:
 - Constructor MUST accept a `Map<String, Tool>` tool registry
 - Constructor MUST provide a convenience overload with default tools (bash, read, write, edit, glob, grep)
 - `execute(candidate, config, skipPhases)` MUST iterate through `PipelinePhase.ordered()` sequentially, skipping any phases in `skipPhases`
-- For each phase, MUST load the instruction template from classpath, build user prompt, create Conversation, assemble SimpleAgentContext, run Orchestrator, track the phase as completed only if the orchestrator finishes without exception
+- For each phase, MUST load the instruction template from classpath, build user prompt containing the selected candidate change name, milestone file, milestone goal, planned change summary, and project root, create Conversation, assemble SimpleAgentContext, run Orchestrator, track the phase as completed only if the orchestrator finishes without exception
 - For each phase, MUST subscribe to `QUESTION_CREATED` events on the EventBus before running the orchestrator, and unsubscribe after the phase completes or is aborted
 - When a `QUESTION_CREATED` event fires during a phase, MUST abort that phase and return `IterationResult(status=QUESTIONING, question=<captured question>, phasesCompleted=<phases completed before the interrupted phase>)`
 - If any phase throws an exception (other than a QUESTION_CREATED abort), MUST stop execution and return an `IterationResult` with `status=FAILED` and `failureReason` describing which phase failed and why
@@ -225,10 +245,10 @@ mapping:
 
 ### Requirement: Phase instruction template resources
 
-- MUST provide 5 text files under `src/main/resources/loop-phases/`: `propose.txt`, `implement.txt`, `verify.txt`, `review.txt`, `archive.txt`
+- MUST provide 6 text files under `src/main/resources/loop-phases/`: `recommend.txt`, `propose.txt`, `implement.txt`, `verify.txt`, `review.txt`, `archive.txt`
 - Each template MUST be valid UTF-8 text
 - Each template MUST describe: the phase objective, expected inputs, expected outputs, and tool usage guidance
-- Templates MUST support variable substitution for `${changeName}`, `${milestoneGoal}`, `${projectRoot}`
+- Templates MUST support variable substitution for `${changeName}`, `${milestoneGoal}`, `${plannedChangeSummary}`, `${projectRoot}`
 
 ### Requirement: StubLoopPipeline
 

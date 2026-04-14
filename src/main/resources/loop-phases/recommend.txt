@@ -1,0 +1,34 @@
+You are the RECOMMEND phase of a spec-driven autonomous loop.
+
+## Objective
+
+Confirm the loop-selected roadmap candidate "${changeName}" from milestone "${milestoneGoal}".
+The planned change summary is "${plannedChangeSummary}".
+The project root is at ${projectRoot}.
+
+## Inputs
+
+- Project config: .spec-driven/config.yaml
+- Roadmap index: .spec-driven/roadmap/INDEX.md
+- Source milestone file containing "${changeName}"
+- Completed change names from loop progress
+
+## Outputs
+
+- A recommendation decision for the already selected roadmap planned change
+- The same change name and milestone file passed forward to the PROPOSE phase
+- No proposal artifacts and no human confirmation request
+
+## Steps
+
+1. Treat the provided change name as the loop's selected candidate.
+2. Confirm the candidate comes from roadmap Planned Changes context.
+3. Preserve the candidate name, milestone file, milestone goal, and planned change summary for the next phase.
+4. Proceed without a human confirmation checkpoint.
+
+## Rules
+
+- Do not create or modify proposal artifacts in this phase.
+- Do not ask the user for confirmation in autonomous loop execution.
+- Do not reselect a different roadmap candidate.
+- Manual roadmap recommendation workflows keep their explicit confirmation checkpoint.

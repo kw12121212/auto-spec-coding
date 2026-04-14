@@ -27,7 +27,7 @@ import org.specdriven.agent.tool.ToolResult;
 class SpecDrivenPipelineTest {
 
     private static final LoopCandidate TEST_CANDIDATE =
-            new LoopCandidate("test-change", "m1.md", "test goal");
+            new LoopCandidate("test-change", "m1.md", "test goal", "test summary");
 
     private LoopConfig testConfig() {
         return new LoopConfig(1, 600, List.of(), Path.of("/tmp"), new SimpleEventBus());
@@ -118,11 +118,12 @@ class SpecDrivenPipelineTest {
     void executeWithSkipPhasesSkipsSpecifiedPhases() {
         LlmClient client = new StubLlmClient(textResponse("done"));
         LoopPipeline pipeline = new SpecDrivenPipeline(path -> client);
-        // Skip PROPOSE — execution should start from IMPLEMENT
+        // Skip PROPOSE — execution should still run RECOMMEND and then IMPLEMENT.
         Set<PipelinePhase> skip = Set.of(PipelinePhase.PROPOSE);
         IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(), skip);
 
         assertEquals(IterationStatus.SUCCESS, result.status());
+        assertTrue(result.phasesCompleted().contains(PipelinePhase.RECOMMEND));
         assertFalse(result.phasesCompleted().contains(PipelinePhase.PROPOSE));
         assertTrue(result.phasesCompleted().containsAll(
                 List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
@@ -180,20 +181,13 @@ class SpecDrivenPipelineTest {
         SimpleEventBus bus = new SimpleEventBus();
         LoopConfig config = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
 
-        // Phase 1 (PROPOSE) LlmClient completes normally; Phase 2 (IMPLEMENT) fires the question
-        AtomicBoolean firstPhase = new AtomicBoolean(true);
-        AtomicBoolean questionFired = new AtomicBoolean();
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
         LlmClient client = messages -> {
-            if (firstPhase.get()) {
-                // Check if this is the PROPOSE phase prompt
-                boolean hasPropose = messages.stream().anyMatch(m ->
-                        m.toString().contains("PROPOSE") || m.toString().contains("propose"));
-                if (hasPropose) {
-                    firstPhase.set(false);
-                    return new LlmResponse.TextResponse("propose done");
-                }
+            int call = calls.incrementAndGet();
+            if (call == 1) {
+                return new LlmResponse.TextResponse("recommend done");
             }
-            if (!questionFired.getAndSet(true)) {
+            if (call == 2) {
                 return new LlmResponse.ToolCallResponse(List.of(
                         new ToolCall("__ask_question__", Map.of(
                                 "questionId", "q-phase2",
@@ -213,8 +207,8 @@ class SpecDrivenPipelineTest {
 
         assertEquals(IterationStatus.QUESTIONING, result.status());
         assertNotNull(result.question());
-        // At least the question was captured
         assertEquals("q-phase2", result.question().questionId());
+        assertEquals(List.of(PipelinePhase.RECOMMEND), result.phasesCompleted());
     }
 
     @Test
