@@ -17,7 +17,7 @@
 - 具体 skill 指令内容开发（仅提供框架）
 - Lealone 核心仓库修改
 - MCP 协议（M10）
-- LLM 后端实现（M5）
+- LLM 后端实现（M05）
 - SDK 公共 API 封装（M12）
 
 ## Done Criteria
@@ -33,23 +33,23 @@
 
 ## Planned Changes
 - `skill-sql-schema` - Declared: complete - SKILL.md → SQL 分解规范、参数映射规则、SQL 模板生成工具
-- `skill-executor-plugin` - Declared: complete - ServiceExecutorFactory SPI 实现：加载 PARAMETERS 配置、构建 agent 循环、绑定 allowed-tools 到 M1 Tool 实例
+- `skill-executor-plugin` - Declared: complete - ServiceExecutorFactory SPI 实现：加载 PARAMETERS 配置、构建 agent 循环、绑定 allowed-tools 到 M01 Tool 实例
 - `skill-cli-java` - Declared: complete - 用 Java 改写 spec-driven.ts 全部 12 个子命令（propose/apply/verify/archive/cancel/init/list 等），实现全内置无外部依赖
 - `skill-instructions-store` - Declared: complete - 指令体外部文件管理，3 级渐进加载机制（元数据→指令体→脚本资源）
 - `skill-auto-discovery` - Declared: complete - 扫描 skills/ 目录解析 SKILL.md frontmatter，批量生成 CREATE SERVICE DDL 并执行注册
 
 ## Dependencies
 
-- M1 核心接口（Tool 接口，service method 需映射为 Tool）
-- M2 基础工具集（skill executor 需绑定 Read/Write/Edit/Bash/Glob/Grep 实例）
-- M5 LLM 后端（agent 循环依赖 LLM 推理能力）
+- M01 核心接口（Tool 接口，service method 需映射为 Tool）
+- M02 基础工具集（skill executor 需绑定 Read/Write/Edit/Bash/Glob/Grep 实例）
+- M05 LLM 后端（agent 循环依赖 LLM 推理能力）
 - Lealone SQL 引擎（CREATE SERVICE 语法、PARAMETERS 子句、ServiceExecutorFactory SPI）
 - [auto-spec-driven](https://github.com/kw12121212/auto-spec-driven)（内嵌 skill 源：18 个 SKILL.md + scripts/spec-driven.ts 逻辑，TypeScript CLI 用 Java 改写，实现全内置）
 
 ## Risks
 
 - PARAMETERS 值长度需验证：长 allowed_tools 列表和 scripts 路径可能超出解析限制
-- agent 循环端到端测试需 M5 就绪，否则只能 mock LLM 层
+- agent 循环端到端测试需 M05 就绪，否则只能 mock LLM 层
 - Lealone ServiceLoader SPI 类加载隔离：插件 JAR 需正确放入 classpath
 - spec-driven.ts 改写为 Java 需保持行为一致性（12 个子命令的 JSON 输出格式、退出码语义）
 

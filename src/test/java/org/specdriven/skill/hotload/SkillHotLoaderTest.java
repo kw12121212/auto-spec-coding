@@ -2,6 +2,9 @@ package org.specdriven.skill.hotload;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventBus;
+import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.agent.permission.PermissionDecision;
@@ -14,7 +17,11 @@ import org.specdriven.skill.compiler.SkillSourceCompiler;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -48,6 +55,14 @@ class SkillHotLoaderTest {
                 compiler, cacheManager, activationEnabled, allowingProvider(), allowingSourceTrustPolicy());
     }
 
+    private SkillHotLoader newAuditedLoader(boolean activationEnabled, RecordingEventBus auditBus) {
+        SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
+        ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
+        return new LealoneSkillHotLoader(
+                compiler, cacheManager, activationEnabled,
+                allowingProvider(), allowingSourceTrustPolicy(), auditBus);
+    }
+
     private static SkillLoadResult load(
             SkillHotLoader loader,
             String skillName,
@@ -68,6 +83,21 @@ class SkillHotLoaderTest {
 
     private static void unload(SkillHotLoader loader, String skillName) {
         loader.unload(skillName, PERMISSION_CONTEXT);
+    }
+
+    private static Map<String, Object> singleAuditMetadata(RecordingEventBus auditBus) {
+        assertEquals(1, auditBus.events.size());
+        Event event = auditBus.events.getFirst();
+        assertEquals(EventType.SKILL_HOT_LOAD_OPERATION, event.type());
+        assertEquals("skill-hot-loader", event.source());
+        return event.metadata();
+    }
+
+    private static void assertRawSourceIsNotAudited(Map<String, Object> metadata) {
+        assertFalse(metadata.containsKey("javaSource"));
+        assertFalse(metadata.containsKey("source"));
+        assertFalse(metadata.containsValue(VALID_SOURCE));
+        assertFalse(metadata.containsValue(INVALID_SOURCE));
     }
 
     private static PermissionProvider allowingProvider() {
@@ -261,6 +291,207 @@ class SkillHotLoaderTest {
 
         assertTrue(result.success(), "Load must succeed via cache hit");
         assertTrue(loaderB.activeLoader("hello").isPresent());
+    }
+
+    @Test
+    void successfulLoadEmitsAuditEvent() {
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = newAuditedLoader(true, auditBus);
+
+        SkillLoadResult result = load(loader, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        assertTrue(result.success());
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("hello", metadata.get("skillName"));
+        assertEquals("hash1", metadata.get("sourceHash"));
+        assertEquals("success", metadata.get("result"));
+        assertEquals("compiled", metadata.get("activationPhase"));
+        assertEquals("test-requester", metadata.get("requester"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void cacheHitLoadAuditEventRecordsCacheHit() {
+        SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
+        ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
+        SkillHotLoader primingLoader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
+        assertTrue(load(primingLoader, "cached", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader auditedLoader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy(), auditBus);
+
+        SkillLoadResult result = load(auditedLoader, "cached", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        assertTrue(result.success());
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("cache-hit", metadata.get("activationPhase"));
+        assertEquals("success", metadata.get("result"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void successfulReplaceEmitsAuditEvent() {
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = newAuditedLoader(true, auditBus);
+        assertTrue(load(loader, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+        auditBus.clear();
+
+        String newSource =
+                "package demo; public class HelloSkill { public static String run() { return \"v2\"; } }";
+        SkillLoadResult result = replace(loader, "hello", VALID_CLASS_NAME, newSource, "hash2");
+
+        assertTrue(result.success());
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("replace", metadata.get("operation"));
+        assertEquals("hello", metadata.get("skillName"));
+        assertEquals("hash2", metadata.get("sourceHash"));
+        assertEquals("success", metadata.get("result"));
+        assertEquals("compiled", metadata.get("activationPhase"));
+        assertEquals("test-requester", metadata.get("requester"));
+        assertFalse(metadata.containsValue(newSource));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void unloadEmitsAuditEventsForRemovedAndAbsentSkills() {
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = newAuditedLoader(true, auditBus);
+        assertTrue(load(loader, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+        auditBus.clear();
+
+        unload(loader, "hello");
+
+        Map<String, Object> removedMetadata = singleAuditMetadata(auditBus);
+        assertEquals("unload", removedMetadata.get("operation"));
+        assertEquals("hello", removedMetadata.get("skillName"));
+        assertEquals("success", removedMetadata.get("result"));
+        assertEquals("removed", removedMetadata.get("unloadOutcome"));
+        assertFalse(removedMetadata.containsKey("sourceHash"));
+
+        auditBus.clear();
+        unload(loader, "hello");
+
+        Map<String, Object> absentMetadata = singleAuditMetadata(auditBus);
+        assertEquals("unload", absentMetadata.get("operation"));
+        assertEquals("hello", absentMetadata.get("skillName"));
+        assertEquals("noop", absentMetadata.get("result"));
+        assertEquals("absent", absentMetadata.get("unloadOutcome"));
+        assertFalse(absentMetadata.containsKey("sourceHash"));
+    }
+
+    @Test
+    void disabledLoadEmitsAuditEventWithoutSideEffects() {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, false, allowingProvider(), allowingSourceTrustPolicy(), auditBus);
+
+        SkillLoadResult result = load(loader, "disabled", VALID_CLASS_NAME, VALID_SOURCE, "hash-disabled");
+
+        assertFalse(result.success());
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(Optional.empty(), loader.activeLoader("disabled"));
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("rejected", metadata.get("result"));
+        assertEquals("activation-disabled", metadata.get("failureCategory"));
+        assertEquals("hash-disabled", metadata.get("sourceHash"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void permissionRejectedReplaceEmitsAuditEventWithoutTrustCheck() {
+        MutablePermissionProvider permissionProvider = new MutablePermissionProvider(PermissionDecision.ALLOW);
+        RecordingSourceTrustPolicy trustPolicy = new RecordingSourceTrustPolicy(true);
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir),
+                true, permissionProvider, trustPolicy, auditBus);
+        assertTrue(load(loader, "permission-rejected", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+        auditBus.clear();
+        trustPolicy.calls = 0;
+        permissionProvider.decision = PermissionDecision.DENY;
+
+        assertThrows(SkillHotLoadPermissionException.class,
+                () -> replace(loader, "permission-rejected", VALID_CLASS_NAME, VALID_SOURCE, "hash2"));
+
+        assertEquals(0, trustPolicy.calls);
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("replace", metadata.get("operation"));
+        assertEquals("permission-rejected", metadata.get("skillName"));
+        assertEquals("rejected", metadata.get("result"));
+        assertEquals("permission-rejected", metadata.get("failureCategory"));
+        assertEquals("hash2", metadata.get("sourceHash"));
+        assertEquals("test-requester", metadata.get("requester"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void untrustedLoadEmitsAuditEventWithoutSideEffects() {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), (skillName, sourceHash) -> false, auditBus);
+
+        assertThrows(SkillHotLoadTrustException.class,
+                () -> load(loader, "untrusted-audit", VALID_CLASS_NAME, VALID_SOURCE, "hash-untrusted"));
+
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(Optional.empty(), loader.activeLoader("untrusted-audit"));
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("untrusted-audit", metadata.get("skillName"));
+        assertEquals("rejected", metadata.get("result"));
+        assertEquals("trust-rejected", metadata.get("failureCategory"));
+        assertEquals("hash-untrusted", metadata.get("sourceHash"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void compileDiagnosticsFailureEmitsAuditEvent() {
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = newAuditedLoader(true, auditBus);
+
+        SkillLoadResult result = load(loader, "bad-audit", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+
+        assertFalse(result.success());
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("bad-audit", metadata.get("skillName"));
+        assertEquals("failure", metadata.get("result"));
+        assertEquals("compile-diagnostics", metadata.get("failureCategory"));
+        assertEquals("hash-bad", metadata.get("sourceHash"));
+        assertRawSourceIsNotAudited(metadata);
+    }
+
+    @Test
+    void infrastructureFailureEmitsAuditEvent() {
+        SkillSourceCompiler throwingCompiler = (entryClassName, javaSource, outputDir) -> {
+            throw new SkillCompilationException("javac unavailable in test environment");
+        };
+        RecordingEventBus auditBus = new RecordingEventBus();
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                throwingCompiler, new LealoneClassCacheManager(tempDir),
+                true, allowingProvider(), allowingSourceTrustPolicy(), auditBus);
+
+        assertThrows(SkillHotLoaderException.class,
+                () -> load(loader, "infra-audit", VALID_CLASS_NAME, VALID_SOURCE, "hash-infra"));
+
+        Map<String, Object> metadata = singleAuditMetadata(auditBus);
+        assertEquals("load", metadata.get("operation"));
+        assertEquals("infra-audit", metadata.get("skillName"));
+        assertEquals("failure", metadata.get("result"));
+        assertEquals("infrastructure-failure", metadata.get("failureCategory"));
+        assertEquals("hash-infra", metadata.get("sourceHash"));
+        assertRawSourceIsNotAudited(metadata);
     }
 
     @Test
@@ -572,6 +803,27 @@ class SkillHotLoaderTest {
         public boolean isTrusted(String skillName, String sourceHash) {
             calls++;
             return trusted;
+        }
+    }
+
+    private static final class RecordingEventBus implements EventBus {
+        private final List<Event> events = new ArrayList<>();
+
+        @Override
+        public void publish(Event event) {
+            events.add(event);
+        }
+
+        @Override
+        public void subscribe(EventType type, Consumer<Event> listener) {
+        }
+
+        @Override
+        public void unsubscribe(EventType type, Consumer<Event> listener) {
+        }
+
+        private void clear() {
+            events.clear();
         }
     }
 

@@ -1,4 +1,4 @@
-# M4 - Agent 生命周期与编排
+# M04 - Agent 生命周期与编排
 
 ## Goal
 
@@ -13,9 +13,9 @@
 
 ## Out of Scope
 
-- 具体工具实现（M2、M9、M10）
-- LLM 实际调用（M5）
-- 权限执行（M6）
+- 具体工具实现（M02、M09、M10）
+- LLM 实际调用（M05）
+- 权限执行（M06）
 - 外部接口暴露（M11-M13）
 
 ## Done Criteria
@@ -35,13 +35,13 @@
 
 ## Dependencies
 
-- M1 核心接口（Agent 接口、Tool 接口）
+- M01 核心接口（Agent 接口、Tool 接口）
 - Lealone 数据库模块（lealone-db, lealone-sql）用于 session 和事件持久化
 
 ## Risks
 
 - 编排循环的复杂度可能随工具数量增长而快速上升
-- 上下文窗口管理策略需要提前考虑（M5 LLM 后端将引入 token 计数）
+- 上下文窗口管理策略需要提前考虑（M05 LLM 后端将引入 token 计数）
 - 事件持久化的写入吞吐需与 EventBus 发布频率匹配，高频场景可能需异步批量写入
 - Session 持久化的序列化格式需兼容 agent 状态机的版本演进
 
@@ -52,8 +52,8 @@
 ## Notes
 
 - Agent 生命周期模型需与 spec-coding-sdk 的 Go 实现保持语义一致
-- M2 基础工具集和 M5 LLM 后端为软依赖：M4 测试使用 mock LLM + stub Tool
-- 与 M2、M5 可并行开发
+- M02 基础工具集和 M05 LLM 后端为软依赖：M04 测试使用 mock LLM + stub Tool
+- 与 M02、M05 可并行开发
 - 使用 JDK 25 VirtualThread 替代 Go goroutine 模型
 - agent-session-store 使 agent 具备可恢复性：崩溃/重启后可从 DB 恢复对话和状态，这对 M14 HTTP REST API 的长连接场景尤为关键
 - event-audit-log 可通过 EventBus subscriber 异步写入 DB，不阻塞主事件分发路径

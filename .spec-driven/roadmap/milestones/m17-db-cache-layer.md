@@ -31,9 +31,9 @@
 
 ## Dependencies
 
-- M1 核心接口（Tool 接口、Event 接口）
-- M2 基础工具集（ReadTool、GrepTool、GlobTool）
-- M5 LLM 后端（LLM 调用接口）
+- M01 核心接口（Tool 接口、Event 接口）
+- M02 基础工具集（ReadTool、GrepTool、GlobTool）
+- M05 LLM 后端（LLM 调用接口）
 - Lealone 数据库模块（lealone-db, lealone-sql）
 
 ## Risks
@@ -48,7 +48,7 @@
 
 ## Notes
 
-- 与 M5、M7 可并行开发；缓存作为中间层插入 LLM provider 和 Tool 实现之间
+- 与 M05、M07 可并行开发；缓存作为中间层插入 LLM provider 和 Tool 实现之间
 - TTL 默认值建议按工具类型区分：文件内容缓存较短（秒级），LLM 响应缓存可较长（分钟级）
 - 后续可扩展为语义级匹配（embedding 相似度），首期不做
 

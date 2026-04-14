@@ -16,7 +16,7 @@
 
 - 密钥分发/共享协议（多节点同步）
 - 密钥自动轮换策略
-- 具体 provider 的密钥使用逻辑（M5 LlmConfig 只消费明文）
+- 具体 provider 的密钥使用逻辑（M05 LlmConfig 只消费明文）
 
 ## Done Criteria
 
@@ -34,15 +34,15 @@
 
 ## Dependencies
 
-- M1 核心接口（配置加载基础设施）
+- M01 核心接口（配置加载基础设施）
 - Lealone 数据库模块（lealone-db, lealone-sql）用于密钥表和审计日志
-- M5 LLM 后端（vault 的主要消费方，但 vault 可独立开发先用 mock 验证）
+- M05 LLM 后端（vault 的主要消费方，但 vault 可独立开发先用 mock 验证）
 
 ## Risks
 
 - MASTER_KEY 泄露等同于所有密钥泄露，需文档强调环境变量安全
 - AES-256-GCM 的 nonce 管理需正确实现以避免重用攻击
-- vault 表的访问权限需与 Lealone 权限模型（M6）协调
+- vault 表的访问权限需与 Lealone 权限模型（M06）协调
 
 ## Status
 
@@ -53,6 +53,6 @@
 - 设计灵感：HashiCorp Vault 的简化版，但无需独立服务进程，直接嵌入 Lealone DB
 - LlmConfig 保持简单——只接明文字符串，不感知 vault 存在
 - 解密发生在 config 加载链的最早层：vault resolve → config map → LlmConfig.fromMap()
-- 与 M6（权限模型）互补：M6 管行为权限，M18 管密钥安全
+- 与 M06（权限模型）互补：M06 管行为权限，M18 管密钥安全
 
 

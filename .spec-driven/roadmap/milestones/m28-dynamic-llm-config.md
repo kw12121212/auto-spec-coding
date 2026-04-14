@@ -15,7 +15,7 @@
 
 ## Out of Scope
 
-- 新增 provider 类型（由 M5 覆盖）
+- 新增 provider 类型（由 M05 覆盖）
 - LLM 调用本身的流式处理（M19）
 - 配置的 Web UI 管理界面（可通过 HTTP API 间接操作）
 - 跨进程配置同步
@@ -41,8 +41,8 @@
 
 ## Dependencies
 
-- M5 LLM Provider Layer（LlmProvider、LlmClient、LlmConfig 基础接口）
-- M1 核心接口（EventBus 用于事件发布）
+- M05 LLM Provider Layer（LlmProvider、LlmClient、LlmConfig 基础接口）
+- M01 核心接口（EventBus 用于事件发布）
 - Lealone 嵌入式数据库（用于配置持久化）
 - Lealone 更新：`a584523` SET LLM 语句 + `Database.setLLMParameters()` + `CodeAgentBase.init(Map)` 动态初始化
 

@@ -1,4 +1,4 @@
-# M9 - LSP 客户端工具
+# M09 - LSP 客户端工具
 
 ## Goal
 
@@ -8,7 +8,7 @@
 
 - LSP 客户端连接管理（启动、初始化、关闭）
 - 基础 LSP 操作（go-to-definition, references, hover, diagnostics, document symbols）
-- LSP 工具封装（符合 M1 Tool 接口）
+- LSP 工具封装（符合 M01 Tool 接口）
 - LSP 进程间通信（stdin/stdout JSON-RPC）
 
 ## Out of Scope
@@ -19,7 +19,7 @@
 ## Done Criteria
 
 - LSP 客户端可连接外部 language server 并执行基本操作
-- 工具输入/输出符合 M1 Tool 接口
+- 工具输入/输出符合 M01 Tool 接口
 - 有集成测试验证与任意 LSP server 的基本交互
 
 ## Planned Changes
@@ -28,8 +28,8 @@
 
 ## Dependencies
 
-- M1 核心接口（Tool 接口）
-- M2 基础工具集（参考工具实现模式）
+- M01 核心接口（Tool 接口）
+- M02 基础工具集（参考工具实现模式）
 
 ## Risks
 

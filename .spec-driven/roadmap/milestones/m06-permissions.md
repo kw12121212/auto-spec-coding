@@ -1,4 +1,4 @@
-# M6 - 权限模型与执行钩子
+# M06 - 权限模型与执行钩子
 
 ## Goal
 
@@ -14,7 +14,7 @@
 ## Out of Scope
 
 - 具体权限策略在各接口层的定制（由 M11-M13 各层自行扩展）
-- 注册表功能（M7、M8）
+- 注册表功能（M07、M08）
 
 ## Done Criteria
 
@@ -30,8 +30,8 @@
 
 ## Dependencies
 
-- M1 核心接口（PermissionProvider）
-- M4 Agent 生命周期（权限检查注入到编排循环）
+- M01 核心接口（PermissionProvider）
+- M04 Agent 生命周期（权限检查注入到编排循环）
 - Lealone 数据库模块（lealone-db, lealone-sql）用于策略存储和审计日志
 
 ## Risks

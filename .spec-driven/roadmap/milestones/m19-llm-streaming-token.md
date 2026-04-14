@@ -2,7 +2,7 @@
 
 ## Goal
 
-在 M5 provider 层之上实现统一流式响应处理和 token 计数与上下文窗口管理，为 agent 提供实时 token 回调和发送前用量估算能力。
+在 M05 provider 层之上实现统一流式响应处理和 token 计数与上下文窗口管理，为 agent 提供实时 token 回调和发送前用量估算能力。
 
 ## In Scope
 
@@ -12,7 +12,7 @@
 
 ## Out of Scope
 
-- Provider 实现（M5）
+- Provider 实现（M05）
 - 上下文压缩/截断策略（属于会话管理增强）
 - 缓存（M17）
 
@@ -29,8 +29,8 @@
 
 ## Dependencies
 
-- M5 LLM Provider Layer（LlmClient、LlmStreamCallback、LlmUsage 接口）
-- M1 核心接口（Event 接口用于流式事件）
+- M05 LLM Provider Layer（LlmClient、LlmStreamCallback、LlmUsage 接口）
+- M01 核心接口（Event 接口用于流式事件）
 
 ## Risks
 
@@ -46,5 +46,5 @@
 
 - 流式处理需兼容两种 SSE 协议差异：OpenAI 用 `data: [DONE]` 结束，Claude 用 `event: message_stop`
 - Token 计数首期可使用近似估算（字符数/4），后续可集成 tiktoken 等精确 tokenizer
-- 与 M5 的 provider 实现可并行开发，通过 LlmStreamCallback 接口解耦
+- 与 M05 的 provider 实现可并行开发，通过 LlmStreamCallback 接口解耦
 

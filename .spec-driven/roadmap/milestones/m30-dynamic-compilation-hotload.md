@@ -42,8 +42,8 @@
 
 ## Dependencies
 
-- M9-M11 Skill 系列（SkillAutoDiscovery、SkillExecutorPlugin、SkillInstructionsStore）
-- M2 Tool Surface 基础工具集（Tool 接口与 BuiltinToolManager）
+- M09-M11 Skill 系列（SkillAutoDiscovery、SkillExecutorPlugin、SkillInstructionsStore）
+- M02 Tool Surface 基础工具集（Tool 接口与 BuiltinToolManager）
 - Lealone SourceCompiler（重构后的 class 持久化版本）
 - Lealone 更新：`d376e29` 编译完自动保存 class 文件、`5b4a001` 写 class 时序修复、`32930d8` getClassDir() 统一
 

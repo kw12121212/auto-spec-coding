@@ -30,6 +30,7 @@ mapping:
 - MUST define at minimum: TOOL_EXECUTED, AGENT_STATE_CHANGED, TASK_CREATED, TASK_COMPLETED, TEAM_CREATED, TEAM_DISSOLVED, CRON_TRIGGERED, BACKGROUND_TOOL_STARTED, BACKGROUND_TOOL_STOPPED, ERROR
 - MUST additionally define: QUESTION_CREATED, QUESTION_ANSWERED, QUESTION_ESCALATED, QUESTION_EXPIRED
 - MUST additionally define: LLM_CONFIG_CHANGED
+- MUST additionally define: SKILL_HOT_LOAD_OPERATION
 - MAY be extended in future milestones
 
 ### Requirement: EventBus pub/sub
@@ -87,3 +88,20 @@ mapping:
 - `queryBySource` with no matching entries MUST return an empty list (not null)
 - `deleteOlderThan` with no matching entries MUST return 0
 - `count` on an empty store MUST return 0
+
+### Requirement: Skill hot-load audit event metadata
+
+- `SKILL_HOT_LOAD_OPERATION` events MUST use metadata values that satisfy the
+  existing event JSON serialization constraints
+- `SKILL_HOT_LOAD_OPERATION` metadata MUST identify the requested hot-load
+  operation using one of `load`, `replace`, or `unload`
+- `SKILL_HOT_LOAD_OPERATION` metadata MUST include the skill name
+- `SKILL_HOT_LOAD_OPERATION` metadata MUST include the operation result using a
+  stable string value
+- `SKILL_HOT_LOAD_OPERATION` metadata for source-bearing `load` and `replace`
+  operations MUST include the source hash
+- `SKILL_HOT_LOAD_OPERATION` metadata MUST NOT include raw Java source text
+- `SKILL_HOT_LOAD_OPERATION` metadata SHOULD include requester information when a
+  requester is available from the caller context
+- Failed or rejected `SKILL_HOT_LOAD_OPERATION` metadata MUST include a stable
+  failure category

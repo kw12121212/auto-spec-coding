@@ -33,8 +33,8 @@
 ## Dependencies
 
 - M11 Native Java SDK 层
-- M4 Agent 生命周期（长运行任务的状态查询）
-- M6 权限系统（认证集成）
+- M04 Agent 生命周期（长运行任务的状态查询）
+- M06 权限系统（认证集成）
 - Lealone HTTP server 模块（lealone-server, lealone-net）
 
 ## Risks

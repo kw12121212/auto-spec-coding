@@ -44,9 +44,9 @@
 
 ## Dependencies
 
-- M4 Agent 生命周期与编排（暂停、恢复、会话状态保持）
-- M5 LLM Provider Layer（answer agent 生成答复）
-- M6 权限模型与执行钩子（区分可代答与必须人工确认的交互）
+- M04 Agent 生命周期与编排（暂停、恢复、会话状态保持）
+- M05 LLM Provider Layer（answer agent 生成答复）
+- M06 权限模型与执行钩子（区分可代答与必须人工确认的交互）
 - M12 Native Java SDK 层（暴露待答问题和人工回复入口）
 - Event audit log 与 session store（问题生命周期追踪）
 

@@ -40,8 +40,8 @@
 
 ## Dependencies
 
-- M4 Agent 生命周期与编排（Orchestrator 循环结构）
-- M5 LLM Provider Layer（LlmClient 接口、LlmRequest 构建）
+- M04 Agent 生命周期与编排（Orchestrator 循环结构）
+- M05 LLM Provider Layer（LlmClient 接口、LlmRequest 构建）
 - M17 Lealone DB 缓存层（可复用缓存存储摘要）
 - M19 LLM Streaming & Token Management（Token 计数基础）
 - Lealone 更新：`ecfbce5` 依据上下文发送 public 字段/方法的策略参考

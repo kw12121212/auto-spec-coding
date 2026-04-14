@@ -14,7 +14,7 @@
 
 ## Out of Scope
 
-- 具体工具实现（M2 tool-bash 负责具体 bash 后台执行）
+- 具体工具实现（M02 tool-bash 负责具体 bash 后台执行）
 - 容器化或沙箱级别的进程隔离
 - 跨 session 进程持久化（进程仅在当前 session 内存活）
 
@@ -36,9 +36,9 @@
 
 ## Dependencies
 
-- M1 核心接口（Tool、Agent 接口）
-- M2 tool-bash（bash 工具将使用后台执行能力）
-- M4 Agent 生命周期（Agent Stop 触发进程清理）
+- M01 核心接口（Tool、Agent 接口）
+- M02 tool-bash（bash 工具将使用后台执行能力）
+- M04 Agent 生命周期（Agent Stop 触发进程清理）
 
 ## Risks
 

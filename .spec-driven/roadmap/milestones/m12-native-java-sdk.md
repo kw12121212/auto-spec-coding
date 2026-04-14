@@ -2,11 +2,11 @@
 
 ## Goal
 
-在 M1 核心接口之上封装面向第三方的公共 Java SDK facade，让外部可通过 Maven 依赖直接使用 agent 的全部能力。
+在 M01 核心接口之上封装面向第三方的公共 Java SDK facade，让外部可通过 Maven 依赖直接使用 agent 的全部能力。
 
 ## In Scope
 
-- 面向第三方的公共 SDK API（facade 层，封装 M1-M10 全部核心能力）
+- 面向第三方的公共 SDK API（facade 层，封装 M01-M10 全部核心能力）
 - 事件订阅与回调机制
 - 统一错误处理模式
 - SDK 使用文档和示例
@@ -15,7 +15,7 @@
 
 - 非 Java 语言 SDK
 - 具体传输层实现（M12-M13）
-- 底层接口的重新定义（SDK 是 M1 接口的 facade，不替代它们）
+- 底层接口的重新定义（SDK 是 M01 接口的 facade，不替代它们）
 
 ## Done Criteria
 
@@ -31,9 +31,9 @@
 
 ## Dependencies
 
-- M1-M5 核心能力（接口、工具集、agent 运行时、LLM 后端）
-- M6 权限系统（SDK 需暴露权限配置）
-- M9-M10 协议工具（LSP/MCP 作为可选工具注册）
+- M01-M05 核心能力（接口、工具集、agent 运行时、LLM 后端）
+- M06 权限系统（SDK 需暴露权限配置）
+- M09-M10 协议工具（LSP/MCP 作为可选工具注册）
 
 ## Risks
 
@@ -45,9 +45,9 @@
 
 ## Notes
 
-- SDK 层是 M1 核心接口的 facade，不是替代。底层 M1 接口仍然可用，SDK 提供更高层次的便捷 API
+- SDK 层是 M01 核心接口的 facade，不是替代。底层 M01 接口仍然可用，SDK 提供更高层次的便捷 API
 - 参考 spec-coding-sdk 的 Go SDK 使用模式提炼常用操作为简洁的 Java SDK 调用
-- M7-M8（注册表）为可选依赖，SDK 可延迟初始化注册表功能
+- M07-M08（注册表）为可选依赖，SDK 可延迟初始化注册表功能
 - 发布为 Maven artifact，用户通过 pom.xml / build.gradle 引入
 
 

@@ -1,4 +1,4 @@
-# M1 - 项目骨架与核心接口
+# M01 - 项目骨架与核心接口
 
 ## Goal
 
@@ -52,4 +52,4 @@
 
 - 此里程碑是所有后续开发的基础，接口设计需与 spec-coding-sdk 的 Go 实现保持功能对等、设计对齐但不照搬
 - 建议先完成 `project-scaffold` 和 `core-interfaces` 两个 change，再推进 `config-loader` 和 `event-system-types`
-- PermissionProvider 接口在此里程碑定义，M2 工具集可据此预留权限检查钩子
+- PermissionProvider 接口在此里程碑定义，M02 工具集可据此预留权限检查钩子

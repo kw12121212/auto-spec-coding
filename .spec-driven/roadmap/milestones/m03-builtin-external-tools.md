@@ -1,4 +1,4 @@
-# M3 - 内置外部工具集成
+# M03 - 内置外部工具集成
 
 ## Goal
 
@@ -7,20 +7,20 @@
 ## In Scope
 
 - 内置工具管理器（外部工具检测、预编译二进制从 classpath 提取）
-- ripgrep 集成（供 M2 tool-grep 高性能模式使用）
-- fd 集成（替代 M2 GlobTool 纯 Java 实现，纯 Java 作为 fallback）
+- ripgrep 集成（供 M02 tool-grep 高性能模式使用）
+- fd 集成（替代 M02 GlobTool 纯 Java 实现，纯 Java 作为 fallback）
 
 ## Out of Scope
 
-- 核心工具接口实现（M2）
+- 核心工具接口实现（M02）
 - 源码编译安装——所有外部工具仅下载预编译二进制
-- LSP / MCP 工具（M9 / M10）
+- LSP / MCP 工具（M09 / M10）
 
 ## Done Criteria
 
 - 内置工具管理器可检测系统已安装的外部工具
 - 缺失的外部工具可被自动从 classpath 提取预编译二进制到缓存
-- ripgrep 可通过工具管理器获取并供 M2 tool-grep 使用
+- ripgrep 可通过工具管理器获取并供 M02 tool-grep 使用
 - fd 可通过工具管理器获取并供 GlobTool 使用，fd 不可用时回退到纯 Java 实现
 
 ## Planned Changes
@@ -29,8 +29,8 @@
 
 ## Dependencies
 
-- M1 核心接口（Tool 接口、PermissionProvider 接口）
-- M2 tool-grep 依赖此里程碑提供的 ripgrep 二进制（可选增强）
+- M01 核心接口（Tool 接口、PermissionProvider 接口）
+- M02 tool-grep 依赖此里程碑提供的 ripgrep 二进制（可选增强）
 
 ## Risks
 
