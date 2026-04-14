@@ -35,7 +35,7 @@
 
 ## Planned Changes
 - `interactive-session-interface` - Declared: complete - 定义 InteractiveSession 接口与标准生命周期协议，含输入/输出/状态查询方法
-- `lealone-agent-adapter` - Declared: planned - 实现 LealoneAgentAdapter：包装 Lealone LealoneClient 为 InteractiveSession，桥接其 SQL+NL 交互能力
+- `lealone-agent-adapter` - Declared: complete - 实现 LealoneAgentAdapter：包装 Lealone LealoneClient 为 InteractiveSession，桥接其 SQL+NL 交互能力
 - `loop-question-interactive-bridge` - Declared: planned - 扩展 DefaultLoopDriver：在现有人工升级 question 暂停点接入交互模式，并通过既有恢复路径恢复循环
 - `interactive-command-parser` - Declared: planned - 实现受限指令解析器：将用户输入映射为与等待 question 绑定的答复或有限循环控制动作
 - `interactive-show-audit` - Declared: planned - 实现 SHOW 命令（SERVICES/STATUS/ROADMAP）与交互审计日志记录，复用已有 Store 查询数据并扩展 AuditEntry
@@ -64,4 +64,3 @@
 - 首期交互模式仅在 LoopDriver 层面开放，不暴露给 HTTP/JSON-RPC 远程调用方
 - NL 解析首期支持有限的指令集（约 10 条核心命令），并优先复用现有 QuestionCategory / DeliveryMode / Answer 语义
 - LealoneAgent 交互式窗口可作为独立入口运行（类似 lealone -agent 模式），也可嵌入 LoopDriver
-

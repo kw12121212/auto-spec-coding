@@ -22,6 +22,12 @@ The system MUST provide a Lealone-backed `InteractiveSession` implementation for
 - THEN `state()` MUST return `ACTIVE`
 - AND `sessionId()` MUST return a stable non-blank identifier
 
+#### Scenario: Adapter enters error state after start failure
+- GIVEN a newly created Lealone-backed interactive session
+- WHEN the configured Lealone execution surface cannot be opened
+- THEN `start()` MUST be rejected
+- AND `state()` MUST return `ERROR`
+
 #### Scenario: Adapter submits input to Lealone execution
 - GIVEN a Lealone-backed interactive session in `ACTIVE` state
 - WHEN `submit("SHOW SERVICES")` is called
