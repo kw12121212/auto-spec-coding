@@ -65,6 +65,22 @@ class VaultResolverTest {
         assertNull(resolved.get("key"));
     }
 
+    @Test
+    void partialResolutionFailure_doesNotLeakOtherResolvedValues() {
+        vault.store.put("existing_key", "sk-real-key");
+        Map<String, String> config = new LinkedHashMap<>();
+        config.put("apiKey", "vault:existing_key");
+        config.put("secret2", "vault:missing_key");
+
+        VaultException ex = assertThrows(VaultException.class,
+                () -> VaultResolver.resolve(config, vault));
+        String msg = ex.getMessage();
+        assertFalse(msg.contains("sk-real-key"),
+                "Exception message must not leak other resolved secret values");
+        assertTrue(msg.contains("missing_key"),
+                "Exception message must identify the missing key");
+    }
+
     private static class StubVault implements SecretVault {
         final Map<String, String> store = new LinkedHashMap<>();
 

@@ -84,4 +84,33 @@ class LlmConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new LlmConfig("https://example.com", "key", "model", 30, -1));
     }
+
+    @Test
+    void toString_redactsApiKey() {
+        LlmConfig config = new LlmConfig("https://api.openai.com/v1", "sk-super-secret-key", "gpt-4", 60, 3);
+        String str = config.toString();
+        assertFalse(str.contains("sk-super-secret-key"), "toString must not contain API key");
+        assertTrue(str.contains("***"), "toString must contain redaction placeholder");
+    }
+
+    @Test
+    void toString_preservesNonSensitiveFields() {
+        LlmConfig config = new LlmConfig("https://api.openai.com/v1", "sk-secret", "gpt-4", 60, 3);
+        String str = config.toString();
+        assertTrue(str.contains("https://api.openai.com/v1"));
+        assertTrue(str.contains("gpt-4"));
+        assertTrue(str.contains("60"));
+        assertTrue(str.contains("3"));
+    }
+
+    @Test
+    void constructor_blankApiKey_exceptionExcludesSecret() {
+        String secretBlank = "   ";
+        IllegalArgumentException ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> new LlmConfig("https://example.com", secretBlank, "model", 30, 3));
+        String msg = ex.getMessage();
+        assertFalse(msg.contains(secretBlank), "Exception message must not echo the blank API key value");
+        assertTrue(msg.contains("apiKey"), "Exception message must identify the problematic field");
+    }
 }

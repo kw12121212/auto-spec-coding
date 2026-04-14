@@ -921,6 +921,28 @@ class DefaultLlmProviderRegistryTest {
         registry.close();
     }
 
+    @Test
+    void replaceDefaultSnapshot_eventMetadataExcludesApiKey() {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> events = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.LLM_CONFIG_CHANGED, events::add);
+
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "sk-super-secret-key"));
+        registry.setDefault("openai");
+
+        registry.replaceDefaultSnapshot(new LlmConfigSnapshot(
+                "openai", "https://api.alt.example/v1", "gpt-4.1", 25, 4));
+
+        assertEquals(1, events.size());
+        Event event = events.get(0);
+        for (Object value : event.metadata().values()) {
+            assertNotEquals("sk-super-secret-key", value,
+                    "Event metadata must not contain API key");
+        }
+        registry.close();
+    }
+
     // --- stub ---
 
     static class StubProvider implements LlmProvider {

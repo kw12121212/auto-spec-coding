@@ -219,3 +219,13 @@ The system MUST publish vault events via EventBus for integration with the exist
 - GIVEN a `LealoneVault` with key "key1" set
 - WHEN `delete("key1")` is called
 - THEN an event with type `VAULT_SECRET_DELETED` MUST be published
+
+### Requirement: VaultResolver exception messages exclude resolved secrets
+When `VaultResolver` throws `VaultException` during resolution, the exception message MUST NOT include any successfully resolved secret values from the same resolution batch.
+
+#### Scenario: Partial resolution failure does not leak other resolved values
+- GIVEN a config map with `apiKey` set to `vault:existing_key` (resolves to `sk-real-key`) and `secret2` set to `vault:missing_key` (does not exist)
+- WHEN `VaultResolver.resolve(config, vault)` is called
+- AND the `VaultException` is thrown for the missing key
+- THEN the exception message MUST NOT contain `sk-real-key`
+- AND the exception message MUST identify the missing key name

@@ -599,10 +599,24 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         }
         metadata.put("provider", after.providerName());
         metadata.put("changedKeys", String.join(",", changedKeys(before, after)));
+
+        assertMetadataExcludesSecrets(metadata, after.providerName());
+
         try {
             eventBus.publish(new Event(EventType.LLM_CONFIG_CHANGED, System.currentTimeMillis(), EVENT_SOURCE, metadata));
         } catch (RuntimeException e) {
             LOG.log(System.Logger.Level.WARNING, "Failed to publish runtime LLM config change event", e);
+        }
+    }
+
+    private void assertMetadataExcludesSecrets(Map<String, Object> metadata, String providerName) {
+        LlmProvider provider = providers.get(providerName);
+        if (provider == null) return;
+        String apiKey = provider.config().apiKey();
+        for (Object value : metadata.values()) {
+            if (value instanceof String s && s.equals(apiKey)) {
+                throw new IllegalStateException("LLM_CONFIG_CHANGED event metadata must not contain API key");
+            }
         }
     }
 

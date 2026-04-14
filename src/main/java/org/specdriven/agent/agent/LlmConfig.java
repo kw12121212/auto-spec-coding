@@ -60,6 +60,15 @@ public record LlmConfig(
         return new LlmConfig(baseUrl, apiKey, model, timeout, maxRetries);
     }
 
+    @Override
+    public String toString() {
+        return "LlmConfig[baseUrl=" + baseUrl
+                + ", apiKey=***"
+                + ", model=" + model
+                + ", timeout=" + timeout
+                + ", maxRetries=" + maxRetries + "]";
+    }
+
     private static int parseInt(Map<String, String> map, String key, int defaultValue) {
         String value = map.get(key);
         if (value == null) return defaultValue;
