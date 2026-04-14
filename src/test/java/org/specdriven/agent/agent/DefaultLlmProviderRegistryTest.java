@@ -6,10 +6,15 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.llm.LealoneRuntimeLlmConfigStore;
+import org.specdriven.agent.vault.SecretVault;
+import org.specdriven.agent.vault.VaultEntry;
+import org.specdriven.agent.vault.VaultException;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -55,6 +60,159 @@ class DefaultLlmProviderRegistryTest {
         assertTrue(registry.providerNames().contains("openai-main"));
         assertTrue(registry.providerNames().contains("deepseek"));
         assertEquals("sk-test", registry.defaultProvider().config().apiKey());
+        registry.close();
+    }
+
+    @Test
+    void fromConfigWithVault_resolvesProviderApiKeyBeforeCreation(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("config.yaml");
+        Files.writeString(file, """
+            llm:
+              providers:
+                openai-main:
+                  type: "openai"
+                  baseUrl: "https://api.openai.com/v1"
+                  apiKey: "vault:openai_key"
+                  model: "gpt-4"
+                  timeout: "45"
+                  maxRetries: "2"
+              default: "openai-main"
+            """);
+        org.specdriven.agent.config.Config config =
+                org.specdriven.agent.config.ConfigLoader.load(file);
+        StubVault vault = new StubVault();
+        vault.set("openai_key", "sk-real-key", "OpenAI API key");
+        LlmProviderFactory stubFactory = cfg -> new StubProvider(
+                cfg.baseUrl(),
+                cfg.apiKey(),
+                cfg.model(),
+                cfg.timeout(),
+                cfg.maxRetries());
+
+        DefaultLlmProviderRegistry registry =
+                DefaultLlmProviderRegistry.fromConfigWithVault(config, Map.of("openai", stubFactory), vault);
+
+        LlmConfig providerConfig = registry.defaultProvider().config();
+        assertEquals("sk-real-key", providerConfig.apiKey());
+        assertEquals("https://api.openai.com/v1", providerConfig.baseUrl());
+        assertEquals("gpt-4", providerConfig.model());
+        assertEquals(45, providerConfig.timeout());
+        assertEquals(2, providerConfig.maxRetries());
+
+        LlmConfigSnapshot snapshot = registry.defaultSnapshot();
+        assertFalse(snapshot.toString().contains("sk-real-key"));
+        assertFalse(snapshot.toString().contains("vault:openai_key"));
+        registry.close();
+    }
+
+    @Test
+    void fromConfigWithVault_preservesPlaintextApiKey(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("config.yaml");
+        Files.writeString(file, """
+            llm:
+              providers:
+                openai:
+                  type: "openai"
+                  baseUrl: "https://api.openai.com/v1"
+                  apiKey: "sk-local-test"
+                  model: "gpt-4"
+              default: "openai"
+            """);
+        org.specdriven.agent.config.Config config =
+                org.specdriven.agent.config.ConfigLoader.load(file);
+        LlmProviderFactory stubFactory = cfg -> new StubProvider(cfg.baseUrl(), cfg.apiKey());
+
+        DefaultLlmProviderRegistry registry =
+                DefaultLlmProviderRegistry.fromConfigWithVault(config, Map.of("openai", stubFactory), new StubVault());
+
+        assertEquals("sk-local-test", registry.defaultProvider().config().apiKey());
+        registry.close();
+    }
+
+    @Test
+    void fromConfigWithVault_leavesNonAuthenticationValuesUnresolved(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("config.yaml");
+        Files.writeString(file, """
+            llm:
+              providers:
+                openai:
+                  type: "openai"
+                  baseUrl: "https://api.openai.com/v1"
+                  apiKey: "vault:openai_key"
+                  model: "vault:model_name"
+              default: "openai"
+            """);
+        org.specdriven.agent.config.Config config =
+                org.specdriven.agent.config.ConfigLoader.load(file);
+        StubVault vault = new StubVault();
+        vault.set("openai_key", "sk-real-key", "OpenAI API key");
+        LlmProviderFactory stubFactory = cfg -> new StubProvider(cfg.baseUrl(), cfg.apiKey(), cfg.model(), 60, 3);
+
+        DefaultLlmProviderRegistry registry =
+                DefaultLlmProviderRegistry.fromConfigWithVault(config, Map.of("openai", stubFactory), vault);
+
+        LlmConfig providerConfig = registry.defaultProvider().config();
+        assertEquals("sk-real-key", providerConfig.apiKey());
+        assertEquals("vault:model_name", providerConfig.model());
+        registry.close();
+    }
+
+    @Test
+    void fromConfigWithVault_missingVaultKeyFailsBeforeProviderRegistration(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("config.yaml");
+        Files.writeString(file, """
+            llm:
+              providers:
+                openai:
+                  type: "openai"
+                  baseUrl: "https://api.openai.com/v1"
+                  apiKey: "vault:missing_key"
+                  model: "gpt-4"
+              default: "openai"
+            """);
+        org.specdriven.agent.config.Config config =
+                org.specdriven.agent.config.ConfigLoader.load(file);
+        AtomicInteger factoryCalls = new AtomicInteger();
+        LlmProviderFactory stubFactory = cfg -> {
+            factoryCalls.incrementAndGet();
+            return new StubProvider(cfg.baseUrl(), cfg.apiKey());
+        };
+
+        assertThrows(VaultException.class,
+                () -> DefaultLlmProviderRegistry.fromConfigWithVault(config, Map.of("openai", stubFactory), new StubVault()));
+        assertEquals(0, factoryCalls.get());
+    }
+
+    @Test
+    void fromConfigWithVault_persistedRuntimeHistoryExcludesVaultSecret(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("config.yaml");
+        Files.writeString(file, """
+            llm:
+              providers:
+                openai:
+                  type: "openai"
+                  baseUrl: "https://api.openai.com/v1"
+                  apiKey: "vault:openai_key"
+                  model: "gpt-4"
+              default: "openai"
+            """);
+        org.specdriven.agent.config.Config config =
+                org.specdriven.agent.config.ConfigLoader.load(file);
+        StubVault vault = new StubVault();
+        vault.set("openai_key", "sk-real-key", "OpenAI API key");
+        LealoneRuntimeLlmConfigStore store = new LealoneRuntimeLlmConfigStore(jdbcUrl("llm_registry_vault_snapshot"));
+
+        DefaultLlmProviderRegistry registry = DefaultLlmProviderRegistry.fromConfigWithVault(
+                config,
+                Map.of("openai", cfg -> new StubProvider(cfg.baseUrl(), cfg.apiKey())),
+                vault,
+                store);
+
+        registry.replaceDefaultSnapshot(registry.defaultSnapshot());
+
+        String persistedSnapshot = store.listDefaultSnapshotVersions().getFirst().snapshot().toString();
+        assertFalse(persistedSnapshot.contains("sk-real-key"));
+        assertFalse(persistedSnapshot.contains("vault:openai_key"));
         registry.close();
     }
 
@@ -664,7 +822,11 @@ class DefaultLlmProviderRegistryTest {
         volatile boolean closed;
 
         StubProvider(String baseUrl, String apiKey) {
-            config = new LlmConfig(baseUrl, apiKey, "model", 60, 3);
+            this(baseUrl, apiKey, "model", 60, 3);
+        }
+
+        StubProvider(String baseUrl, String apiKey, String model, int timeout, int maxRetries) {
+            config = new LlmConfig(baseUrl, apiKey, model, timeout, maxRetries);
         }
 
         @Override
@@ -754,6 +916,41 @@ class DefaultLlmProviderRegistryTest {
 
         @Override
         public void close() {
+        }
+    }
+
+    private static final class StubVault implements SecretVault {
+        private final Map<String, String> store = new LinkedHashMap<>();
+
+        @Override
+        public String get(String key) {
+            String value = store.get(key);
+            if (value == null) {
+                throw new VaultException("Secret not found: " + key);
+            }
+            return value;
+        }
+
+        @Override
+        public void set(String key, String plaintext, String description) {
+            store.put(key, plaintext);
+        }
+
+        @Override
+        public void delete(String key) {
+            store.remove(key);
+        }
+
+        @Override
+        public List<VaultEntry> list() {
+            return store.keySet().stream()
+                    .map(key -> new VaultEntry(key, Instant.now(), ""))
+                    .toList();
+        }
+
+        @Override
+        public boolean exists(String key) {
+            return store.containsKey(key);
         }
     }
 

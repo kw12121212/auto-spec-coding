@@ -10,6 +10,8 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.llm.RuntimeLlmConfigStore;
+import org.specdriven.agent.vault.SecretVault;
+import org.specdriven.agent.vault.VaultResolver;
 
 /**
  * Thread-safe implementation of {@link LlmProviderRegistry}.
@@ -392,6 +394,48 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             Map<String, LlmProviderFactory> factories,
             RuntimeLlmConfigStore runtimeConfigStore,
             EventBus eventBus) {
+        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfigWithVault(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            SecretVault vault) {
+        return fromConfigWithVault(config, factories, vault, null, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfigWithVault(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            SecretVault vault,
+            EventBus eventBus) {
+        return fromConfigWithVault(config, factories, vault, null, eventBus);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfigWithVault(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            SecretVault vault,
+            RuntimeLlmConfigStore runtimeConfigStore) {
+        return fromConfigWithVault(config, factories, vault, runtimeConfigStore, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfigWithVault(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            SecretVault vault,
+            RuntimeLlmConfigStore runtimeConfigStore,
+            EventBus eventBus) {
+        Objects.requireNonNull(vault, "vault must not be null");
+        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, vault);
+    }
+
+    private static DefaultLlmProviderRegistry fromConfigInternal(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            RuntimeLlmConfigStore runtimeConfigStore,
+            EventBus eventBus,
+            SecretVault vault) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(factories, "factories must not be null");
 
@@ -408,6 +452,9 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
 
             Config providerSection = llmSection.getSection("providers." + providerName);
             Map<String, String> providerMap = providerSection.asMap();
+            if (vault != null) {
+                providerMap = resolveProviderAuthentication(providerMap, vault);
+            }
 
             // determine factory type from config or infer from baseUrl
             String factoryType = providerMap.getOrDefault("type", inferFactoryType(providerMap));
@@ -474,6 +521,15 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
         String baseUrl = providerMap.getOrDefault("baseUrl", "").toLowerCase();
         if (baseUrl.contains("anthropic")) return "claude";
         return "openai"; // default to openai-compatible
+    }
+
+    private static Map<String, String> resolveProviderAuthentication(Map<String, String> providerMap, SecretVault vault) {
+        Map<String, String> resolved = new LinkedHashMap<>(providerMap);
+        if (providerMap.containsKey("apiKey")) {
+            resolved.put("apiKey", VaultResolver.resolve(Collections.singletonMap("apiKey", providerMap.get("apiKey")), vault)
+                    .get("apiKey"));
+        }
+        return resolved;
     }
 
     private void publishConfigChanged(String scope, String sessionId, LlmConfigSnapshot before, LlmConfigSnapshot after) {
