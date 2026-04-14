@@ -49,6 +49,10 @@
 
 - [secret-vault.md](vault/secret-vault.md) - SecretVault, VaultEntry, VaultResolver, VaultFactory, LealoneVault
 
+## Interactive (交互式会话)
+
+- [interactive-session.md](interactive/interactive-session.md) - InteractiveSession, InteractiveSessionState, InMemoryInteractiveSession — interactive session contract and lifecycle
+
 ## Question (问题/问答系统)
 
 - [question-resolution.md](question/question-resolution.md) - Question, Answer, DeliveryChannel, ReplyCollector, QuestionDeliveryService, Mobile channels
