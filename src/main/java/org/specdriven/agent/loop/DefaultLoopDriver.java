@@ -43,6 +43,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile Thread loopThread;
     private volatile boolean stopRequested = false;
     private volatile ContextWindowManager contextManager;
+    private volatile long accumulatedTokenUsage = 0;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
         this(config, scheduler, new StubLoopPipeline(), null, null, null);
@@ -88,6 +89,7 @@ public class DefaultLoopDriver implements LoopDriver {
             synchronized (stateLock) {
                 completedChangeNames.addAll(progress.completedChangeNames());
                 completedIterations.addAll(store.loadIterations());
+                accumulatedTokenUsage = progress.tokenUsage();
             }
         });
 
@@ -225,6 +227,7 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 // Execute pipeline
                 IterationResult pipelineResult = pipeline.execute(c, config);
+                long iterationTokenUsage = pipelineResult.tokenUsage();
 
                 // Handle QUESTIONING: route to answer agent or escalate
                 if (pipelineResult.status() == IterationStatus.QUESTIONING) {
@@ -261,6 +264,7 @@ public class DefaultLoopDriver implements LoopDriver {
                         }
                         pipelineResult = pipeline.execute(
                                 c, config, Set.copyOf(pipelineResult.phasesCompleted()));
+                        iterationTokenUsage += pipelineResult.tokenUsage();
                         // Fall through to checkpoint/complete handling below
                     } else {
                         AnswerResolution.Escalated escalated = (AnswerResolution.Escalated) resolution;
@@ -280,9 +284,10 @@ public class DefaultLoopDriver implements LoopDriver {
                             completedIterations.add(partial);
                             currentIteration.set(null);
                         }
+                        recordIterationTokenUsage(iterationTokenUsage);
                         if (store != null) {
                             store.saveIteration(partial);
-                            store.saveProgress(buildSnapshot(0));
+                            store.saveProgress(buildSnapshot());
                         }
                         synchronized (stateLock) {
                             try {
@@ -322,10 +327,12 @@ public class DefaultLoopDriver implements LoopDriver {
                     }
                 }
 
+                recordIterationTokenUsage(iterationTokenUsage);
+
                 // Persist iteration and progress snapshot
                 if (store != null) {
                     store.saveIteration(completed);
-                    store.saveProgress(buildSnapshot(pipelineResult.tokenUsage()));
+                    store.saveProgress(buildSnapshot());
                 }
 
                 publishEvent(EventType.LOOP_ITERATION_COMPLETED, Map.of(
@@ -335,8 +342,6 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 // Check context exhaustion
                 if (contextManager != null) {
-                    contextManager.addUsage(
-                            new org.specdriven.agent.agent.LlmUsage(0, 0, (int) Math.min(pipelineResult.tokenUsage(), Integer.MAX_VALUE)));
                     ContextBudget budget = config.contextBudget();
                     int threshold = budget.maxTokens() * budget.warningThresholdPercent() / 100;
                     if (contextManager.remainingCapacity() < threshold) {
@@ -428,25 +433,22 @@ public class DefaultLoopDriver implements LoopDriver {
     }
 
     private LoopProgress buildSnapshot() {
-        return buildSnapshot(0);
-    }
-
-    private LoopProgress buildSnapshot(long tokenUsage) {
         synchronized (stateLock) {
             return new LoopProgress(state, Set.copyOf(completedChangeNames),
-                    completedIterations.size(), tokenUsage);
+                    completedIterations.size(), accumulatedTokenUsage);
         }
     }
 
     private void stopWithContextExhaustion(int completedIterations,
                                            ContextWindowManager ctxManager) {
         long totalUsage = ctxManager.maxTokens() - ctxManager.remainingCapacity();
+        accumulatedTokenUsage = totalUsage;
         synchronized (stateLock) {
             if (state == LoopState.STOPPED) return;
             state = LoopState.STOPPED;
         }
         stopRequested = true;
-        persistSnapshot(totalUsage);
+        persistSnapshot();
         publishEvent(EventType.LOOP_CONTEXT_EXHAUSTED, Map.of(
                 "tokenUsage", totalUsage,
                 "maxTokens", ctxManager.maxTokens(),
@@ -460,17 +462,23 @@ public class DefaultLoopDriver implements LoopDriver {
     }
 
     private void persistSnapshot() {
-        persistSnapshot(0);
-    }
-
-    private void persistSnapshot(long tokenUsage) {
         if (store != null) {
             try {
-                store.saveProgress(buildSnapshot(tokenUsage));
+                store.saveProgress(buildSnapshot());
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Failed to persist progress on stop", e);
             }
         }
+    }
+
+    private void recordIterationTokenUsage(long iterationTokenUsage) {
+        if (iterationTokenUsage <= 0 || contextManager == null) {
+            return;
+        }
+        contextManager.addUsage(
+                new org.specdriven.agent.agent.LlmUsage(0, 0,
+                        (int) Math.min(iterationTokenUsage, Integer.MAX_VALUE)));
+        accumulatedTokenUsage += iterationTokenUsage;
     }
 
     private void publishEvent(EventType type, Map<String, Object> metadata) {

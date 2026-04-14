@@ -327,11 +327,15 @@ mapping:
 - `LoopProgress` MUST add a field `tokenUsage` (long)
 - `tokenUsage` MUST be non-negative; compact constructor MUST reject negative values with `IllegalArgumentException`
 - Default value MUST be 0
+- `tokenUsage` MUST represent the cumulative token usage for the persisted loop lineage, not only the most recent iteration or phase attempt
 
 ### Requirement: Context exhaustion detection in DefaultLoopDriver
 
 - When `LoopConfig.contextBudget()` is non-null, `DefaultLoopDriver` MUST create a `ContextWindowManager` with the configured `maxTokens` on `start()`
 - After each iteration completes, the driver MUST add the iteration's `IterationResult.tokenUsage()` to the `ContextWindowManager`
+- Any persisted `LoopProgress.tokenUsage` snapshot used for context budgeting MUST equal the cumulative usage already applied to the `ContextWindowManager`, including previously recovered usage
+- When an iteration pauses with `IterationStatus.QUESTIONING`, the saved `LoopProgress.tokenUsage` MUST still include the tokens consumed before the pause
+- When an interrupted iteration resumes after question resolution, the saved `LoopProgress.tokenUsage` MUST include the tokens consumed before and after the resume point for that same logical iteration
 - When `ContextWindowManager.remainingCapacity()` falls below `maxTokens * warningThresholdPercent / 100`, the driver MUST:
   1. Save progress via `store.saveProgress()` with current `tokenUsage` in the snapshot
   2. Publish `LOOP_CONTEXT_EXHAUSTED` event with metadata: `tokenUsage` (long), `maxTokens` (int), `remainingTokens` (long), `completedIterations` (int)
@@ -342,6 +346,7 @@ mapping:
 
 - When `DefaultLoopDriver.start()` recovers progress from the store and the recovered `LoopProgress.tokenUsage()` is greater than 0, the driver MUST initialize the `ContextWindowManager` with the recovered token usage value
 - This ensures that consecutive sessions tracking the same context budget accumulate correctly
+- Recovery MUST treat the persisted value as the loop's cumulative usage baseline and MUST NOT reinterpret it as only the last iteration's or last phase's token usage
 
 ### Requirement: LOOP_CONTEXT_EXHAUSTED EventType
 

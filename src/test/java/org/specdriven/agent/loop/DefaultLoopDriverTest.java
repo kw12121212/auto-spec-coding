@@ -489,6 +489,28 @@ class DefaultLoopDriverTest {
     }
 
     @Test
+    void progressPersistsCumulativeTokenUsageAcrossIterations() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        ContextBudget budget = ContextBudget.of(5000, 20);
+        LoopConfig cfg = new LoopConfig(2, 60, List.of(), Path.of("/tmp"), bus, budget);
+
+        TokenSimulatingPipeline pipeline = new TokenSimulatingPipeline(300);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("change-" + ctx.completedChangeNames().size(), "m.md", "g"));
+
+        LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
+        driver.start();
+
+        Thread.sleep(1000);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.STOPPED, progress.loopState());
+        assertEquals(600, progress.tokenUsage());
+    }
+
+    @Test
     void contextResumeRestoresTokenUsage() throws Exception {
         SimpleEventBus bus = eventBus();
         LealoneLoopIterationStore store = createStore(bus);
@@ -592,6 +614,33 @@ class DefaultLoopDriverTest {
         }
     }
 
+    private static class TokenQuestioningThenSuccessPipeline implements LoopPipeline {
+        private final AtomicInteger callCount = new AtomicInteger();
+        private final Question question;
+        private final long initialTokenUsage;
+        private final long resumedTokenUsage;
+
+        TokenQuestioningThenSuccessPipeline(Question question,
+                                            long initialTokenUsage,
+                                            long resumedTokenUsage) {
+            this.question = question;
+            this.initialTokenUsage = initialTokenUsage;
+            this.resumedTokenUsage = resumedTokenUsage;
+        }
+
+        @Override
+        public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
+            if (callCount.incrementAndGet() == 1) {
+                return new IterationResult(IterationStatus.QUESTIONING, null, 10,
+                        List.of(PipelinePhase.PROPOSE), initialTokenUsage, question);
+            }
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
+                    resumedTokenUsage);
+        }
+    }
+
     @Test
     void questioningWithResolvedAnswerAgentResumesAndSucceeds() throws Exception {
         SimpleEventBus bus = eventBus();
@@ -654,6 +703,30 @@ class DefaultLoopDriverTest {
         assertEquals(1, driver.getCompletedIterations().size());
         assertEquals(IterationStatus.QUESTIONING, driver.getCompletedIterations().get(0).status());
         assertTrue(driver.getCompletedIterations().get(0).failureReason().contains("too complex"));
+
+        driver.stop();
+    }
+
+    @Test
+    void questioningPausePersistsCumulativeTokenUsage() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        Question question = sampleQuestion();
+        TokenQuestioningThenSuccessPipeline pipeline = new TokenQuestioningThenSuccessPipeline(question, 250, 0);
+        ContextBudget budget = ContextBudget.of(5000, 20);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus, budget);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("question-pause-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store, null);
+        driver.start();
+
+        waitUntilState(driver, LoopState.PAUSED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.PAUSED, progress.loopState());
+        assertEquals(250, progress.tokenUsage());
 
         driver.stop();
     }
@@ -741,6 +814,30 @@ class DefaultLoopDriverTest {
         assertEquals(0.8, (double) answered.metadata().get("confidence"), 0.001);
 
         driver.stop();
+    }
+
+    @Test
+    void resumedQuestioningIterationAccumulatesTokenUsageAcrossBothPipelineRuns() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+
+        Question question = sampleQuestion();
+        Answer answer = sampleAnswer();
+        LoopAnswerAgent agentStub = (q, timeout) -> new AnswerResolution.Resolved(answer);
+        TokenQuestioningThenSuccessPipeline pipeline = new TokenQuestioningThenSuccessPipeline(question, 150, 250);
+        ContextBudget budget = ContextBudget.of(5000, 20);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus, budget);
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("resume-token-change", "m.md", "goal"));
+
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store, agentStub);
+        driver.start();
+
+        waitUntilState(driver, LoopState.STOPPED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.STOPPED, progress.loopState());
+        assertEquals(400, progress.tokenUsage());
     }
 
     @Test
