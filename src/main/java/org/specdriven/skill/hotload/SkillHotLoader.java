@@ -14,4 +14,6 @@ public interface SkillHotLoader {
     Optional<ClassLoader> activeLoader(String skillName);
 
     Set<String> loadedSkillNames();
+
+    Set<String> failedSkillNames();
 }

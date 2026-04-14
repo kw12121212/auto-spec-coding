@@ -3,6 +3,7 @@ package org.specdriven.skill.hotload;
 import org.specdriven.skill.compiler.ClassCacheException;
 import org.specdriven.skill.compiler.ClassCacheManager;
 import org.specdriven.skill.compiler.SkillCompilationDiagnostic;
+import org.specdriven.skill.compiler.SkillCompilationException;
 import org.specdriven.skill.compiler.SkillCompilationResult;
 import org.specdriven.skill.compiler.SkillSourceCompiler;
 
@@ -18,6 +19,7 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     private final SkillSourceCompiler compiler;
     private final ClassCacheManager cacheManager;
     private final ConcurrentHashMap<String, ActiveEntry> registry = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SkillLoadResult> failedRegistry = new ConcurrentHashMap<>();
 
     public LealoneSkillHotLoader(SkillSourceCompiler compiler, ClassCacheManager cacheManager) {
         this.compiler = Objects.requireNonNull(compiler, "compiler must not be null");
@@ -39,10 +41,13 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
         LoadOutcome outcome = resolveLoader(skillName, entryClassName, javaSource, sourceHash);
         if (!outcome.success()) {
-            return new SkillLoadResult(false, entryClassName, outcome.diagnostics());
+            SkillLoadResult failure = new SkillLoadResult(false, entryClassName, outcome.diagnostics());
+            failedRegistry.put(skillName, failure);
+            return failure;
         }
 
         registry.put(skillName, new ActiveEntry(outcome.classLoader(), entryClassName, sourceHash));
+        failedRegistry.remove(skillName);
         return new SkillLoadResult(true, entryClassName, List.of());
     }
 
@@ -55,10 +60,13 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
         LoadOutcome outcome = resolveLoader(skillName, entryClassName, javaSource, sourceHash);
         if (!outcome.success()) {
-            return new SkillLoadResult(false, entryClassName, outcome.diagnostics());
+            SkillLoadResult failure = new SkillLoadResult(false, entryClassName, outcome.diagnostics());
+            failedRegistry.put(skillName, failure);
+            return failure;
         }
 
         registry.put(skillName, new ActiveEntry(outcome.classLoader(), entryClassName, sourceHash));
+        failedRegistry.remove(skillName);
         return new SkillLoadResult(true, entryClassName, List.of());
     }
 
@@ -66,6 +74,7 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     public void unload(String skillName) {
         Objects.requireNonNull(skillName, "skillName must not be null");
         registry.remove(skillName);
+        failedRegistry.remove(skillName);
     }
 
     @Override
@@ -78,6 +87,11 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     @Override
     public Set<String> loadedSkillNames() {
         return Set.copyOf(registry.keySet());
+    }
+
+    @Override
+    public Set<String> failedSkillNames() {
+        return Set.copyOf(failedRegistry.keySet());
     }
 
     /**
@@ -99,6 +113,9 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
             }
             ClassLoader loader = cacheManager.loadCached(skillName, sourceHash);
             return LoadOutcome.success(loader);
+        } catch (SkillCompilationException e) {
+            throw new SkillHotLoaderException(
+                    "Compiler infrastructure failure for skill '" + skillName + "'", e);
         } catch (ClassCacheException e) {
             throw new SkillHotLoaderException(
                     "ClassLoader construction failed for skill '" + skillName + "'", e);

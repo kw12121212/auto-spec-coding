@@ -17,7 +17,7 @@ mapping:
 
 - MUST be a runtime exception in the `org.specdriven.skill.hotload` package
 - MUST be used for infrastructure failures in the hot-loader layer (registry state
-  errors, ClassLoader construction failures)
+  errors, ClassLoader construction failures, compiler infrastructure failures)
 
 ### Requirement: SkillLoadResult record
 
@@ -34,6 +34,9 @@ mapping:
 - MUST provide `unload(String skillName)` returning `void`
 - MUST provide `activeLoader(String skillName)` returning `Optional<ClassLoader>`
 - MUST provide `loadedSkillNames()` returning `Set<String>`
+- MUST provide `failedSkillNames()` returning `Set<String>` — an unmodifiable
+  snapshot of skill names whose last compilation or caching attempt returned
+  `success = false`
 
 #### Requirement: load
 
@@ -65,16 +68,32 @@ mapping:
 
 - MUST return an unmodifiable snapshot of the set of currently registered skill names
 
+#### Requirement: failedSkillNames
+
+- MUST return an unmodifiable snapshot of skill names whose last compilation or
+  caching `load()`/`replace()` call returned `success = false`
+- A skill name MUST be added to the set when `load()` or `replace()` returns
+  `SkillLoadResult.success = false` due to a compilation or caching failure
+- The duplicate-registration rejection path in `load()` MUST NOT add the skill name
+  to the set — the skill is already registered successfully
+- A skill name MUST be removed from the set when `load()` or `replace()` returns
+  `SkillLoadResult.success = true`
+- A skill name MUST be removed from the set when `unload()` is called
+
 ### Requirement: LealoneSkillHotLoader
 
 - MUST implement `SkillHotLoader`
 - MUST be constructable with a `SkillSourceCompiler` and a `ClassCacheManager`
 - MUST use a `ConcurrentHashMap` as the internal active-entry registry
+- MUST maintain a second `ConcurrentHashMap` as the internal failed-skill registry
 - MUST be in the `org.specdriven.skill.hotload` package
 - MUST use independent `ClassLoader` instances for each registered skill so that
   same-named classes in different skills do not conflict
 - MUST throw `SkillHotLoaderException` for ClassLoader construction failures
   (wrapping underlying `ClassCacheException`)
+- MUST catch `SkillCompilationException` thrown by `SkillSourceCompiler.compile()`
+  and wrap it in `SkillHotLoaderException` — a `SkillCompilationException` MUST NOT
+  escape through the public `load()` or `replace()` methods
 
 #### Scenario: load succeeds and registers active loader
 
@@ -132,3 +151,47 @@ mapping:
 - WHEN both loaders load the entry class by name
 - THEN the two loaded `Class<?>` instances MUST have different identity (different
   `ClassLoader` parents)
+
+#### Scenario: compiler infrastructure failure wraps to SkillHotLoaderException
+
+- GIVEN the compiler throws `SkillCompilationException` when `compile()` is called
+- WHEN `load(skillName, ...)` is called
+- THEN `SkillHotLoaderException` MUST be thrown
+- AND `activeLoader(skillName)` MUST return `Optional.empty()`
+
+#### Scenario: failed load tracked in failedSkillNames
+
+- GIVEN `load(skillName, ...)` with invalid source returns `success = false`
+- THEN `failedSkillNames()` MUST contain `skillName`
+- AND `loadedSkillNames()` MUST NOT contain `skillName`
+
+#### Scenario: successful replace clears failure record
+
+- GIVEN `skillName` is in `failedSkillNames()` from a prior failed `load()`
+- WHEN `replace(skillName, entryClassName, validSource, hash)` returns `success = true`
+- THEN `failedSkillNames()` MUST NOT contain `skillName`
+
+#### Scenario: unload clears failure record
+
+- GIVEN `skillName` is in `failedSkillNames()` from a prior failed `load()`
+- WHEN `unload(skillName)` is called
+- THEN `failedSkillNames()` MUST NOT contain `skillName`
+
+#### Scenario: failure in one skill does not affect another
+
+- GIVEN `skillB` is successfully loaded and `activeLoader("skillB")` is non-empty
+- WHEN `load("skillA", ...)` fails (invalid source)
+- THEN `loadedSkillNames()` MUST still contain `skillB`
+- AND `activeLoader("skillB")` MUST still return a non-empty `Optional`
+
+#### Scenario: failedSkillNames is unmodifiable
+
+- WHEN `failedSkillNames()` is called
+- THEN mutation attempts on the returned set MUST throw `UnsupportedOperationException`
+
+#### Scenario: duplicate registration does not corrupt failedSkillNames
+
+- GIVEN `skillName` is successfully loaded and present in `loadedSkillNames()`
+- WHEN `load(skillName, ...)` is called again (duplicate registration, returns `success = false`)
+- THEN `failedSkillNames()` MUST NOT contain `skillName`
+- AND `activeLoader(skillName)` MUST still return a non-empty `Optional`

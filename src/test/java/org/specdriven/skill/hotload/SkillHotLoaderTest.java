@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.skill.compiler.ClassCacheManager;
 import org.specdriven.skill.compiler.LealoneClassCacheManager;
 import org.specdriven.skill.compiler.LealoneSkillSourceCompiler;
+import org.specdriven.skill.compiler.SkillCompilationException;
 import org.specdriven.skill.compiler.SkillSourceCompiler;
 
 import java.nio.file.Path;
@@ -163,5 +164,89 @@ class SkillHotLoaderTest {
 
         assertThrows(UnsupportedOperationException.class,
                 () -> loader.loadedSkillNames().add("injected"));
+    }
+
+    @Test
+    void compilationExceptionIsWrappedInHotLoaderException() {
+        SkillSourceCompiler throwingCompiler = (entryClassName, javaSource, outputDir) -> {
+            throw new SkillCompilationException("javac unavailable in test environment");
+        };
+        ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
+        SkillHotLoader loader = new LealoneSkillHotLoader(throwingCompiler, cacheManager);
+
+        assertThrows(SkillHotLoaderException.class,
+                () -> loader.load("broken", VALID_CLASS_NAME, VALID_SOURCE, "hash-infra"));
+        assertEquals(Optional.empty(), loader.activeLoader("broken"));
+    }
+
+    @Test
+    void failedLoadTrackedInFailedSkillNames() {
+        SkillHotLoader loader = newLoader();
+
+        SkillLoadResult result = loader.load("bad", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+
+        assertFalse(result.success());
+        assertTrue(loader.failedSkillNames().contains("bad"));
+        assertFalse(loader.loadedSkillNames().contains("bad"));
+    }
+
+    @Test
+    void successfulReplaceRemovesFromFailedSkillNames() {
+        SkillHotLoader loader = newLoader();
+        loader.load("skill", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+        assertTrue(loader.failedSkillNames().contains("skill"));
+
+        SkillLoadResult result = loader.replace("skill", VALID_CLASS_NAME, VALID_SOURCE, "hash-good");
+
+        assertTrue(result.success());
+        assertFalse(loader.failedSkillNames().contains("skill"));
+    }
+
+    @Test
+    void unloadClearsFailedEntry() {
+        SkillHotLoader loader = newLoader();
+        loader.load("skill", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+        assertTrue(loader.failedSkillNames().contains("skill"));
+
+        loader.unload("skill");
+
+        assertFalse(loader.failedSkillNames().contains("skill"));
+    }
+
+    @Test
+    void failureInSkillADoesNotAffectSkillB() {
+        SkillHotLoader loader = newLoader();
+        loader.load("skillB", VALID_CLASS_NAME, VALID_SOURCE, "hashB");
+        assertTrue(loader.activeLoader("skillB").isPresent());
+
+        loader.load("skillA", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+
+        assertTrue(loader.loadedSkillNames().contains("skillB"),
+                "skillB must remain in loadedSkillNames after skillA failure");
+        assertTrue(loader.activeLoader("skillB").isPresent(),
+                "skillB active loader must survive skillA compilation failure");
+    }
+
+    @Test
+    void failedSkillNamesIsUnmodifiable() {
+        SkillHotLoader loader = newLoader();
+        loader.load("bad", VALID_CLASS_NAME, INVALID_SOURCE, "hash-bad");
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> loader.failedSkillNames().add("injected"));
+    }
+
+    @Test
+    void duplicateRegistrationDoesNotCorruptFailedSkillNames() {
+        SkillHotLoader loader = newLoader();
+        loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        SkillLoadResult duplicate = loader.load("hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
+
+        assertFalse(duplicate.success());
+        assertFalse(loader.failedSkillNames().contains("hello"),
+                "Duplicate-registration rejection must not mark a successfully loaded skill as failed");
+        assertTrue(loader.activeLoader("hello").isPresent(),
+                "Active loader must remain after duplicate registration attempt");
     }
 }
