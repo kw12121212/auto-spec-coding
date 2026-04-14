@@ -51,7 +51,8 @@ class SkillServiceExecutorFactoryTest {
     @Test
     void factoryPrefersHotLoadedExecutorClass() throws Exception {
         SkillHotLoader hotLoader = new LealoneSkillHotLoader(
-                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir), true, allowingProvider());
+                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir),
+                true, allowingProvider(), (skillName, sourceHash) -> true);
         String executorClassName = "org.specdriven.skill.executor.DemoExecutor";
         String javaSource = """
                 package org.specdriven.skill.executor;

@@ -30,6 +30,7 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     private final SkillSourceCompiler compiler;
     private final ClassCacheManager cacheManager;
     private final PermissionProvider permissionProvider;
+    private final SkillSourceTrustPolicy sourceTrustPolicy;
     private final boolean activationEnabled;
     private final ConcurrentHashMap<String, ActiveEntry> registry = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillLoadResult> failedRegistry = new ConcurrentHashMap<>();
@@ -47,10 +48,20 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
             ClassCacheManager cacheManager,
             boolean activationEnabled,
             PermissionProvider permissionProvider) {
+        this(compiler, cacheManager, activationEnabled, permissionProvider, null);
+    }
+
+    public LealoneSkillHotLoader(
+            SkillSourceCompiler compiler,
+            ClassCacheManager cacheManager,
+            boolean activationEnabled,
+            PermissionProvider permissionProvider,
+            SkillSourceTrustPolicy sourceTrustPolicy) {
         this.compiler = Objects.requireNonNull(compiler, "compiler must not be null");
         this.cacheManager = Objects.requireNonNull(cacheManager, "cacheManager must not be null");
         this.activationEnabled = activationEnabled;
         this.permissionProvider = permissionProvider;
+        this.sourceTrustPolicy = sourceTrustPolicy;
     }
 
     @Override
@@ -80,6 +91,7 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         }
 
         requirePermission(skillName, ACTION_LOAD, permissionContext, entryClassName, sourceHash);
+        requireTrustedSource(skillName, sourceHash);
 
         if (registry.containsKey(skillName)) {
             return new SkillLoadResult(false, entryClassName,
@@ -121,6 +133,7 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         }
 
         requirePermission(skillName, ACTION_REPLACE, permissionContext, entryClassName, sourceHash);
+        requireTrustedSource(skillName, sourceHash);
 
         LoadOutcome outcome = resolveLoader(skillName, entryClassName, javaSource, sourceHash);
         if (!outcome.success()) {
@@ -204,6 +217,21 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     private static SkillHotLoadPermissionException permissionFailure(String skillName, String action, String reason) {
         return new SkillHotLoadPermissionException(
                 "Hot-load permission rejected for skill '" + skillName + "' action '" + action + "': " + reason);
+    }
+
+    private void requireTrustedSource(String skillName, String sourceHash) {
+        if (sourceTrustPolicy == null) {
+            throw trustFailure(skillName, sourceHash, "missing trusted-source policy");
+        }
+        if (!sourceTrustPolicy.isTrusted(skillName, sourceHash)) {
+            throw trustFailure(skillName, sourceHash, "source is not trusted");
+        }
+    }
+
+    private static SkillHotLoadTrustException trustFailure(String skillName, String sourceHash, String reason) {
+        return new SkillHotLoadTrustException(
+                "Hot-load trusted-source rejected for skill '" + skillName
+                        + "' source hash '" + sourceHash + "': " + reason);
     }
 
     /**

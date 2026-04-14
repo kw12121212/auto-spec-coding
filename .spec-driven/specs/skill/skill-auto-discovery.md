@@ -56,6 +56,8 @@ mapping:
 - MUST append per-skill hot-load failures to `DiscoveryResult.errors`
 - If hot-loading a discovered skill is rejected by the permission guard, discovery
   MUST report that rejection as a per-skill hot-load failure
+- If hot-loading a discovered skill is rejected by the trusted-source activation
+  gate, discovery MUST report that rejection as a per-skill hot-load failure
 - When a `SkillHotLoader` is configured but hot-loading activation is disabled, discovery MUST continue processing skills instead of treating disabled activation as a directory-level failure
 - When a `SkillHotLoader` is configured but hot-loading activation is disabled, discovery MUST leave SQL registration behavior unchanged
 - A hot-load permission failure MUST NOT increment `failedCount` unless SQL
@@ -63,6 +65,12 @@ mapping:
 - A hot-load permission failure MUST NOT prevent SQL registration from being
   attempted for the same skill
 - A hot-load permission failure MUST NOT prevent remaining skills from being
+  processed
+- A trusted-source hot-load failure MUST NOT increment `failedCount` unless SQL
+  registration itself also fails for that skill
+- A trusted-source hot-load failure MUST NOT prevent SQL registration from being
+  attempted for the same skill
+- A trusted-source hot-load failure MUST NOT prevent remaining skills from being
   processed
 - A hot-load failure MUST NOT increment `failedCount` unless SQL registration itself
   also fails for that skill
@@ -136,3 +144,27 @@ mapping:
 - THEN `hotLoadFailedCount` MUST increase
 - AND `errors` MUST include a `SkillDiscoveryError` indicating that explicit confirmation is required
 - AND remaining skills MUST still be processed
+
+#### Scenario: untrusted discovery hot-load is isolated from SQL registration
+
+- GIVEN a discovered skill directory contains `SKILL.md` and the expected executor
+  Java source file
+- AND `SkillAutoDiscovery` is constructed with an enabled hot-loader whose
+  permission provider returns `ALLOW`
+- AND the configured trusted-source policy rejects the discovered
+  `(skillName, sourceHash)`
+- WHEN `discoverAndRegister()` is called
+- THEN `hotLoadFailedCount` MUST increase
+- AND `errors` MUST include a `SkillDiscoveryError` describing the
+  trusted-source failure
+- AND SQL registration MUST still be attempted
+- AND `failedCount` MUST remain unchanged when SQL registration succeeds
+
+#### Scenario: untrusted discovery hot-load does not stop remaining skills
+
+- GIVEN multiple discovered skill directories contain matching Java source
+- AND hot-loading one discovered skill is rejected by the trusted-source
+  activation gate
+- WHEN `discoverAndRegister()` is called
+- THEN remaining skills MUST still be processed
+- AND SQL registration for remaining valid skills MUST still be attempted

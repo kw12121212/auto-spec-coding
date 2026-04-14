@@ -10,6 +10,7 @@ mapping:
     - src/main/java/org/specdriven/skill/hotload/LealoneSkillHotLoader.java
   tests:
     - src/test/java/org/specdriven/skill/hotload/SkillHotLoaderTest.java
+    - src/test/java/org/specdriven/skill/executor/SkillServiceExecutorFactoryTest.java
 ---
 
 # skill-hot-loader.md - delta for trusted-source-activation-gate

@@ -44,7 +44,8 @@ class SkillHotLoaderTest {
     private SkillHotLoader newLoader(boolean activationEnabled) {
         SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
-        return new LealoneSkillHotLoader(compiler, cacheManager, activationEnabled, allowingProvider());
+        return new LealoneSkillHotLoader(
+                compiler, cacheManager, activationEnabled, allowingProvider(), allowingSourceTrustPolicy());
     }
 
     private static SkillLoadResult load(
@@ -71,6 +72,10 @@ class SkillHotLoaderTest {
 
     private static PermissionProvider allowingProvider() {
         return decisionProvider(PermissionDecision.ALLOW);
+    }
+
+    private static SkillSourceTrustPolicy allowingSourceTrustPolicy() {
+        return (skillName, sourceHash) -> true;
     }
 
     private static PermissionProvider decisionProvider(PermissionDecision decision) {
@@ -163,7 +168,8 @@ class SkillHotLoaderTest {
     void disabledLoaderDoesNotActivateExistingCachedClasses() {
         SkillSourceCompiler compiler = new LealoneSkillSourceCompiler();
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
-        SkillHotLoader enabledLoader = new LealoneSkillHotLoader(compiler, cacheManager, true, allowingProvider());
+        SkillHotLoader enabledLoader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
         assertTrue(load(enabledLoader, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
 
         SkillHotLoader disabledLoader = new LealoneSkillHotLoader(compiler, cacheManager, false);
@@ -244,11 +250,13 @@ class SkillHotLoaderTest {
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
 
         // Prime the cache by loading once
-        SkillHotLoader loaderA = new LealoneSkillHotLoader(compiler, cacheManager, true, allowingProvider());
+        SkillHotLoader loaderA = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
         load(loaderA, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         // Second loader shares the same cache manager — should hit cache without recompiling
-        SkillHotLoader loaderB = new LealoneSkillHotLoader(compiler, cacheManager, true, allowingProvider());
+        SkillHotLoader loaderB = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
         SkillLoadResult result = load(loaderB, "hello", VALID_CLASS_NAME, VALID_SOURCE, "hash1");
 
         assertTrue(result.success(), "Load must succeed via cache hit");
@@ -270,7 +278,8 @@ class SkillHotLoaderTest {
             throw new SkillCompilationException("javac unavailable in test environment");
         };
         ClassCacheManager cacheManager = new LealoneClassCacheManager(tempDir);
-        SkillHotLoader loader = new LealoneSkillHotLoader(throwingCompiler, cacheManager, true, allowingProvider());
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                throwingCompiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
 
         assertThrows(SkillHotLoaderException.class,
                 () -> load(loader, "broken", VALID_CLASS_NAME, VALID_SOURCE, "hash-infra"));
@@ -282,7 +291,7 @@ class SkillHotLoaderTest {
         RecordingCompiler compiler = new RecordingCompiler();
         RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
         SkillHotLoader loader = new LealoneSkillHotLoader(
-                compiler, cacheManager, true, decisionProvider(PermissionDecision.DENY));
+                compiler, cacheManager, true, decisionProvider(PermissionDecision.DENY), allowingSourceTrustPolicy());
 
         SkillHotLoadPermissionException thrown = assertThrows(SkillHotLoadPermissionException.class,
                 () -> load(loader, "denied", VALID_CLASS_NAME, VALID_SOURCE, "hash-denied"));
@@ -302,7 +311,8 @@ class SkillHotLoaderTest {
         MutablePermissionProvider permissionProvider = new MutablePermissionProvider(PermissionDecision.ALLOW);
         RecordingCompiler compiler = new RecordingCompiler();
         RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
-        SkillHotLoader loader = new LealoneSkillHotLoader(compiler, cacheManager, true, permissionProvider);
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, permissionProvider, allowingSourceTrustPolicy());
         assertTrue(load(loader, "confirm", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
         ClassLoader original = loader.activeLoader("confirm").orElseThrow();
 
@@ -325,7 +335,8 @@ class SkillHotLoaderTest {
     void deniedUnloadPreservesActiveLoader() {
         MutablePermissionProvider permissionProvider = new MutablePermissionProvider(PermissionDecision.ALLOW);
         SkillHotLoader loader = new LealoneSkillHotLoader(
-                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir), true, permissionProvider);
+                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir),
+                true, permissionProvider, allowingSourceTrustPolicy());
         assertTrue(load(loader, "unload-denied", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
         ClassLoader original = loader.activeLoader("unload-denied").orElseThrow();
 
@@ -342,7 +353,8 @@ class SkillHotLoaderTest {
     void enabledLoadWithoutPermissionContextFailsClosed() {
         RecordingCompiler compiler = new RecordingCompiler();
         RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
-        SkillHotLoader loader = new LealoneSkillHotLoader(compiler, cacheManager, true, allowingProvider());
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), allowingSourceTrustPolicy());
 
         assertThrows(SkillHotLoadPermissionException.class,
                 () -> loader.load("missing-context", VALID_CLASS_NAME, VALID_SOURCE, "hash1"));
@@ -362,6 +374,85 @@ class SkillHotLoaderTest {
         assertEquals(0, compiler.compileCalls);
         assertEquals(0, cacheManager.isCachedCalls);
         assertEquals(Optional.empty(), loader.activeLoader("missing-provider"));
+    }
+
+    @Test
+    void untrustedLoadThrowsTrustExceptionBeforeSideEffects() {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), (skillName, sourceHash) -> false);
+
+        SkillHotLoadTrustException thrown = assertThrows(SkillHotLoadTrustException.class,
+                () -> load(loader, "untrusted", VALID_CLASS_NAME, VALID_SOURCE, "hash-untrusted"));
+
+        assertTrue(thrown.getMessage().contains("untrusted"));
+        assertTrue(thrown.getMessage().contains("hash-untrusted"));
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(0, cacheManager.resolveClassDirCalls);
+        assertEquals(0, cacheManager.loadCachedCalls);
+        assertEquals(Optional.empty(), loader.activeLoader("untrusted"));
+        assertFalse(loader.failedSkillNames().contains("untrusted"));
+    }
+
+    @Test
+    void untrustedReplacePreservesActiveLoaderBeforeSideEffects() {
+        MutableSourceTrustPolicy trustPolicy = new MutableSourceTrustPolicy(true);
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, allowingProvider(), trustPolicy);
+        assertTrue(load(loader, "replace-untrusted", VALID_CLASS_NAME, VALID_SOURCE, "hash1").success());
+        ClassLoader original = loader.activeLoader("replace-untrusted").orElseThrow();
+
+        compiler.compileCalls = 0;
+        cacheManager.reset();
+        trustPolicy.trusted = false;
+        SkillHotLoadTrustException thrown = assertThrows(SkillHotLoadTrustException.class,
+                () -> replace(loader, "replace-untrusted", VALID_CLASS_NAME, VALID_SOURCE, "hash2"));
+
+        assertTrue(thrown.getMessage().contains("replace-untrusted"));
+        assertTrue(thrown.getMessage().contains("hash2"));
+        assertEquals(original, loader.activeLoader("replace-untrusted").orElseThrow());
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(0, cacheManager.resolveClassDirCalls);
+        assertEquals(0, cacheManager.loadCachedCalls);
+        assertFalse(loader.failedSkillNames().contains("replace-untrusted"));
+    }
+
+    @Test
+    void enabledLoadWithoutTrustedSourcePolicyFailsClosed() {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        SkillHotLoader loader = new LealoneSkillHotLoader(compiler, cacheManager, true, allowingProvider());
+
+        SkillHotLoadTrustException thrown = assertThrows(SkillHotLoadTrustException.class,
+                () -> load(loader, "missing-trust", VALID_CLASS_NAME, VALID_SOURCE, "hash1"));
+
+        assertTrue(thrown.getMessage().contains("missing-trust"));
+        assertTrue(thrown.getMessage().contains("hash1"));
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(Optional.empty(), loader.activeLoader("missing-trust"));
+    }
+
+    @Test
+    void deniedPermissionDoesNotConsultTrustedSourcePolicy() {
+        RecordingCompiler compiler = new RecordingCompiler();
+        RecordingClassCacheManager cacheManager = new RecordingClassCacheManager(tempDir);
+        RecordingSourceTrustPolicy trustPolicy = new RecordingSourceTrustPolicy(true);
+        SkillHotLoader loader = new LealoneSkillHotLoader(
+                compiler, cacheManager, true, decisionProvider(PermissionDecision.DENY), trustPolicy);
+
+        assertThrows(SkillHotLoadPermissionException.class,
+                () -> load(loader, "permission-first", VALID_CLASS_NAME, VALID_SOURCE, "hash1"));
+
+        assertEquals(0, trustPolicy.calls);
+        assertEquals(0, compiler.compileCalls);
+        assertEquals(0, cacheManager.isCachedCalls);
+        assertEquals(Optional.empty(), loader.activeLoader("permission-first"));
     }
 
     @Test
@@ -453,6 +544,34 @@ class SkillHotLoaderTest {
 
         @Override
         public void revoke(Permission permission, PermissionContext context) {
+        }
+    }
+
+    private static final class MutableSourceTrustPolicy implements SkillSourceTrustPolicy {
+        private boolean trusted;
+
+        private MutableSourceTrustPolicy(boolean trusted) {
+            this.trusted = trusted;
+        }
+
+        @Override
+        public boolean isTrusted(String skillName, String sourceHash) {
+            return trusted;
+        }
+    }
+
+    private static final class RecordingSourceTrustPolicy implements SkillSourceTrustPolicy {
+        private final boolean trusted;
+        private int calls;
+
+        private RecordingSourceTrustPolicy(boolean trusted) {
+            this.trusted = trusted;
+        }
+
+        @Override
+        public boolean isTrusted(String skillName, String sourceHash) {
+            calls++;
+            return trusted;
         }
     }
 

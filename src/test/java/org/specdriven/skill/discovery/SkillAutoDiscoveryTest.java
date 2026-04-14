@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.skill.compiler.SkillCompilationDiagnostic;
 import org.specdriven.skill.hotload.SkillHotLoadPermissionException;
+import org.specdriven.skill.hotload.SkillHotLoadTrustException;
 import org.specdriven.skill.hotload.SkillHotLoader;
 import org.specdriven.skill.hotload.SkillLoadResult;
 import org.specdriven.skill.sql.SkillMarkdownParser;
@@ -204,6 +205,44 @@ class SkillAutoDiscoveryTest {
         assertEquals(0, result.hotLoadedCount());
         assertEquals(1, result.hotLoadFailedCount());
         assertTrue(result.errors().stream().anyMatch(error -> error.errorMessage().contains("confirmation")));
+    }
+
+    @Test
+    void untrustedHotLoad_isReportedWithoutChangingSqlFailureCount() throws Exception {
+        createSkill("untrusted-skill");
+        Path javaSource = writeExecutorJavaSource("untrusted-skill", "UntrustedSkillExecutor");
+        RecordingHotLoader hotLoader = new RecordingHotLoader(new SkillHotLoadTrustException(
+                "Hot-load trusted-source rejected for skill 'untrusted-skill' source hash 'hash1': source is not trusted"));
+
+        DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, skillsDir, hotLoader).discoverAndRegister();
+
+        assertEquals(1, result.registeredCount());
+        assertEquals(0, result.failedCount());
+        assertEquals(0, result.hotLoadedCount());
+        assertEquals(1, result.hotLoadFailedCount());
+        assertEquals(1, result.errors().size());
+        assertEquals(javaSource, result.errors().getFirst().path());
+        assertTrue(result.errors().getFirst().errorMessage().contains("trusted-source"));
+        assertEquals(1, hotLoader.calls.size());
+    }
+
+    @Test
+    void untrustedHotLoad_doesNotStopRemainingSkills() throws Exception {
+        createSkill("untrusted-skill");
+        createSkill("another-skill");
+        writeExecutorJavaSource("untrusted-skill", "UntrustedSkillExecutor");
+        writeExecutorJavaSource("another-skill", "AnotherSkillExecutor");
+        RecordingHotLoader hotLoader = new RecordingHotLoader(new SkillHotLoadTrustException(
+                "Hot-load trusted-source rejected: source is not trusted"));
+
+        DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, skillsDir, hotLoader).discoverAndRegister();
+
+        assertEquals(2, result.registeredCount());
+        assertEquals(0, result.failedCount());
+        assertEquals(0, result.hotLoadedCount());
+        assertEquals(2, result.hotLoadFailedCount());
+        assertEquals(2, hotLoader.calls.size());
+        assertTrue(result.errors().stream().allMatch(error -> error.errorMessage().contains("trusted-source")));
     }
 
     @Test
