@@ -80,4 +80,23 @@ class DefaultPermissionProviderWithStoreTest {
         withStore.revoke(perm, ctx);
         assertEquals(PermissionDecision.CONFIRM, withStore.check(perm, ctx));
     }
+
+    @Test
+    void defaultPolicyDeniesHotLoadActionWithoutStoredGrant() {
+        Permission perm = new Permission("skill.hotload.load", "skill:demo", Map.of());
+        PermissionContext ctx = new PermissionContext("skill-hot-loader", "load", "agent-1");
+
+        assertEquals(PermissionDecision.DENY, withStore.check(perm, ctx));
+        assertEquals(PermissionDecision.DENY, withoutStore.check(perm, ctx));
+    }
+
+    @Test
+    void storedPolicyCanAllowHotLoadAction() {
+        Permission perm = new Permission("skill.hotload.replace", "skill:demo", Map.of());
+        PermissionContext ctx = new PermissionContext("skill-hot-loader", "replace", "agent-1");
+
+        withStore.grant(perm, ctx);
+
+        assertEquals(PermissionDecision.ALLOW, withStore.check(perm, ctx));
+    }
 }

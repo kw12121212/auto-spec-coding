@@ -1,5 +1,9 @@
 package org.specdriven.skill.hotload;
 
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.skill.compiler.ClassCacheException;
 import org.specdriven.skill.compiler.ClassCacheManager;
 import org.specdriven.skill.compiler.SkillCompilationDiagnostic;
@@ -9,6 +13,7 @@ import org.specdriven.skill.compiler.SkillSourceCompiler;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -18,9 +23,13 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
     private static final String HOT_LOADING_DISABLED_MESSAGE =
             "Hot-loading is disabled; explicit programmatic enablement is required";
+    private static final String ACTION_LOAD = "skill.hotload.load";
+    private static final String ACTION_REPLACE = "skill.hotload.replace";
+    private static final String ACTION_UNLOAD = "skill.hotload.unload";
 
     private final SkillSourceCompiler compiler;
     private final ClassCacheManager cacheManager;
+    private final PermissionProvider permissionProvider;
     private final boolean activationEnabled;
     private final ConcurrentHashMap<String, ActiveEntry> registry = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillLoadResult> failedRegistry = new ConcurrentHashMap<>();
@@ -30,9 +39,18 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     }
 
     public LealoneSkillHotLoader(SkillSourceCompiler compiler, ClassCacheManager cacheManager, boolean activationEnabled) {
+        this(compiler, cacheManager, activationEnabled, null);
+    }
+
+    public LealoneSkillHotLoader(
+            SkillSourceCompiler compiler,
+            ClassCacheManager cacheManager,
+            boolean activationEnabled,
+            PermissionProvider permissionProvider) {
         this.compiler = Objects.requireNonNull(compiler, "compiler must not be null");
         this.cacheManager = Objects.requireNonNull(cacheManager, "cacheManager must not be null");
         this.activationEnabled = activationEnabled;
+        this.permissionProvider = permissionProvider;
     }
 
     @Override
@@ -42,6 +60,16 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
     @Override
     public SkillLoadResult load(String skillName, String entryClassName, String javaSource, String sourceHash) {
+        return load(skillName, entryClassName, javaSource, sourceHash, null);
+    }
+
+    @Override
+    public SkillLoadResult load(
+            String skillName,
+            String entryClassName,
+            String javaSource,
+            String sourceHash,
+            PermissionContext permissionContext) {
         Objects.requireNonNull(skillName, "skillName must not be null");
         Objects.requireNonNull(entryClassName, "entryClassName must not be null");
         Objects.requireNonNull(javaSource, "javaSource must not be null");
@@ -50,6 +78,8 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         if (!activationEnabled) {
             return disabledResult(entryClassName);
         }
+
+        requirePermission(skillName, ACTION_LOAD, permissionContext, entryClassName, sourceHash);
 
         if (registry.containsKey(skillName)) {
             return new SkillLoadResult(false, entryClassName,
@@ -71,6 +101,16 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
     @Override
     public SkillLoadResult replace(String skillName, String entryClassName, String javaSource, String sourceHash) {
+        return replace(skillName, entryClassName, javaSource, sourceHash, null);
+    }
+
+    @Override
+    public SkillLoadResult replace(
+            String skillName,
+            String entryClassName,
+            String javaSource,
+            String sourceHash,
+            PermissionContext permissionContext) {
         Objects.requireNonNull(skillName, "skillName must not be null");
         Objects.requireNonNull(entryClassName, "entryClassName must not be null");
         Objects.requireNonNull(javaSource, "javaSource must not be null");
@@ -79,6 +119,8 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
         if (!activationEnabled) {
             return disabledResult(entryClassName);
         }
+
+        requirePermission(skillName, ACTION_REPLACE, permissionContext, entryClassName, sourceHash);
 
         LoadOutcome outcome = resolveLoader(skillName, entryClassName, javaSource, sourceHash);
         if (!outcome.success()) {
@@ -94,7 +136,16 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
 
     @Override
     public void unload(String skillName) {
+        unload(skillName, null);
+    }
+
+    @Override
+    public void unload(String skillName, PermissionContext permissionContext) {
         Objects.requireNonNull(skillName, "skillName must not be null");
+        if (!activationEnabled) {
+            return;
+        }
+        requirePermission(skillName, ACTION_UNLOAD, permissionContext, null, null);
         registry.remove(skillName);
         failedRegistry.remove(skillName);
     }
@@ -119,6 +170,40 @@ public final class LealoneSkillHotLoader implements SkillHotLoader {
     private static SkillLoadResult disabledResult(String entryClassName) {
         return new SkillLoadResult(false, entryClassName,
                 List.of(new SkillCompilationDiagnostic(HOT_LOADING_DISABLED_MESSAGE, -1, -1)));
+    }
+
+    private void requirePermission(
+            String skillName,
+            String action,
+            PermissionContext permissionContext,
+            String entryClassName,
+            String sourceHash) {
+        if (permissionProvider == null || permissionContext == null) {
+            throw permissionFailure(skillName, action, "missing permission provider or caller context");
+        }
+        Permission permission = new Permission(
+                action,
+                "skill:" + skillName,
+                permissionConstraints(entryClassName, sourceHash));
+        PermissionDecision decision = permissionProvider.check(permission, permissionContext);
+        if (decision != PermissionDecision.ALLOW) {
+            String reason = decision == PermissionDecision.CONFIRM
+                    ? "explicit confirmation is required"
+                    : "permission was denied";
+            throw permissionFailure(skillName, action, reason);
+        }
+    }
+
+    private static Map<String, String> permissionConstraints(String entryClassName, String sourceHash) {
+        if (entryClassName == null && sourceHash == null) {
+            return Map.of();
+        }
+        return Map.of("entryClassName", entryClassName, "sourceHash", sourceHash);
+    }
+
+    private static SkillHotLoadPermissionException permissionFailure(String skillName, String action, String reason) {
+        return new SkillHotLoadPermissionException(
+                "Hot-load permission rejected for skill '" + skillName + "' action '" + action + "': " + reason);
     }
 
     /**

@@ -1,5 +1,7 @@
 package org.specdriven.skill.discovery;
 
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.skill.hotload.SkillHotLoadPermissionException;
 import org.specdriven.skill.hotload.SkillHotLoader;
 import org.specdriven.skill.hotload.SkillHotLoaderException;
 import org.specdriven.skill.hotload.SkillLoadResult;
@@ -31,6 +33,8 @@ import java.util.stream.Stream;
 public final class SkillAutoDiscovery {
 
     private static final String EXECUTOR_PACKAGE = "org.specdriven.skill.executor";
+    private static final PermissionContext HOT_LOAD_PERMISSION_CONTEXT =
+            new PermissionContext("skill-auto-discovery", "hot-load", "skill-auto-discovery");
 
     private final String jdbcUrl;
     private final Path skillsDir;
@@ -121,13 +125,15 @@ public final class SkillAutoDiscovery {
         try {
             String javaSource = Files.readString(javaSourcePath);
             String sourceHash = sha256(javaSource);
-            SkillLoadResult result = hotLoader.load(skillName, entryClassName, javaSource, sourceHash);
+            SkillLoadResult result = hotLoader.load(
+                    skillName, entryClassName, javaSource, sourceHash, HOT_LOAD_PERMISSION_CONTEXT);
             if (result.success()) {
                 return HotLoadOutcome.success(javaSourcePath);
             }
             return HotLoadOutcome.failure(javaSourcePath, diagnosticMessage(result));
-        } catch (IOException | SkillHotLoaderException e) {
-            return HotLoadOutcome.failure(javaSourcePath, e.getMessage() != null ? e.getMessage() : e.getClass().getName());
+        } catch (IOException | SkillHotLoaderException | SkillHotLoadPermissionException e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+            return HotLoadOutcome.failure(javaSourcePath, message);
         }
     }
 

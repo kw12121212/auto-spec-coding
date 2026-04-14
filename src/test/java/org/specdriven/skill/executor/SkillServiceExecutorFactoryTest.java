@@ -16,6 +16,10 @@ import com.lealone.db.service.Service;
 import com.lealone.db.service.ServiceExecutor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.skill.compiler.LealoneClassCacheManager;
 import org.specdriven.skill.compiler.LealoneSkillSourceCompiler;
 import org.specdriven.skill.hotload.LealoneSkillHotLoader;
@@ -25,6 +29,9 @@ import org.specdriven.skill.hotload.SkillLoadResult;
 import sun.misc.Unsafe;
 
 class SkillServiceExecutorFactoryTest {
+
+    private static final PermissionContext PERMISSION_CONTEXT =
+            new PermissionContext("test-hot-loader", "hot-load", "test-requester");
 
     @TempDir
     Path tempDir;
@@ -44,7 +51,7 @@ class SkillServiceExecutorFactoryTest {
     @Test
     void factoryPrefersHotLoadedExecutorClass() throws Exception {
         SkillHotLoader hotLoader = new LealoneSkillHotLoader(
-                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir), true);
+                new LealoneSkillSourceCompiler(), new LealoneClassCacheManager(tempDir), true, allowingProvider());
         String executorClassName = "org.specdriven.skill.executor.DemoExecutor";
         String javaSource = """
                 package org.specdriven.skill.executor;
@@ -56,7 +63,7 @@ class SkillServiceExecutorFactoryTest {
                     public com.lealone.db.service.Service service() { return service; }
                 }
                 """;
-        SkillLoadResult result = hotLoader.load("demo", executorClassName, javaSource, "hash-demo");
+        SkillLoadResult result = hotLoader.load("demo", executorClassName, javaSource, "hash-demo", PERMISSION_CONTEXT);
         assertTrue(result.success());
 
         SkillServiceExecutorFactory factory = new SkillServiceExecutorFactory(hotLoader);
@@ -122,12 +129,36 @@ class SkillServiceExecutorFactoryTest {
         }
 
         @Override
+        public SkillLoadResult load(
+                String skillName,
+                String entryClassName,
+                String javaSource,
+                String sourceHash,
+                PermissionContext permissionContext) {
+            throw new UnsupportedOperationException("load not used in this test");
+        }
+
+        @Override
         public SkillLoadResult replace(String skillName, String entryClassName, String javaSource, String sourceHash) {
             throw new UnsupportedOperationException("replace not used in this test");
         }
 
         @Override
+        public SkillLoadResult replace(
+                String skillName,
+                String entryClassName,
+                String javaSource,
+                String sourceHash,
+                PermissionContext permissionContext) {
+            throw new UnsupportedOperationException("replace not used in this test");
+        }
+
+        @Override
         public void unload(String skillName) {
+        }
+
+        @Override
+        public void unload(String skillName, PermissionContext permissionContext) {
         }
 
         @Override
@@ -144,5 +175,22 @@ class SkillServiceExecutorFactoryTest {
         public Set<String> failedSkillNames() {
             return Set.of();
         }
+    }
+
+    private static PermissionProvider allowingProvider() {
+        return new PermissionProvider() {
+            @Override
+            public PermissionDecision check(Permission permission, PermissionContext context) {
+                return PermissionDecision.ALLOW;
+            }
+
+            @Override
+            public void grant(Permission permission, PermissionContext context) {
+            }
+
+            @Override
+            public void revoke(Permission permission, PermissionContext context) {
+            }
+        };
     }
 }

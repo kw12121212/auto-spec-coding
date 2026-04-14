@@ -27,7 +27,7 @@
 
 ## Planned Changes
 - `hot-load-default-disabled` - Declared: complete - 为动态编译与热加载增加默认关闭策略和显式启用开关，避免能力被意外暴露
-- `hot-load-permission-guard` - Declared: planned - 为编译、加载、卸载和替换入口增加权限校验，限制仅受信管理员可操作
+- `hot-load-permission-guard` - Declared: complete - 为编译、加载、卸载和替换入口增加权限校验，限制仅受信管理员可操作
 - `trusted-source-activation-gate` - Declared: planned - 在激活前增加受信来源校验与阻断逻辑，防止未经授权的源码进入生效路径
 - `hot-load-audit-log` - Declared: planned - 为 compile/load/unload/replace 操作增加最小审计记录，支持追踪与回溯
 
@@ -50,4 +50,3 @@
 
 - 本 milestone 目标是治理而不是沙箱；即使完成后，也不意味着系统可以安全执行任意不受信代码
 - 若未来需要多租户或 plugin market，应另开更严格的安全与隔离专题 milestone
-

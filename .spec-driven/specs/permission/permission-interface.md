@@ -34,6 +34,11 @@ mapping:
 - MUST treat `PermissionDecision.ALLOW` as permission granted
 - MUST treat `PermissionDecision.DENY` as permission rejected without further confirmation
 - MUST treat `PermissionDecision.CONFIRM` as permission requiring an explicit approval step from a later hook or interface layer before execution may proceed
+- Existing `PermissionDecision.ALLOW`, `PermissionDecision.DENY`, and
+  `PermissionDecision.CONFIRM` meanings MUST remain unchanged for hot-load
+  permissions
+- Hot-load permission checks MUST use ordinary `Permission` and
+  `PermissionContext` values
 
 ### Requirement: Permission record
 
@@ -57,7 +62,21 @@ mapping:
 - The default permission policy MUST return `CONFIRM` for file mutation requests, including write and edit operations
 - The default permission policy MUST return `ALLOW` for read and search operations targeting paths inside the active working directory tree
 - The default permission policy MUST return `DENY` for read and search operations targeting paths outside the active working directory tree
+- The default permission policy MUST return `DENY` for hot-load actions unless an
+  explicit stored policy grants the requested permission
 - The default permission policy MAY be extended by later changes, but those extensions MUST preserve the observable meanings of `ALLOW`, `DENY`, and `CONFIRM`
+
+### Requirement: Hot-load permission naming
+
+- `skill.hotload.load` MUST represent permission to load and potentially compile a
+  dynamic skill executor for activation
+- `skill.hotload.replace` MUST represent permission to replace and potentially
+  compile a dynamic skill executor for activation
+- `skill.hotload.unload` MUST represent permission to unload an active dynamic
+  skill executor
+- Hot-load permission resources MUST use the form `skill:<skillName>`
+- Hot-load permission constraints MAY include operation metadata such as
+  `entryClassName` or `sourceHash`, but constraints MUST NOT include raw Java source
 
 ### Requirement: Hook-based permission enforcement
 
@@ -121,3 +140,16 @@ mapping:
 - `check()` MUST fall through to existing default rules when no stored decision exists or no store is configured
 - `grant()` MUST delegate to `store.grant()` when a store is present
 - `revoke()` MUST delegate to `store.revoke()` when a store is present
+
+#### Scenario: default policy denies hot-load action without stored grant
+
+- GIVEN a default permission provider with no stored policy for a hot-load action
+- WHEN the provider checks `skill.hotload.load` on `skill:<skillName>`
+- THEN it MUST return `DENY`
+
+#### Scenario: stored policy can allow hot-load action
+
+- GIVEN a default permission provider backed by a policy store
+- AND the policy store contains an `ALLOW` decision for `skill.hotload.replace` on `skill:<skillName>` for the requester
+- WHEN the provider checks that permission and context
+- THEN it MUST return `ALLOW`

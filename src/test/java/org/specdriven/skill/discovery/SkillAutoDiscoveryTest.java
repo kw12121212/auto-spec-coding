@@ -3,7 +3,9 @@ package org.specdriven.skill.discovery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.permission.PermissionContext;
 import org.specdriven.skill.compiler.SkillCompilationDiagnostic;
+import org.specdriven.skill.hotload.SkillHotLoadPermissionException;
 import org.specdriven.skill.hotload.SkillHotLoader;
 import org.specdriven.skill.hotload.SkillLoadResult;
 import org.specdriven.skill.sql.SkillMarkdownParser;
@@ -127,6 +129,9 @@ class SkillAutoDiscoveryTest {
         assertEquals("org.specdriven.skill.executor.GoodSkillExecutor", call.entryClassName());
         assertTrue(call.javaSource().contains("class GoodSkillExecutor"));
         assertFalse(call.sourceHash().isBlank());
+        assertEquals("skill-auto-discovery", call.permissionContext().toolName());
+        assertEquals("hot-load", call.permissionContext().operation());
+        assertEquals("skill-auto-discovery", call.permissionContext().requester());
     }
 
     @Test
@@ -162,6 +167,43 @@ class SkillAutoDiscoveryTest {
         assertEquals(1, result.errors().size());
         assertEquals(javaSource, result.errors().getFirst().path());
         assertTrue(result.errors().getFirst().errorMessage().contains("compile failed"));
+    }
+
+    @Test
+    void deniedHotLoad_isReportedWithoutChangingSqlFailureCount() throws Exception {
+        createSkill("good-skill");
+        Path javaSource = writeExecutorJavaSource("good-skill", "GoodSkillExecutor");
+        RecordingHotLoader hotLoader = new RecordingHotLoader(new SkillHotLoadPermissionException(
+                "Hot-load permission rejected for skill 'good-skill' action 'skill.hotload.load': permission was denied"));
+
+        DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, skillsDir, hotLoader).discoverAndRegister();
+
+        assertEquals(1, result.registeredCount());
+        assertEquals(0, result.failedCount());
+        assertEquals(0, result.hotLoadedCount());
+        assertEquals(1, result.hotLoadFailedCount());
+        assertEquals(1, result.errors().size());
+        assertEquals(javaSource, result.errors().getFirst().path());
+        assertTrue(result.errors().getFirst().errorMessage().contains("permission"));
+        assertEquals(1, hotLoader.calls.size());
+    }
+
+    @Test
+    void confirmationRequiredHotLoad_isReportedAndRemainingSkillsAreProcessed() throws Exception {
+        createSkill("needs-confirmation");
+        createSkill("good-skill");
+        writeExecutorJavaSource("needs-confirmation", "NeedsConfirmationExecutor");
+        RecordingHotLoader hotLoader = new RecordingHotLoader(new SkillHotLoadPermissionException(
+                "Hot-load permission rejected for skill 'needs-confirmation' action 'skill.hotload.load': "
+                        + "explicit confirmation is required"));
+
+        DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, skillsDir, hotLoader).discoverAndRegister();
+
+        assertEquals(2, result.registeredCount());
+        assertEquals(0, result.failedCount());
+        assertEquals(0, result.hotLoadedCount());
+        assertEquals(1, result.hotLoadFailedCount());
+        assertTrue(result.errors().stream().anyMatch(error -> error.errorMessage().contains("confirmation")));
     }
 
     @Test
@@ -207,21 +249,36 @@ class SkillAutoDiscoveryTest {
         return javaSource;
     }
 
-    private record LoadCall(String skillName, String entryClassName, String javaSource, String sourceHash) {
+    private record LoadCall(
+            String skillName,
+            String entryClassName,
+            String javaSource,
+            String sourceHash,
+            PermissionContext permissionContext) {
     }
 
     private static final class RecordingHotLoader implements SkillHotLoader {
         private final boolean activationEnabled;
         private final SkillLoadResult nextResult;
+        private final RuntimeException nextException;
         private final List<LoadCall> calls = new ArrayList<>();
 
         private RecordingHotLoader(SkillLoadResult nextResult) {
-            this(true, nextResult);
+            this(true, nextResult, null);
+        }
+
+        private RecordingHotLoader(RuntimeException nextException) {
+            this(true, null, nextException);
         }
 
         private RecordingHotLoader(boolean activationEnabled, SkillLoadResult nextResult) {
+            this(activationEnabled, nextResult, null);
+        }
+
+        private RecordingHotLoader(boolean activationEnabled, SkillLoadResult nextResult, RuntimeException nextException) {
             this.activationEnabled = activationEnabled;
             this.nextResult = nextResult;
+            this.nextException = nextException;
         }
 
         @Override
@@ -231,7 +288,20 @@ class SkillAutoDiscoveryTest {
 
         @Override
         public SkillLoadResult load(String skillName, String entryClassName, String javaSource, String sourceHash) {
-            calls.add(new LoadCall(skillName, entryClassName, javaSource, sourceHash));
+            throw new UnsupportedOperationException("permission-aware load is required in discovery tests");
+        }
+
+        @Override
+        public SkillLoadResult load(
+                String skillName,
+                String entryClassName,
+                String javaSource,
+                String sourceHash,
+                PermissionContext permissionContext) {
+            calls.add(new LoadCall(skillName, entryClassName, javaSource, sourceHash, permissionContext));
+            if (nextException != null) {
+                throw nextException;
+            }
             return nextResult;
         }
 
@@ -241,7 +311,21 @@ class SkillAutoDiscoveryTest {
         }
 
         @Override
+        public SkillLoadResult replace(
+                String skillName,
+                String entryClassName,
+                String javaSource,
+                String sourceHash,
+                PermissionContext permissionContext) {
+            throw new UnsupportedOperationException("replace not used in this test");
+        }
+
+        @Override
         public void unload(String skillName) {
+        }
+
+        @Override
+        public void unload(String skillName, PermissionContext permissionContext) {
         }
 
         @Override
