@@ -36,6 +36,7 @@ public class DefaultPermissionProvider implements PermissionProvider {
             case "read", "search" -> isWithinWorkDir(permission.resource())
                     ? PermissionDecision.ALLOW
                     : PermissionDecision.DENY;
+            case "llm.config.set" -> PermissionDecision.DENY;
             default -> PermissionDecision.DENY;
         };
     }

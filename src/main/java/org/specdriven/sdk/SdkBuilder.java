@@ -4,6 +4,7 @@ import org.specdriven.agent.agent.*;
 import org.specdriven.agent.config.Config;
 import org.specdriven.agent.config.ConfigException;
 import org.specdriven.agent.config.ConfigLoader;
+import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.question.MobileChannelConfig;
 import org.specdriven.agent.question.MobileChannelProvider;
@@ -33,6 +34,7 @@ public class SdkBuilder {
     private final List<SdkEventListener> globalListeners = new ArrayList<>();
     private final Map<EventType, List<SdkEventListener>> typedGlobalListeners = new HashMap<>();
     private BuiltinToolManager builtinToolManager;
+    private PermissionProvider permissionProvider;
     private DeliveryMode deliveryModeOverride;
     private final MobileChannelRegistry channelRegistry = new MobileChannelRegistry();
     private List<MobileChannelConfig> channelConfigs = Collections.emptyList();
@@ -89,6 +91,14 @@ public class SdkBuilder {
     }
 
     /**
+     * Sets the permission provider for LLM config mutation guards.
+     */
+    public SdkBuilder permissionProvider(PermissionProvider provider) {
+        this.permissionProvider = provider;
+        return this;
+    }
+
+    /**
      * Sets a global delivery mode override applied to all agents.
      */
     public SdkBuilder deliveryModeOverride(DeliveryMode mode) {
@@ -133,7 +143,7 @@ public class SdkBuilder {
                 Map<String, LlmProviderFactory> factories = new HashMap<>();
                 factories.put("openai", new OpenAiProviderFactory());
                 factories.put("claude", new ClaudeProviderFactory());
-                registry = DefaultLlmProviderRegistry.fromConfig(config, factories, eventBus);
+                registry = DefaultLlmProviderRegistry.fromConfig(config, factories, null, eventBus, permissionProvider);
             }
 
             // Merge system prompt: explicit > sdkConfig > config

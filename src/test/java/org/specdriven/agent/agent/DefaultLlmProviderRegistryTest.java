@@ -6,6 +6,10 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.llm.LealoneRuntimeLlmConfigStore;
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.agent.vault.SecretVault;
 import org.specdriven.agent.vault.VaultEntry;
 import org.specdriven.agent.vault.VaultException;
@@ -812,6 +816,108 @@ class DefaultLlmProviderRegistryTest {
         assertEquals("claude:claude-opus", laterResponse.content());
         assertEquals(List.of(first), openaiProvider.snapshotsSeen);
         assertEquals(List.of(second), claudeProvider.snapshotsSeen);
+        registry.close();
+    }
+
+    // --- permission guard ---
+
+    private static PermissionProvider stubPermissionProvider(PermissionDecision decision) {
+        return new PermissionProvider() {
+            @Override public PermissionDecision check(Permission p, PermissionContext c) { return decision; }
+            @Override public void grant(Permission p, PermissionContext c) {}
+            @Override public void revoke(Permission p, PermissionContext c) {}
+        };
+    }
+
+    @Test
+    void applySetLlmStatement_allowed_whenPermissionGranted() {
+        PermissionProvider allowing = stubPermissionProvider(PermissionDecision.ALLOW);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, null, allowing);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot updated = registry.applySetLlmStatement(
+                "session-a", "SET LLM model='gpt-4.1'");
+
+        assertEquals("gpt-4.1", updated.model());
+        assertEquals("gpt-4.1", registry.snapshot("session-a").model());
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_rejected_whenPermissionDenied() {
+        PermissionProvider denying = stubPermissionProvider(PermissionDecision.DENY);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, null, denying);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot before = registry.snapshot("session-a");
+
+        SetLlmSqlException ex = assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'"));
+        assertTrue(ex.getMessage().contains("permission denied"));
+        assertEquals(before, registry.snapshot("session-a"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_rejected_whenConfirmRequired() {
+        PermissionProvider confirming = stubPermissionProvider(PermissionDecision.CONFIRM);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, null, confirming);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        SetLlmSqlException ex = assertThrows(SetLlmSqlException.class,
+                () -> registry.applySetLlmStatement("session-a", "SET LLM model='gpt-4.1'"));
+        assertTrue(ex.getMessage().contains("confirmation is required"));
+        registry.close();
+    }
+
+    @Test
+    void applySetLlmStatement_noCheck_whenPermissionProviderNull() {
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.setDefault("openai");
+
+        LlmConfigSnapshot updated = registry.applySetLlmStatement(
+                "session-a", "SET LLM model='gpt-4.1'");
+
+        assertEquals("gpt-4.1", updated.model());
+        registry.close();
+    }
+
+    @Test
+    void clearSessionSnapshot_allowed_whenPermissionGranted() {
+        PermissionProvider allowing = stubPermissionProvider(PermissionDecision.ALLOW);
+        SimpleEventBus eventBus = new SimpleEventBus();
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, eventBus, allowing);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+        registry.replaceSessionSnapshot("session-a", new LlmConfigSnapshot(
+                "claude", "https://api.anthropic.com/v1", "claude-opus", 20, 1));
+
+        registry.clearSessionSnapshot("session-a");
+
+        assertEquals("openai", registry.snapshot("session-a").providerName());
+        registry.close();
+    }
+
+    @Test
+    void clearSessionSnapshot_rejected_whenPermissionDenied() {
+        PermissionProvider denying = stubPermissionProvider(PermissionDecision.DENY);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(null, null, denying);
+        registry.register("openai", new StubProvider("https://api.openai.com/v1", "key-a"));
+        registry.register("claude", new StubProvider("https://api.anthropic.com/v1", "key-b"));
+        registry.setDefault("openai");
+        LlmConfigSnapshot override = new LlmConfigSnapshot(
+                "claude", "https://api.anthropic.com/v1", "claude-opus", 20, 1);
+        registry.replaceSessionSnapshot("session-a", override);
+
+        assertThrows(SetLlmSqlException.class,
+                () -> registry.clearSessionSnapshot("session-a"));
+
+        assertEquals(override, registry.snapshot("session-a"));
         registry.close();
     }
 

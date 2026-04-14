@@ -28,7 +28,7 @@
 
 ## Planned Changes
 - `llm-config-vault-integration` - Declared: complete - 接入 SecretVault 和 VaultResolver，确保敏感字段通过 Vault 引用管理并参与运行时配置装配
-- `set-llm-permission-guard` - Declared: planned - 为 SET LLM 与其他配置更新入口增加权限校验，限制仅受信操作者可修改运行时配置
+- `set-llm-permission-guard` - Declared: complete - 为 SET LLM 与其他配置更新入口增加权限校验，限制仅受信操作者可修改运行时配置
 - `llm-config-secret-redaction` - Declared: planned - 在配置持久化、事件和日志链路中阻断 secret 明文并输出脱敏内容
 - `llm-config-change-audit` - Declared: planned - 为成功与失败的配置变更增加最小审计记录，支持后续追踪
 
@@ -52,4 +52,5 @@
 
 - 本 milestone 不替代 Vault，只负责把动态 LLM 配置接到既有 Vault 边界上
 - 若项目仅在本地受信环境中使用，可先实现 M28；若要在共享或生产环境开放动态配置，应与本 milestone 配套规划
+
 

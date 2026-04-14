@@ -10,6 +10,10 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.llm.RuntimeLlmConfigStore;
+import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
+import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.agent.vault.SecretVault;
 import org.specdriven.agent.vault.VaultResolver;
 
@@ -25,6 +29,8 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     private static final String DEFAULT_SCOPE = "default";
     private static final String SESSION_SCOPE = "session";
     private static final String EVENT_SOURCE = "llm-runtime-config";
+    private static final String ACTION_LLM_CONFIG_SET = "llm.config.set";
+    private static final String PERMISSION_TOOL_NAME = "llm-runtime-config";
 
     private final ConcurrentHashMap<String, LlmProvider> providers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, SkillRoute> skillRouting = new ConcurrentHashMap<>();
@@ -32,20 +38,26 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     private final AtomicReference<LlmConfigSnapshot> defaultSnapshotOverride = new AtomicReference<>();
     private final RuntimeLlmConfigStore runtimeConfigStore;
     private final EventBus eventBus;
+    private final PermissionProvider permissionProvider;
     private final SetLlmStatementParser setLlmStatementParser = new SetLlmStatementParser();
     private volatile String defaultProviderName;
 
     public DefaultLlmProviderRegistry() {
-        this(null, null);
+        this(null, null, null);
     }
 
     public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore) {
-        this(runtimeConfigStore, null);
+        this(runtimeConfigStore, null, null);
     }
 
     public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore, EventBus eventBus) {
+        this(runtimeConfigStore, eventBus, null);
+    }
+
+    public DefaultLlmProviderRegistry(RuntimeLlmConfigStore runtimeConfigStore, EventBus eventBus, PermissionProvider permissionProvider) {
         this.runtimeConfigStore = runtimeConfigStore;
         this.eventBus = eventBus;
+        this.permissionProvider = permissionProvider;
         if (runtimeConfigStore != null) {
             defaultSnapshotOverride.set(runtimeConfigStore.loadDefaultSnapshot().orElse(null));
         }
@@ -159,6 +171,7 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     @Override
     public LlmConfigSnapshot applySetLlmStatement(String sessionId, String sql) {
         requireSessionId(sessionId);
+        requirePermission(sessionId, "set");
         Map<String, String> assignments = setLlmStatementParser.parseAssignments(sql);
         LlmConfigSnapshot current = snapshot(sessionId);
         LlmConfigSnapshot replacement = buildReplacementSnapshot(current, assignments);
@@ -170,6 +183,7 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     @Override
     public void clearSessionSnapshot(String sessionId) {
         requireSessionId(sessionId);
+        requirePermission(sessionId, "clear");
         LlmConfigSnapshot previous = sessionSnapshots.remove(sessionId);
         if (previous != null) {
             publishConfigChanged(SESSION_SCOPE, sessionId, previous, snapshot(sessionId));
@@ -235,6 +249,27 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
     private void requireSessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("sessionId must not be null or blank");
+        }
+    }
+
+    private void requirePermission(String sessionId, String operation) {
+        if (permissionProvider == null) {
+            return;
+        }
+        Permission permission = new Permission(
+                ACTION_LLM_CONFIG_SET,
+                "session:" + sessionId,
+                Map.of("operation", operation));
+        PermissionContext context = new PermissionContext(
+                PERMISSION_TOOL_NAME,
+                operation,
+                null);
+        PermissionDecision decision = permissionProvider.check(permission, context);
+        if (decision != PermissionDecision.ALLOW) {
+            String reason = decision == PermissionDecision.CONFIRM
+                    ? "explicit confirmation is required for LLM config mutation"
+                    : "permission denied for LLM config mutation";
+            throw new SetLlmSqlException(reason + " (action: " + ACTION_LLM_CONFIG_SET + ", session: " + sessionId + ")");
         }
     }
 
@@ -394,7 +429,16 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             Map<String, LlmProviderFactory> factories,
             RuntimeLlmConfigStore runtimeConfigStore,
             EventBus eventBus) {
-        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, null);
+        return fromConfig(config, factories, runtimeConfigStore, eventBus, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfig(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            RuntimeLlmConfigStore runtimeConfigStore,
+            EventBus eventBus,
+            PermissionProvider permissionProvider) {
+        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, null, permissionProvider);
     }
 
     public static DefaultLlmProviderRegistry fromConfigWithVault(
@@ -426,8 +470,18 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             SecretVault vault,
             RuntimeLlmConfigStore runtimeConfigStore,
             EventBus eventBus) {
+        return fromConfigWithVault(config, factories, vault, runtimeConfigStore, eventBus, null);
+    }
+
+    public static DefaultLlmProviderRegistry fromConfigWithVault(
+            Config config,
+            Map<String, LlmProviderFactory> factories,
+            SecretVault vault,
+            RuntimeLlmConfigStore runtimeConfigStore,
+            EventBus eventBus,
+            PermissionProvider permissionProvider) {
         Objects.requireNonNull(vault, "vault must not be null");
-        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, vault);
+        return fromConfigInternal(config, factories, runtimeConfigStore, eventBus, vault, permissionProvider);
     }
 
     private static DefaultLlmProviderRegistry fromConfigInternal(
@@ -435,11 +489,12 @@ public class DefaultLlmProviderRegistry implements LlmProviderRegistry {
             Map<String, LlmProviderFactory> factories,
             RuntimeLlmConfigStore runtimeConfigStore,
             EventBus eventBus,
-            SecretVault vault) {
+            SecretVault vault,
+            PermissionProvider permissionProvider) {
         Objects.requireNonNull(config, "config must not be null");
         Objects.requireNonNull(factories, "factories must not be null");
 
-        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(runtimeConfigStore, eventBus);
+        DefaultLlmProviderRegistry registry = new DefaultLlmProviderRegistry(runtimeConfigStore, eventBus, permissionProvider);
 
         // navigate to llm section
         Config llmSection = config.getSection("llm");

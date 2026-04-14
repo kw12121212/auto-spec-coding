@@ -99,4 +99,23 @@ class DefaultPermissionProviderWithStoreTest {
 
         assertEquals(PermissionDecision.ALLOW, withStore.check(perm, ctx));
     }
+
+    @Test
+    void defaultPermissionProvider_deniesLlmConfigSet() {
+        Permission perm = new Permission("llm.config.set", "session:session-a", Map.of());
+        PermissionContext ctx = new PermissionContext("llm-runtime-config", "set", "agent-1");
+
+        assertEquals(PermissionDecision.DENY, withStore.check(perm, ctx));
+        assertEquals(PermissionDecision.DENY, withoutStore.check(perm, ctx));
+    }
+
+    @Test
+    void defaultPermissionProvider_allowsLlmConfigSet_withStoredPolicy() {
+        Permission perm = new Permission("llm.config.set", "session:session-a", Map.of());
+        PermissionContext ctx = new PermissionContext("llm-runtime-config", "set", "agent-1");
+
+        withStore.grant(perm, ctx);
+
+        assertEquals(PermissionDecision.ALLOW, withStore.check(perm, ctx));
+    }
 }
