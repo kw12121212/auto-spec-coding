@@ -3,7 +3,7 @@
 ## Verified Baseline
 
 - Upstream repository: `https://github.com/lealone/Lealone`
-- Verified commit: `990a56f458a5a48c719450243f35fea17f45fb78`
+- Verified commit: `16259183819d97b42210df9be6763f5a387fe79e`
 - Verified artifact line: `8.0.0-SNAPSHOT`
 - Repo-local install workflow: `./scripts/install-lealone-upstream.sh`
 
@@ -16,7 +16,7 @@
 ## Verification Workflow
 
 ```bash
-./scripts/install-lealone-upstream.sh
+LEALONE_SRC_DIR="$PWD/lealone" LEALONE_SKIP_FETCH=true ./scripts/install-lealone-upstream.sh
 mvn -q -DskipTests compile
 mvn -q -Dtest=SkillSourceCompilerTest,SkillServiceExecutorFactoryTest,LealoneSessionStoreTest,LealoneRuntimeLlmConfigStoreTest,LealoneToolCacheTest,LealoneQuestionStoreTest,LealoneVaultTest,LealoneTaskStoreTest,LealoneTeamStoreTest,LealoneCronStoreTest test
 ```

@@ -25,12 +25,18 @@ The repository already includes the core runtime, built-in tool surface, eventin
 
 ## Lealone Upstream Baseline
 
-- Verified upstream commit: `990a56f458a5a48c719450243f35fea17f45fb78` (also recorded as `lealone.upstream.commit` in `pom.xml`)
+- Verified upstream commit: `16259183819d97b42210df9be6763f5a387fe79e` (also recorded as `lealone.upstream.commit` in `pom.xml`)
 - Alignment note: [`LEALONE_ALIGNMENT.md`](LEALONE_ALIGNMENT.md)
 - Install the verified upstream baseline locally before compiling or testing:
 
 ```bash
 ./scripts/install-lealone-upstream.sh
+```
+
+When using the checked-out `lealone` submodule as the source directory:
+
+```bash
+LEALONE_SRC_DIR="$PWD/lealone" LEALONE_SKIP_FETCH=true ./scripts/install-lealone-upstream.sh
 ```
 
 ## Local Verification
