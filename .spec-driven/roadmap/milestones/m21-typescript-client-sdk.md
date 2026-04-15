@@ -34,7 +34,7 @@
 ## Planned Changes
 - `ts-sdk-client` - Declared: complete - HTTP + JSON-RPC 双传输 client 封装、TypeScript 类型定义、认证与重试机制
 - `ts-sdk-agent` - Declared: complete - Agent 操作封装：create、run、stop、状态查询
-- `ts-sdk-tools` - Declared: planned - 工具注册与调用封装
+- `ts-sdk-tools` - Declared: complete - 工具注册与调用封装
 - `ts-sdk-events` - Declared: planned - 事件流订阅封装（SSE/polling）
 - `ts-sdk-tests` - Declared: planned - 集成测试（需 Java 后端运行）
 
@@ -63,5 +63,6 @@
 - 可与 M20 (Go SDK) 并行开发
 - 发布为 npm package，用户通过 `npm install @specdriven/sdk` 引入
 - 首期仅支持 Node.js 运行时，浏览器端支持可后续扩展
+
 
 

@@ -12,6 +12,7 @@ import type {
 } from "./models.js";
 import { SpecDrivenAgent } from "./agent.js";
 import type { AgentConfig } from "./agent.js";
+import type { RemoteToolRegistrationRequest, ToolRegistrationResult } from "./tools.js";
 
 const DEFAULT_USER_AGENT = "specdriven-ts-sdk/0.1.0";
 
@@ -64,6 +65,22 @@ export class SpecDrivenClient {
   async listTools(): Promise<ToolsListResponse> {
     const res = await this.request<ToolsListResponse>("GET", "/tools");
     return { tools: res.tools ?? [] };
+  }
+
+  /** POST /api/v1/tools/register */
+  async registerRemoteTool(
+    request: RemoteToolRegistrationRequest,
+  ): Promise<ToolRegistrationResult> {
+    const name = request.name?.trim();
+    if (!name) {
+      throw new Error("specdriven: tool name must not be empty");
+    }
+    const callbackUrl = request.callbackUrl?.trim();
+    if (!callbackUrl) {
+      throw new Error("specdriven: tool callback URL must not be empty");
+    }
+    const res = await this.request<ToolRegistrationResult>("POST", "/tools/register", request);
+    return { ...res, parameters: res.parameters ?? [] };
   }
 
   /** POST /api/v1/agent/run */

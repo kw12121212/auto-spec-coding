@@ -93,6 +93,11 @@ The `ToolCallbackHandler` MUST allow callers to register and replace named local
 - WHEN the caller calls `register(name, handler)`
 - THEN subsequent invocations for that name MUST call the registered handler
 
+#### Scenario: register replaces existing handler
+- GIVEN a `ToolCallbackHandler` with a handler already registered for `lookup`
+- WHEN the caller calls `register("lookup", replacementHandler)`
+- THEN subsequent invocations for `lookup` MUST call `replacementHandler`
+
 #### Scenario: register rejects empty name
 - GIVEN a `ToolCallbackHandler`
 - WHEN the caller calls `register("", handler)`
