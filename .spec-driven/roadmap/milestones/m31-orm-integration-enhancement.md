@@ -33,7 +33,7 @@
 ## Planned Changes
 - `orm-model-mappings` - Declared: complete - 定义试点领域实体所需的最小 ORM Model 映射与注解约定，映射到现有 Lealone DB 表结构
 - `delivery-log-orm-pilot` - Declared: complete - 将 LealoneDeliveryLogStore 作为优先试点迁移到 ORM，并验证行为一致性与样板代码收益
-- `question-store-feasibility` - Declared: planned - 评估 LealoneQuestionStore 迁移到 ORM 的真实收益；仅在收益明确且不引入额外复杂度时推进迁移
+- `question-store-feasibility` - Declared: complete - 评估 LealoneQuestionStore 迁移到 ORM 的真实收益；仅在收益明确且不引入额外复杂度时推进迁移
 - `orm-jdbc-coexistence` - Declared: planned - 确保 ORM Store 与 raw JDBC Store 在同一数据库实例上混合共存，事务一致性不受影响
 - `orm-adoption-guidelines` - Declared: planned - 形成 ORM 继续推广的准入标准、适用场景和 escape hatch 规则
 

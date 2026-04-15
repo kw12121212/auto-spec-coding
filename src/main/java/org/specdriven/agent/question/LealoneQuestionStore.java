@@ -52,22 +52,18 @@ public class LealoneQuestionStore implements QuestionStore {
     @Override
     public String save(Question question) {
         long now = System.currentTimeMillis();
-        String upsert = "MERGE INTO questions (question_id, session_id, question_text, impact, recommendation, status, category, delivery_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(upsert)) {
-            ps.setString(1, question.questionId());
-            ps.setString(2, question.sessionId());
-            ps.setString(3, question.question());
-            ps.setString(4, question.impact());
-            ps.setString(5, question.recommendation());
-            ps.setString(6, question.status().name());
-            ps.setString(7, question.category().name());
-            ps.setString(8, question.deliveryMode().name());
-            ps.setLong(9, now);
-            ps.setLong(10, now);
-            ps.executeUpdate();
-        } catch (SQLException e) {
+        try {
+            QuestionModel existing = QuestionModel.dao(jdbcUrl)
+                    .where().questionId.eq(question.questionId())
+                    .findOne();
+            if (existing == null) {
+                model(question, now, now).insert();
+            } else {
+                updateModel(question, now, now)
+                        .where().questionId.eq(question.questionId())
+                        .update();
+            }
+        } catch (RuntimeException e) {
             throw new IllegalStateException("Failed to save question " + question.questionId(), e);
         }
 
@@ -77,17 +73,18 @@ public class LealoneQuestionStore implements QuestionStore {
     @Override
     public Question update(String questionId, QuestionStatus status) {
         long now = System.currentTimeMillis();
-        String sql = "UPDATE questions SET status = ?, updated_at = ? WHERE question_id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, status.name());
-            ps.setLong(2, now);
-            ps.setString(3, questionId);
-            int rows = ps.executeUpdate();
+        try {
+            int rows = QuestionModel.dao(jdbcUrl)
+                    .status.set(status.name())
+                    .updatedAt.set(now)
+                    .where().questionId.eq(questionId)
+                    .update();
             if (rows == 0) {
                 throw new NoSuchElementException("Question not found: " + questionId);
             }
-        } catch (SQLException e) {
+        } catch (NoSuchElementException e) {
+            throw e;
+        } catch (RuntimeException e) {
             throw new IllegalStateException("Failed to update question " + questionId, e);
         }
 
@@ -96,34 +93,51 @@ public class LealoneQuestionStore implements QuestionStore {
 
     @Override
     public List<Question> findBySession(String sessionId) {
-        String sql = "SELECT question_id, session_id, question_text, impact, recommendation, status, category, delivery_mode, created_at, updated_at FROM questions WHERE session_id = ? ORDER BY created_at ASC";
-        return queryQuestions(sql, ps -> ps.setString(1, sessionId));
+        try {
+            return toQuestions(QuestionModel.dao(jdbcUrl)
+                    .where().sessionId.eq(sessionId)
+                    .orderBy().createdAt.asc()
+                    .findList());
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to query questions", e);
+        }
     }
 
     @Override
     public List<Question> findByStatus(QuestionStatus status) {
-        String sql = "SELECT question_id, session_id, question_text, impact, recommendation, status, category, delivery_mode, created_at, updated_at FROM questions WHERE status = ? ORDER BY created_at ASC";
-        return queryQuestions(sql, ps -> ps.setString(1, status.name()));
+        try {
+            return toQuestions(QuestionModel.dao(jdbcUrl)
+                    .where().status.eq(status.name())
+                    .orderBy().createdAt.asc()
+                    .findList());
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to query questions", e);
+        }
     }
 
     @Override
     public Optional<Question> findPending(String sessionId) {
-        String sql = "SELECT question_id, session_id, question_text, impact, recommendation, status, category, delivery_mode, created_at, updated_at FROM questions WHERE session_id = ? AND status = ? LIMIT 1";
-        List<Question> results = queryQuestions(sql, ps -> {
-            ps.setString(1, sessionId);
-            ps.setString(2, QuestionStatus.WAITING_FOR_ANSWER.name());
-        });
+        List<Question> results;
+        try {
+            results = toQuestions(QuestionModel.dao(jdbcUrl)
+                    .where().sessionId.eq(sessionId)
+                    .and().status.eq(QuestionStatus.WAITING_FOR_ANSWER.name())
+                    .orderBy().createdAt.asc()
+                    .limit(1)
+                    .findList());
+        } catch (RuntimeException e) {
+            throw new IllegalStateException("Failed to query questions", e);
+        }
         return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
     }
 
     @Override
     public void delete(String questionId) {
-        String sql = "DELETE FROM questions WHERE question_id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, questionId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
+        try {
+            QuestionModel.dao(jdbcUrl)
+                    .where().questionId.eq(questionId)
+                    .delete();
+        } catch (RuntimeException e) {
             throw new IllegalStateException("Failed to delete question " + questionId, e);
         }
     }
@@ -133,47 +147,56 @@ public class LealoneQuestionStore implements QuestionStore {
     // -------------------------------------------------------------------------
 
     Optional<Question> load(String questionId) {
-        String sql = "SELECT question_id, session_id, question_text, impact, recommendation, status, category, delivery_mode, created_at, updated_at FROM questions WHERE question_id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, questionId);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    return Optional.empty();
-                }
-                return Optional.of(resultSetToQuestion(rs));
-            }
-        } catch (SQLException e) {
+        try {
+            QuestionModel model = QuestionModel.dao(jdbcUrl)
+                    .where().questionId.eq(questionId)
+                    .findOne();
+            return model == null ? Optional.empty() : Optional.of(toQuestion(model));
+        } catch (RuntimeException e) {
             throw new IllegalStateException("Failed to load question " + questionId, e);
         }
     }
 
-    private List<Question> queryQuestions(String sql, PreparedStatementSetter setter) {
-        List<Question> result = new ArrayList<>();
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            setter.setValues(ps);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    result.add(resultSetToQuestion(rs));
-                }
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to query questions", e);
+    private QuestionModel model(Question question, long createdAt, long updatedAt) {
+        return populate(new QuestionModel(jdbcUrl), question, createdAt, updatedAt);
+    }
+
+    private QuestionModel updateModel(Question question, long createdAt, long updatedAt) {
+        return populate(QuestionModel.dao(jdbcUrl), question, createdAt, updatedAt);
+    }
+
+    private QuestionModel populate(QuestionModel model, Question question, long createdAt, long updatedAt) {
+        return model
+                .questionId.set(question.questionId())
+                .sessionId.set(question.sessionId())
+                .questionText.set(question.question())
+                .impact.set(question.impact())
+                .recommendation.set(question.recommendation())
+                .status.set(question.status().name())
+                .category.set(question.category().name())
+                .deliveryMode.set(question.deliveryMode().name())
+                .createdAt.set(createdAt)
+                .updatedAt.set(updatedAt);
+    }
+
+    private List<Question> toQuestions(List<QuestionModel> models) {
+        List<Question> result = new ArrayList<>(models.size());
+        for (QuestionModel model : models) {
+            result.add(toQuestion(model));
         }
         return Collections.unmodifiableList(result);
     }
 
-    private Question resultSetToQuestion(ResultSet rs) throws SQLException {
+    private Question toQuestion(QuestionModel model) {
         return new Question(
-                rs.getString("question_id"),
-                rs.getString("session_id"),
-                rs.getString("question_text"),
-                rs.getString("impact"),
-                rs.getString("recommendation"),
-                QuestionStatus.valueOf(rs.getString("status")),
-                QuestionCategory.valueOf(rs.getString("category")),
-                DeliveryMode.valueOf(rs.getString("delivery_mode"))
+                model.questionId.get(),
+                model.sessionId.get(),
+                model.questionText.get(),
+                model.impact.get(),
+                model.recommendation.get(),
+                QuestionStatus.valueOf(model.status.get()),
+                QuestionCategory.valueOf(model.category.get()),
+                DeliveryMode.valueOf(model.deliveryMode.get())
         );
     }
 
@@ -222,8 +245,4 @@ public class LealoneQuestionStore implements QuestionStore {
         // where expiry is driven by QuestionRuntime.
     }
 
-    @FunctionalInterface
-    private interface PreparedStatementSetter {
-        void setValues(PreparedStatement ps) throws SQLException;
-    }
 }
