@@ -10,6 +10,8 @@ import type {
   RunAgentResponse,
   ToolsListResponse,
 } from "./models.js";
+import { SpecDrivenAgent } from "./agent.js";
+import type { AgentConfig } from "./agent.js";
 
 const DEFAULT_USER_AGENT = "specdriven-ts-sdk/0.1.0";
 
@@ -94,6 +96,11 @@ export class SpecDrivenClient {
       "GET",
       `/agent/state?id=${encodeURIComponent(id)}`,
     );
+  }
+
+  /** Return a `SpecDrivenAgent` bound to this client with optional default config. */
+  agent(config?: AgentConfig): SpecDrivenAgent {
+    return new SpecDrivenAgent(this, config);
   }
 
   /** GET /api/v1/events */

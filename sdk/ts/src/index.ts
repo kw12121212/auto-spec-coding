@@ -1,5 +1,7 @@
 export { SpecDrivenClient } from "./client.js";
 export type { ClientConfig } from "./client.js";
+export { SpecDrivenAgent } from "./agent.js";
+export type { AgentConfig, AgentRunResult } from "./agent.js";
 export { ApiError, isRetryableStatus } from "./errors.js";
 export { withRetry } from "./retry.js";
 export type {
