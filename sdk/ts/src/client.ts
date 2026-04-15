@@ -12,6 +12,8 @@ import type {
 } from "./models.js";
 import { SpecDrivenAgent } from "./agent.js";
 import type { AgentConfig } from "./agent.js";
+import { createEventSubscription } from "./events.js";
+import type { EventSubscription, EventSubscriptionOptions } from "./events.js";
 import type { RemoteToolRegistrationRequest, ToolRegistrationResult } from "./tools.js";
 
 const DEFAULT_USER_AGENT = "specdriven-ts-sdk/0.1.0";
@@ -136,6 +138,11 @@ export class SpecDrivenClient {
     const path = query ? `/events?${query}` : "/events";
     const res = await this.request<EventPollResponse>("GET", path);
     return { events: res.events ?? [], nextCursor: res.nextCursor ?? 0 };
+  }
+
+  /** Create a polling-backed async event subscription. */
+  subscribeEvents(options: EventSubscriptionOptions = {}): EventSubscription {
+    return createEventSubscription(this, options);
   }
 
   private async request<T>(

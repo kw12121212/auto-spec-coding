@@ -2,6 +2,8 @@ export { SpecDrivenClient } from "./client.js";
 export type { ClientConfig } from "./client.js";
 export { SpecDrivenAgent } from "./agent.js";
 export type { AgentConfig, AgentRunResult } from "./agent.js";
+export { createEventSubscription } from "./events.js";
+export type { EventPollingClient, EventSubscription, EventSubscriptionOptions } from "./events.js";
 export { ApiError, isRetryableStatus } from "./errors.js";
 export { withRetry } from "./retry.js";
 export { ToolCallbackHandler } from "./tools.js";
