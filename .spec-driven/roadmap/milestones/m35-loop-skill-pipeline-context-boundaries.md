@@ -35,7 +35,7 @@
 - `loop-skill-phase-runner` - Declared: complete - 用真实 `spec-driven-propose/apply/verify/review/archive` skill 执行器替换现有 loop phase prompt runner，保留可审计的阶段结果
 - `loop-phase-session-reset` - Declared: complete - 为 recommend/propose/apply/verify/review/archive 各阶段定义独立 session/context reset 契约，禁止跨阶段复用 chat history 作为权威上下文
 - `loop-phase-checkpoint-recovery` - Declared: complete - 扩展 loop 持久化模型到阶段粒度，支持 phase 中断、Question 升级与 resume 后从正确阶段恢复
-- `loop-cumulative-context-budget` - Declared: planned - 在已修复当前 `LoopProgress.tokenUsage` 累计持久化基线的前提下，继续收敛 phase 化 skill 流水线中的 context budget、phase checkpoint 与跨 session 预算语义
+- `loop-cumulative-context-budget` - Declared: complete - 在已修复当前 `LoopProgress.tokenUsage` 累计持久化基线的前提下，继续收敛 phase 化 skill 流水线中的 context budget、phase checkpoint 与跨 session 预算语义
 
 ## Dependencies
 
@@ -53,8 +53,7 @@
 - tokenUsage 持久化语义调整若处理不兼容，可能导致旧进度快照恢复异常或 context exhaustion 误判
 
 ## Status
-
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 

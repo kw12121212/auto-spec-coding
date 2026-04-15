@@ -326,6 +326,9 @@ public class DefaultLoopDriver implements LoopDriver {
                             store.saveIteration(partial);
                             store.saveProgress(buildSnapshot());
                         }
+                        if (stopIfContextExhausted(iterationCount)) {
+                            return;
+                        }
 
                         // Interactive session bridge
                         if (interactiveSessionFactory != null) {
@@ -421,10 +424,7 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 // Check context exhaustion
                 if (contextManager != null) {
-                    ContextBudget budget = config.contextBudget();
-                    int threshold = budget.maxTokens() * budget.warningThresholdPercent() / 100;
-                    if (contextManager.remainingCapacity() < threshold) {
-                        stopWithContextExhaustion(iterationCount, contextManager);
+                    if (stopIfContextExhausted(iterationCount)) {
                         return;
                     }
                 }
@@ -540,8 +540,6 @@ public class DefaultLoopDriver implements LoopDriver {
 
     private void stopWithContextExhaustion(int completedIterations,
                                            ContextWindowManager ctxManager) {
-        long totalUsage = ctxManager.maxTokens() - ctxManager.remainingCapacity();
-        accumulatedTokenUsage = totalUsage;
         synchronized (stateLock) {
             if (state == LoopState.STOPPED) return;
             state = LoopState.STOPPED;
@@ -549,7 +547,7 @@ public class DefaultLoopDriver implements LoopDriver {
         stopRequested = true;
         persistSnapshot();
         publishEvent(EventType.LOOP_CONTEXT_EXHAUSTED, Map.of(
-                "tokenUsage", totalUsage,
+                "tokenUsage", accumulatedTokenUsage,
                 "maxTokens", ctxManager.maxTokens(),
                 "remainingTokens", ctxManager.remainingCapacity(),
                 "completedIterations", completedIterations
@@ -558,6 +556,19 @@ public class DefaultLoopDriver implements LoopDriver {
                 "totalIterations", completedIterations,
                 "reason", "context exhausted"
         ));
+    }
+
+    private boolean stopIfContextExhausted(int completedIterations) {
+        if (contextManager == null) {
+            return false;
+        }
+        ContextBudget budget = config.contextBudget();
+        int threshold = budget.maxTokens() * budget.warningThresholdPercent() / 100;
+        if (contextManager.remainingCapacity() >= threshold) {
+            return false;
+        }
+        stopWithContextExhaustion(completedIterations, contextManager);
+        return true;
     }
 
     private void persistSnapshot() {

@@ -654,6 +654,138 @@ class DefaultLoopDriverTest {
     }
 
     @Test
+    void checkpointRecoveryAddsOnlyNewTokenUsageToRecoveredBaseline() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        LoopPhaseCheckpoint checkpoint = new LoopPhaseCheckpoint(
+                "checkpointed-token-change", "m35.md", "goal", "summary",
+                List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE));
+        store.saveProgress(new LoopProgress(LoopState.PAUSED, Set.of(), 0, 500, checkpoint));
+
+        AtomicInteger schedulerCalls = new AtomicInteger();
+        AtomicReference<Set<PipelinePhase>> skipped = new AtomicReference<>();
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            skipped.set(skipPhases);
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
+                    125);
+        };
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus,
+                ContextBudget.of(5000, 20));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, ctx -> {
+            schedulerCalls.incrementAndGet();
+            return Optional.of(new LoopCandidate("new-change", "m.md", "goal"));
+        }, pipeline, store);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        assertEquals(0, schedulerCalls.get());
+        assertEquals(Set.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE), skipped.get());
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(625, progress.tokenUsage());
+        assertTrue(progress.activeCheckpoint().isEmpty());
+        assertTrue(progress.completedChangeNames().contains("checkpointed-token-change"));
+    }
+
+    @Test
+    void checkpointRecoveryDoesNotDoubleCountRecoveredBaselineWhenNoNewTokensAreUsed() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        LoopPhaseCheckpoint checkpoint = new LoopPhaseCheckpoint(
+                "zero-token-resume", "m35.md", "goal", "summary",
+                List.of(PipelinePhase.RECOMMEND));
+        store.saveProgress(new LoopProgress(LoopState.PAUSED, Set.of(), 0, 700, checkpoint));
+
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
+                            PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE),
+                    0);
+        };
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus,
+                ContextBudget.of(5000, 20));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, ctx -> Optional.empty(), pipeline, store);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(700, progress.tokenUsage());
+        assertTrue(progress.completedChangeNames().contains("zero-token-resume"));
+        assertTrue(progress.activeCheckpoint().isEmpty());
+    }
+
+    @Test
+    void failedPhaseAttemptPersistsTokenUsageWithRetryableCheckpoint() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.TIMED_OUT, "verify timed out", 10,
+                    List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE),
+                    175);
+        };
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus,
+                ContextBudget.of(5000, 20));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg,
+                ctx -> Optional.of(new LoopCandidate("retry-token-change", "m35.md", "goal", "summary")),
+                pipeline, store);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(175, progress.tokenUsage());
+        assertFalse(progress.completedChangeNames().contains("retry-token-change"));
+        LoopPhaseCheckpoint checkpoint = progress.activeCheckpoint().orElseThrow();
+        assertEquals("retry-token-change", checkpoint.changeName());
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE),
+                checkpoint.completedPhases());
+    }
+
+    @Test
+    void humanQuestionContextExhaustionSavesRetryableCheckpointBeforeStopping() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        List<Event> exhaustedEvents = new ArrayList<>();
+        bus.subscribe(EventType.LOOP_CONTEXT_EXHAUSTED, exhaustedEvents::add);
+
+        Question question = humanEscalatedQuestion("q-budget", "s-budget");
+        LoopPipeline pipeline = (candidate, config, skipPhases) ->
+                new IterationResult(IterationStatus.QUESTIONING, null, 10,
+                        List.of(PipelinePhase.RECOMMEND), 850, question);
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus,
+                ContextBudget.of(1000, 20));
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg,
+                ctx -> Optional.of(new LoopCandidate("budget-question-change", "m35.md", "goal", "summary")),
+                pipeline, store, null);
+        driver.start();
+
+        waitUntilState(driver, LoopState.STOPPED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.STOPPED, progress.loopState());
+        assertEquals(850, progress.tokenUsage());
+        assertFalse(progress.completedChangeNames().contains("budget-question-change"));
+        LoopPhaseCheckpoint checkpoint = progress.activeCheckpoint().orElseThrow();
+        assertEquals("budget-question-change", checkpoint.changeName());
+        assertEquals(List.of(PipelinePhase.RECOMMEND), checkpoint.completedPhases());
+        assertFalse(exhaustedEvents.isEmpty());
+        assertEquals(850L, exhaustedEvents.get(0).metadata().get("tokenUsage"));
+    }
+
+    @Test
     void nullBudgetProducesIdenticalBehaviorToPreChange() throws Exception {
         SimpleEventBus bus = eventBus();
         List<Event> exhaustedEvents = new ArrayList<>();
@@ -1172,6 +1304,19 @@ class DefaultLoopDriverTest {
         fail("Expected state " + expected + " but got " + driver.getState());
     }
 
+    private static <T> T waitUntilReference(AtomicReference<T> reference) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            T value = reference.get();
+            if (value != null) {
+                return value;
+            }
+            Thread.sleep(25);
+        }
+        fail("Expected reference to be set");
+        return null;
+    }
+
     private static class RecordingQuestionChannel implements QuestionDeliveryChannel {
         private final List<Question> sent = new ArrayList<>();
 
@@ -1354,15 +1499,15 @@ class DefaultLoopDriverTest {
         Thread.sleep(500);
 
         assertEquals(LoopState.PAUSED, driver.getState());
-        assertNotNull(createdSession.get(), "Session should have been created");
-        assertEquals(InteractiveSessionState.ACTIVE, createdSession.get().state());
+        StubInteractiveSession session = waitUntilReference(createdSession);
+        assertEquals(InteractiveSessionState.ACTIVE, session.state());
         assertFalse(enteredEvents.isEmpty(), "LOOP_INTERACTIVE_ENTERED should be published");
         assertEquals("s-factory", enteredEvents.get(0).metadata().get("sessionId"));
         assertEquals("q-factory", enteredEvents.get(0).metadata().get("questionId"));
         assertEquals("factory-change", enteredEvents.get(0).metadata().get("changeName"));
 
         // Close session to unblock
-        createdSession.get().close();
+        session.close();
         Thread.sleep(500);
 
         driver.stop();
@@ -1393,10 +1538,10 @@ class DefaultLoopDriverTest {
         driver.start();
 
         waitUntilState(driver, LoopState.PAUSED);
-        assertNotNull(createdSession.get());
+        StubInteractiveSession session = waitUntilReference(createdSession);
 
         // Close the session — should publish EXITED but loop stays PAUSED
-        createdSession.get().close();
+        session.close();
         Thread.sleep(500);
 
         assertEquals(LoopState.PAUSED, driver.getState());
@@ -1431,10 +1576,10 @@ class DefaultLoopDriverTest {
         driver.start();
 
         waitUntilState(driver, LoopState.PAUSED);
-        assertNotNull(createdSession.get());
+        StubInteractiveSession session = waitUntilReference(createdSession);
 
         // Transition session to ERROR
-        createdSession.get().transitionToError();
+        session.transitionToError();
         Thread.sleep(500);
 
         assertEquals(LoopState.PAUSED, driver.getState());
@@ -1469,14 +1614,14 @@ class DefaultLoopDriverTest {
         driver.start();
 
         waitUntilState(driver, LoopState.PAUSED);
-        assertNotNull(createdSession.get());
-        assertEquals(InteractiveSessionState.ACTIVE, createdSession.get().state());
+        StubInteractiveSession session = waitUntilReference(createdSession);
+        assertEquals(InteractiveSessionState.ACTIVE, session.state());
 
         driver.stop();
         Thread.sleep(300);
 
         assertEquals(LoopState.STOPPED, driver.getState());
-        assertEquals(InteractiveSessionState.CLOSED, createdSession.get().state());
+        assertEquals(InteractiveSessionState.CLOSED, session.state());
         assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published on stop");
     }
 
@@ -1577,6 +1722,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         waitUntilState(driver, LoopState.PAUSED);
+        StubInteractiveSession session = waitUntilReference(createdSession);
 
         // Verify ENTERED metadata
         assertFalse(enteredEvents.isEmpty());
@@ -1586,7 +1732,7 @@ class DefaultLoopDriverTest {
         assertEquals("meta-change", entered.metadata().get("changeName"));
 
         // Close session
-        createdSession.get().close();
+        session.close();
         Thread.sleep(500);
 
         // Verify EXITED metadata

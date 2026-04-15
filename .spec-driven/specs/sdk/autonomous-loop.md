@@ -427,6 +427,30 @@ Each prompt-backed phase execution MUST expose a phase-local session identity to
 - `tokenUsage` MUST be non-negative; compact constructor MUST reject negative values with `IllegalArgumentException`
 - Default value MUST be 0
 - `tokenUsage` MUST represent the cumulative token usage for the persisted loop lineage, not only the most recent iteration or phase attempt
+- `tokenUsage` MUST include all phase attempts in the persisted loop lineage,
+  including attempts that fail, time out, ask a question, pause for human
+  handling, or are later retried
+
+#### Scenario: interrupted phase attempt contributes to cumulative usage
+- GIVEN a selected roadmap change is running with context budgeting enabled
+- AND a phase attempt consumes provider-reported tokens before returning `FAILED`, `TIMED_OUT`, or `QUESTIONING`
+- WHEN loop progress is saved for the incomplete selected change
+- THEN `LoopProgress.tokenUsage` MUST include the tokens consumed by that phase attempt
+- AND the selected change MUST remain incomplete
+
+#### Scenario: retry adds only newly consumed tokens
+- GIVEN persisted progress already contains cumulative token usage from an interrupted phase attempt
+- AND the loop resumes the same selected change from its active phase checkpoint
+- WHEN the interrupted phase is retried and consumes additional tokens
+- THEN the newly saved `LoopProgress.tokenUsage` MUST equal the recovered cumulative usage plus the retry attempt token usage
+- AND it MUST NOT add the recovered cumulative usage a second time as new consumption
+
+#### Scenario: skipped completed phases are not charged again
+- GIVEN persisted progress contains an active phase checkpoint with one or more completed phases
+- AND persisted progress includes the cumulative token usage consumed before recovery
+- WHEN the loop resumes and skips the completed phases
+- THEN skipped phases MUST NOT add token usage during the resumed execution
+- AND only newly executed phases MAY increase `LoopProgress.tokenUsage`
 
 ### Requirement: Context exhaustion detection in DefaultLoopDriver
 
@@ -439,13 +463,48 @@ Each prompt-backed phase execution MUST expose a phase-local session identity to
   1. Save progress via `store.saveProgress()` with current `tokenUsage` in the snapshot
   2. Publish `LOOP_CONTEXT_EXHAUSTED` event with metadata: `tokenUsage` (long), `maxTokens` (int), `remainingTokens` (long), `completedIterations` (int)
   3. Stop the loop with reason "context exhausted"
+- When context exhaustion happens while a selected roadmap change is incomplete,
+  the saved progress MUST preserve both the latest cumulative token usage and
+  the retryable active phase checkpoint
 - When `LoopConfig.contextBudget()` is null, no context checking MUST occur
+
+#### Scenario: exhaustion preserves retryable checkpoint
+- GIVEN a loop iteration has selected a roadmap change
+- AND one or more phases have completed successfully
+- AND context exhaustion is detected before all phases complete
+- WHEN the loop saves progress before stopping
+- THEN persisted progress MUST include the latest cumulative token usage
+- AND persisted progress MUST include an active phase checkpoint for the selected change
+- AND the checkpoint MUST include only the phases completed before exhaustion
+- AND the selected change name MUST NOT be added to `completedChangeNames`
+
+#### Scenario: exhaustion event reports cumulative usage
+- GIVEN context exhaustion is detected after recovery from a previous progress snapshot
+- WHEN the loop publishes `LOOP_CONTEXT_EXHAUSTED`
+- THEN the event metadata `tokenUsage` MUST reflect recovered cumulative usage plus newly consumed phase tokens
+- AND it MUST NOT report only the current phase attempt token usage
 
 ### Requirement: Context recovery on start
 
 - When `DefaultLoopDriver.start()` recovers progress from the store and the recovered `LoopProgress.tokenUsage()` is greater than 0, the driver MUST initialize the `ContextWindowManager` with the recovered token usage value
 - This ensures that consecutive sessions tracking the same context budget accumulate correctly
 - Recovery MUST treat the persisted value as the loop's cumulative usage baseline and MUST NOT reinterpret it as only the last iteration's or last phase's token usage
+- Context recovery MUST apply the persisted cumulative token usage exactly once
+  as the budget baseline before any checkpointed phase or newly selected
+  candidate executes
+
+#### Scenario: recovered baseline survives fresh phase sessions
+- GIVEN persisted progress contains `tokenUsage` greater than zero
+- AND persisted progress contains an active phase checkpoint
+- WHEN the loop starts with context budgeting enabled
+- THEN the context budget tracker MUST start from the persisted cumulative token usage
+- AND the fresh phase execution context for the resumed phase MUST NOT reset that cumulative baseline
+
+#### Scenario: no double counting after restart
+- GIVEN persisted progress contains `tokenUsage` greater than zero
+- WHEN the loop starts and no new phase work has executed yet
+- THEN saving progress again MUST preserve the recovered token usage value
+- AND MUST NOT increase it solely because recovery initialized the budget tracker
 
 ### Requirement: LOOP_CONTEXT_EXHAUSTED EventType
 
@@ -640,6 +699,19 @@ new roadmap candidate.
 - GIVEN persisted progress has no active phase checkpoint
 - WHEN the loop starts or resumes
 - THEN the loop MUST use the scheduler to select the next eligible roadmap candidate as before
+
+#### Scenario: checkpoint recovery uses same budget lineage
+- GIVEN persisted progress contains an active phase checkpoint and cumulative token usage
+- WHEN the loop resumes the checkpointed candidate
+- THEN the resumed execution MUST belong to the same cumulative budget lineage
+- AND successful completion of the remaining phases MUST persist token usage equal to the recovered baseline plus newly executed phase token usage
+
+#### Scenario: completed candidate clears checkpoint but keeps token usage
+- GIVEN a checkpointed candidate resumes and all remaining phases complete successfully
+- WHEN completed iteration progress is saved
+- THEN the active phase checkpoint MUST be cleared
+- AND the completed change name MUST be present in `completedChangeNames`
+- AND `LoopProgress.tokenUsage` MUST preserve the final cumulative token usage for the loop lineage
 
 ### Requirement: Human escalation checkpoint recovery
 
