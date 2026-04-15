@@ -5,9 +5,11 @@ import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Main entry point for the SpecDriven SDK.
@@ -17,6 +19,7 @@ public class SpecDriven implements AutoCloseable {
 
     private final LlmProviderRegistry providerRegistry;
     private final List<Tool> tools;
+    private final Map<String, Tool> remoteTools = new ConcurrentHashMap<>();
     private final String systemPrompt;
     private final SdkConfig sdkConfig;
     private final Map<String, String> configMap;
@@ -58,7 +61,7 @@ public class SpecDriven implements AutoCloseable {
      */
     public SdkAgent createAgent() {
         Map<String, Tool> toolMap = new HashMap<>();
-        for (Tool tool : tools) {
+        for (Tool tool : allTools()) {
             toolMap.put(tool.getName(), tool);
         }
         return new SdkAgent(providerRegistry, toolMap, sdkConfig, systemPrompt,
@@ -69,7 +72,36 @@ public class SpecDriven implements AutoCloseable {
      * Returns the list of tools registered with this SDK instance.
      */
     public List<Tool> tools() {
-        return tools;
+        return allTools();
+    }
+
+    /**
+     * Returns whether a tool name belongs to the static SDK tool set supplied by the builder.
+     */
+    public boolean hasStaticTool(String name) {
+        if (name == null) {
+            return false;
+        }
+        return tools.stream().anyMatch(tool -> name.equals(tool.getName()));
+    }
+
+    /**
+     * Registers or replaces a callback-backed remote tool.
+     */
+    public void registerRemoteTool(Tool tool) {
+        if (tool == null || tool.getName() == null || tool.getName().isBlank()) {
+            throw new IllegalArgumentException("remote tool name must not be blank");
+        }
+        if (hasStaticTool(tool.getName())) {
+            throw new IllegalArgumentException("remote tool cannot replace static tool: " + tool.getName());
+        }
+        remoteTools.put(tool.getName(), tool);
+    }
+
+    private List<Tool> allTools() {
+        List<Tool> combined = new ArrayList<>(tools);
+        combined.addAll(remoteTools.values());
+        return List.copyOf(combined);
     }
 
     /**

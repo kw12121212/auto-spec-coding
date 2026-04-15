@@ -32,8 +32,8 @@
 
 ## Planned Changes
 - `go-sdk-client` - Declared: complete - HTTP client 封装、Go 类型定义、请求/响应模型、认证与重试机制
-- `go-sdk-agent` - Declared: planned - Agent 操作封装：create、run、stop、状态查询
-- `go-sdk-tools` - Declared: planned - 工具注册与调用封装
+- `go-sdk-agent` - Declared: complete - Agent 操作封装：create、run、stop、状态查询
+- `go-sdk-tools` - Declared: complete - 工具注册与调用封装
 - `go-sdk-events` - Declared: planned - 事件流订阅封装（SSE/polling）
 - `go-sdk-tests` - Declared: planned - 集成测试（需 Java 后端运行）
 
@@ -58,4 +58,6 @@
 - 参考 Java SDK (M12) 的公共 API 设计，保持多语言 SDK 使用体验一致
 - 可与 M21 (TypeScript SDK) 并行开发
 - 发布为 Go module，用户通过 `go get github.com/.../specdriven-go` 引入
+
+
 

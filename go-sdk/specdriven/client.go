@@ -170,6 +170,21 @@ func (c *Client) ListTools(ctx context.Context) (*ToolsListResponse, error) {
 	return &response, nil
 }
 
+// RegisterRemoteTool calls POST /api/v1/tools/register.
+func (c *Client) RegisterRemoteTool(ctx context.Context, request RemoteToolRegistrationRequest) (*ToolInfo, error) {
+	if err := request.validate(); err != nil {
+		return nil, err
+	}
+	var response ToolInfo
+	if err := c.do(ctx, http.MethodPost, "/tools/register", request, true, &response); err != nil {
+		return nil, err
+	}
+	if response.Parameters == nil {
+		response.Parameters = []map[string]any{}
+	}
+	return &response, nil
+}
+
 // RunAgent calls POST /api/v1/agent/run.
 func (c *Client) RunAgent(ctx context.Context, request RunAgentRequest) (*RunAgentResponse, error) {
 	var response RunAgentResponse

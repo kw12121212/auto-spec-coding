@@ -76,6 +76,13 @@ public final class HttpJsonCodec {
         return w.build();
     }
 
+    public static String encode(RemoteToolInvocationRequest r) {
+        return JsonWriter.object()
+                .field("toolName", r.toolName())
+                .rawField("parameters", JsonWriter.fromMap(r.parameters()))
+                .build();
+    }
+
     // --- Decode ---
 
     public static RunAgentRequest decodeRequest(String json) {
@@ -89,5 +96,46 @@ public final class HttpJsonCodec {
         Integer maxTurns = root.get("maxTurns") instanceof Number n ? n.intValue() : null;
         Integer toolTimeoutSeconds = root.get("toolTimeoutSeconds") instanceof Number n ? n.intValue() : null;
         return new RunAgentRequest(prompt, systemPrompt, maxTurns, toolTimeoutSeconds);
+    }
+
+    public static RemoteToolRegistrationRequest decodeRemoteToolRegistrationRequest(String json) {
+        try {
+            Map<String, Object> root = JsonReader.parseObject(json);
+            return new RemoteToolRegistrationRequest(
+                    stringValue(root.get("name")),
+                    stringValue(root.get("description")),
+                    mapList(root.get("parameters")),
+                    stringValue(root.get("callbackUrl")));
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", e.getMessage());
+        }
+    }
+
+    public static RemoteToolInvocationResponse decodeRemoteToolInvocationResponse(String json) {
+        Map<String, Object> root = JsonReader.parseObject(json);
+        Object successRaw = root.get("success");
+        boolean success = successRaw instanceof Boolean b && b;
+        return new RemoteToolInvocationResponse(
+                success,
+                stringValue(root.get("output")),
+                stringValue(root.get("error")));
+    }
+
+    private static String stringValue(Object value) {
+        return value != null ? String.valueOf(value) : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> mapList(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof Map<?, ?> map) {
+                result.add((Map<String, Object>) map);
+            }
+        }
+        return result;
     }
 }

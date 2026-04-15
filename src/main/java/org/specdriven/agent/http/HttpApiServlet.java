@@ -89,8 +89,7 @@ public class HttpApiServlet extends HttpServlet {
             return dispatchAgent(route.method(), route.segment(2), req);
         }
         if ("tools".equals(group) && route.length() >= 2) {
-            requireGet(route.method(), "/tools");
-            return handleToolsList();
+            return dispatchTools(route.method(), route.segment(2), req);
         }
         if ("health".equals(group) && route.length() >= 2) {
             requireGet(route.method(), "/health");
@@ -124,6 +123,18 @@ public class HttpApiServlet extends HttpServlet {
             }
             default -> throw new HttpApiException(404, "not_found", "Unknown agent action: " + action);
         };
+    }
+
+    private String dispatchTools(String method, String action, HttpServletRequest req) {
+        if (action == null) {
+            requireGet(method, "/tools");
+            return handleToolsList();
+        }
+        if ("register".equals(action)) {
+            requirePost(method, "/tools/register");
+            return handleToolRegister(req);
+        }
+        throw new HttpApiException(404, "not_found", "Unknown tools action: " + action);
     }
 
     // --- Handlers ---
@@ -181,18 +192,50 @@ public class HttpApiServlet extends HttpServlet {
     private String handleToolsList() {
         List<ToolInfo> toolInfos = new ArrayList<>();
         for (Tool tool : sdk.tools()) {
-            List<Map<String, Object>> params = new ArrayList<>();
-            for (ToolParameter p : tool.getParameters()) {
-                Map<String, Object> paramInfo = new LinkedHashMap<>();
-                paramInfo.put("name", p.name());
-                paramInfo.put("type", p.type());
-                paramInfo.put("description", p.description());
-                paramInfo.put("required", p.required());
-                params.add(paramInfo);
-            }
-            toolInfos.add(new ToolInfo(tool.getName(), tool.getDescription(), params));
+            toolInfos.add(toolInfo(tool));
         }
         return HttpJsonCodec.encode(new ToolsListResponse(toolInfos));
+    }
+
+    private String handleToolRegister(HttpServletRequest req) {
+        String body = readBody(req);
+        if (body == null || body.isBlank()) {
+            throw new HttpApiException(400, "invalid_params", "Request body required");
+        }
+        RemoteToolRegistrationRequest request = HttpJsonCodec.decodeRemoteToolRegistrationRequest(body);
+        String name = requireRequestText(request.name(), "name");
+        requireRequestText(request.callbackUrl(), "callbackUrl");
+        if (sdk.hasStaticTool(name)) {
+            throw new HttpApiException(409, "conflict", "Tool already exists: " + name);
+        }
+        RemoteHttpTool tool;
+        try {
+            tool = new RemoteHttpTool(request);
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", e.getMessage());
+        }
+        sdk.registerRemoteTool(tool);
+        return HttpJsonCodec.encode(toolInfo(tool));
+    }
+
+    private ToolInfo toolInfo(Tool tool) {
+        List<Map<String, Object>> params = new ArrayList<>();
+        for (ToolParameter p : tool.getParameters()) {
+            Map<String, Object> paramInfo = new LinkedHashMap<>();
+            paramInfo.put("name", p.name());
+            paramInfo.put("type", p.type());
+            paramInfo.put("description", p.description());
+            paramInfo.put("required", p.required());
+            params.add(paramInfo);
+        }
+        return new ToolInfo(tool.getName(), tool.getDescription(), params);
+    }
+
+    private String requireRequestText(String value, String field) {
+        if (value == null || value.isBlank()) {
+            throw new HttpApiException(400, "invalid_params", "Missing required field: " + field);
+        }
+        return value.trim();
     }
 
     private String handleHealth() {

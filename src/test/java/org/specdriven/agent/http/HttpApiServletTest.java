@@ -207,6 +207,65 @@ class HttpApiServletTest {
             StubResponse resp = service("POST", "/tools", "{}");
             assertEquals(405, resp.status());
         }
+
+        @Test
+        void registerRemoteTool_returnsMetadataAndListsTool() {
+            StubResponse register = service("POST", "/tools/register", """
+                    {"name":"lookup","description":"lookup data","callbackUrl":"http://localhost/callback","parameters":[{"name":"term","type":"string","description":"search term","required":true}]}
+                    """);
+            assertEquals(200, register.status());
+            assertTrue(register.body().contains("\"name\":\"lookup\""));
+            assertTrue(register.body().contains("\"term\""));
+
+            StubResponse list = service("GET", "/tools");
+            assertEquals(200, list.status());
+            assertTrue(list.body().contains("\"name\":\"bash\""));
+            assertTrue(list.body().contains("\"name\":\"lookup\""));
+        }
+
+        @Test
+        void registerRemoteTool_missingNameReturns400() {
+            StubResponse resp = service("POST", "/tools/register", """
+                    {"description":"lookup data","callbackUrl":"http://localhost/callback","parameters":[]}
+                    """);
+            assertEquals(400, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void registerRemoteTool_missingCallbackUrlReturns400() {
+            StubResponse resp = service("POST", "/tools/register", """
+                    {"name":"lookup","description":"lookup data","parameters":[]}
+                    """);
+            assertEquals(400, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void registerRemoteTool_cannotOverwriteStaticTool() {
+            StubResponse resp = service("POST", "/tools/register", """
+                    {"name":"bash","description":"replacement","callbackUrl":"http://localhost/callback","parameters":[]}
+                    """);
+            assertEquals(409, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"conflict\""));
+        }
+
+        @Test
+        void registerRemoteTool_replacesPreviousRemoteRegistration() {
+            StubResponse first = service("POST", "/tools/register", """
+                    {"name":"lookup","description":"first","callbackUrl":"http://localhost/first","parameters":[]}
+                    """);
+            assertEquals(200, first.status());
+            StubResponse second = service("POST", "/tools/register", """
+                    {"name":"lookup","description":"second","callbackUrl":"http://localhost/second","parameters":[]}
+                    """);
+            assertEquals(200, second.status());
+
+            StubResponse list = service("GET", "/tools");
+            assertEquals(200, list.status());
+            assertTrue(list.body().contains("\"description\":\"second\""));
+            assertFalse(list.body().contains("\"description\":\"first\""));
+        }
     }
 
     // --- GET /health ---
