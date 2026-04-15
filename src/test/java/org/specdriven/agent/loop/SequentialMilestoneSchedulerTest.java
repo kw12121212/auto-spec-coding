@@ -146,4 +146,26 @@ class SequentialMilestoneSchedulerTest {
         LoopContext ctx = new LoopContext("", "", List.of(), Set.of());
         assertTrue(scheduler.selectNext(ctx).isEmpty());
     }
+
+    @Test
+    void summarizeRoadmapUsesSchedulingParsingRules() throws Exception {
+        writeIndex("- [m1.md](milestones/m1.md) - M1 - complete\n" +
+                "- [m2.md](milestones/m2.md) - M2 - proposed\n");
+        writeMilestone("m1.md", "# M1\n## Goal\nDone\n## Status\n- Declared: complete\n## Planned Changes\n" +
+                "- `done-change` - Declared: complete - shipped\n");
+        writeMilestone("m2.md", "# M2\n## Goal\nIn progress\n## Status\n- Declared: proposed\n## Planned Changes\n" +
+                "- `next-change` - Declared: planned - queued\n");
+
+        SequentialMilestoneScheduler.RoadmapSummary summary =
+                SequentialMilestoneScheduler.summarizeRoadmap(tempDir);
+
+        assertEquals(2, summary.totalMilestones());
+        assertEquals(1, summary.completeMilestones());
+        assertEquals(1, summary.activeMilestones());
+        assertEquals(1, summary.plannedChanges());
+        assertEquals(1, summary.completeChanges());
+        assertTrue(summary.nextPlannedChange().isPresent());
+        assertEquals("next-change", summary.nextPlannedChange().get().changeName());
+        assertEquals("m2.md", summary.nextPlannedChange().get().milestoneFile());
+    }
 }

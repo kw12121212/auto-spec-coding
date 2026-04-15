@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,6 +74,44 @@ public class SequentialMilestoneScheduler implements LoopScheduler {
         }
 
         return Optional.empty();
+    }
+
+    /**
+     * Summarizes roadmap progress using the same index and milestone parsing rules as scheduling.
+     */
+    public static RoadmapSummary summarizeRoadmap(Path roadmapDir) {
+        SequentialMilestoneScheduler scheduler = new SequentialMilestoneScheduler(roadmapDir, List.of());
+        List<String> milestoneFiles = scheduler.parseIndex(roadmapDir.resolve("INDEX.md"));
+        int completeMilestones = 0;
+        int activeMilestones = 0;
+        int plannedChanges = 0;
+        int completeChanges = 0;
+
+        for (String milestoneFile : milestoneFiles) {
+            MilestoneData data = scheduler.parseMilestone(roadmapDir.resolve("milestones").resolve(milestoneFile));
+            if ("complete".equalsIgnoreCase(data.status())) {
+                completeMilestones++;
+            } else {
+                activeMilestones++;
+            }
+            for (PlannedChange change : data.plannedChanges()) {
+                if ("complete".equalsIgnoreCase(change.status())) {
+                    completeChanges++;
+                } else if ("planned".equalsIgnoreCase(change.status())) {
+                    plannedChanges++;
+                }
+            }
+        }
+
+        Optional<LoopCandidate> nextPlannedChange = scheduler.selectNext(new LoopContext("", "", List.of(), Set.of()));
+        return new RoadmapSummary(
+                milestoneFiles.size(),
+                completeMilestones,
+                activeMilestones,
+                plannedChanges,
+                completeChanges,
+                nextPlannedChange
+        );
     }
 
     /**
@@ -144,5 +183,18 @@ public class SequentialMilestoneScheduler implements LoopScheduler {
      * Internal parsed milestone data.
      */
     record MilestoneData(String goal, String status, List<PlannedChange> plannedChanges) {
+    }
+
+    public record RoadmapSummary(
+            int totalMilestones,
+            int completeMilestones,
+            int activeMilestones,
+            int plannedChanges,
+            int completeChanges,
+            Optional<LoopCandidate> nextPlannedChange
+    ) {
+        public RoadmapSummary {
+            nextPlannedChange = nextPlannedChange == null ? Optional.empty() : nextPlannedChange;
+        }
     }
 }

@@ -29,7 +29,7 @@
 - [m26-autonomous-loop-recovery-escalation.md](milestones/m26-autonomous-loop-recovery-escalation.md) - M26 - 自主循环恢复与升级控制 - complete
 - [m27-smart-context-injection.md](milestones/m27-smart-context-injection.md) - M27 - 智能上下文注入与 Token 优化 - complete
 - [m28-dynamic-llm-config.md](milestones/m28-dynamic-llm-config.md) - M28 - 动态 LLM 配置与热切换 - complete
-- [m29-interactive-human-in-loop.md](milestones/m29-interactive-human-in-loop.md) - M29 - SQL+自然语言交互式人机协作 - proposed
+- [m29-interactive-human-in-loop.md](milestones/m29-interactive-human-in-loop.md) - M29 - SQL+自然语言交互式人机协作 - complete
 - [m30-dynamic-compilation-hotload.md](milestones/m30-dynamic-compilation-hotload.md) - M30 - 动态编译与 Skill 热加载 - complete
 - [m31-orm-integration-enhancement.md](milestones/m31-orm-integration-enhancement.md) - M31 - ORM 集成增强 - proposed
 - [m32-lealone-platform-unification.md](milestones/m32-lealone-platform-unification.md) - M32 - Lealone 平台化统一基础设施 - proposed

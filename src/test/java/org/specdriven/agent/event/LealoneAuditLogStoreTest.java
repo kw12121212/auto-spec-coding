@@ -174,6 +174,28 @@ class LealoneAuditLogStoreTest {
         assertEquals("orchestrator", entries.get(0).event().source());
     }
 
+    @Test
+    void eventBusSubscription_persistsInteractiveCommandEvents() {
+        eventBus.publish(new Event(
+                EventType.INTERACTIVE_COMMAND_HANDLED,
+                3000L,
+                "session-1",
+                Map.of(
+                        "sessionId", "session-1",
+                        "commandCategory", "SHOW",
+                        "commandType", "STATUS",
+                        "rawInput", "SHOW STATUS",
+                        "outcome", "showed_information"
+                )));
+
+        List<AuditEntry> entries = store.query(EventType.INTERACTIVE_COMMAND_HANDLED, 0L, 5000L);
+        assertEquals(1, entries.size());
+        assertEquals("session-1", entries.get(0).event().source());
+        assertEquals("SHOW", entries.get(0).event().metadata().get("commandCategory"));
+        assertEquals("STATUS", entries.get(0).event().metadata().get("commandType"));
+        assertEquals("showed_information", entries.get(0).event().metadata().get("outcome"));
+    }
+
     // -------------------------------------------------------------------------
     // AuditEntry record
     // -------------------------------------------------------------------------
