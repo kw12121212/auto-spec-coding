@@ -36,6 +36,11 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
                 completed_change_names CLOB,
                 total_iterations       INT    NOT NULL DEFAULT 0,
                 token_usage            BIGINT NOT NULL DEFAULT 0,
+                checkpoint_change_name VARCHAR(500),
+                checkpoint_milestone_file VARCHAR(500),
+                checkpoint_milestone_goal CLOB,
+                checkpoint_planned_change_summary CLOB,
+                checkpoint_completed_phases CLOB,
                 updated_at             BIGINT NOT NULL
             )
             """;
@@ -95,15 +100,36 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
 
     @Override
     public void saveProgress(LoopProgress progress) {
-        String sql = "MERGE INTO loop_progress (id, loop_state, completed_change_names, total_iterations, token_usage, updated_at) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = """
+                MERGE INTO loop_progress (
+                    id, loop_state, completed_change_names, total_iterations, token_usage,
+                    checkpoint_change_name, checkpoint_milestone_file, checkpoint_milestone_goal,
+                    checkpoint_planned_change_summary, checkpoint_completed_phases, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
+            Optional<LoopPhaseCheckpoint> checkpoint = progress.activeCheckpoint();
             ps.setInt(1, 1);
             ps.setString(2, progress.loopState().name());
             ps.setString(3, setToJson(progress.completedChangeNames()));
             ps.setInt(4, progress.totalIterations());
             ps.setLong(5, progress.tokenUsage());
-            ps.setLong(6, System.currentTimeMillis());
+            if (checkpoint.isPresent()) {
+                LoopPhaseCheckpoint active = checkpoint.get();
+                ps.setString(6, active.changeName());
+                ps.setString(7, active.milestoneFile());
+                ps.setString(8, active.milestoneGoal());
+                ps.setString(9, active.plannedChangeSummary());
+                ps.setString(10, phasesToJson(active.completedPhases()));
+            } else {
+                ps.setNull(6, Types.VARCHAR);
+                ps.setNull(7, Types.VARCHAR);
+                ps.setNull(8, Types.CLOB);
+                ps.setNull(9, Types.CLOB);
+                ps.setNull(10, Types.CLOB);
+            }
+            ps.setLong(11, System.currentTimeMillis());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to save progress", e);
@@ -114,7 +140,12 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
 
     @Override
     public Optional<LoopProgress> loadProgress() {
-        String sql = "SELECT loop_state, completed_change_names, total_iterations, token_usage FROM loop_progress WHERE id = 1";
+        String sql = """
+                SELECT loop_state, completed_change_names, total_iterations, token_usage,
+                       checkpoint_change_name, checkpoint_milestone_file, checkpoint_milestone_goal,
+                       checkpoint_planned_change_summary, checkpoint_completed_phases
+                FROM loop_progress WHERE id = 1
+                """;
         try (Connection conn = getConnection();
              Statement stmt = conn.createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
@@ -127,7 +158,8 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
                     LoopState.valueOf(rs.getString("loop_state")),
                     jsonToSet(rs.getString("completed_change_names")),
                     rs.getInt("total_iterations"),
-                    tokenUsageWasNull ? 0 : tokenUsage
+                    tokenUsageWasNull ? 0 : tokenUsage,
+                    resultSetToCheckpoint(rs)
             ));
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to load progress", e);
@@ -172,9 +204,60 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
              Statement stmt = conn.createStatement()) {
             stmt.execute(CREATE_ITERATIONS_TABLE);
             stmt.execute(CREATE_PROGRESS_TABLE);
+            addColumnIfMissing(conn, "CHECKPOINT_CHANGE_NAME", "checkpoint_change_name VARCHAR(500)");
+            addColumnIfMissing(conn, "CHECKPOINT_MILESTONE_FILE", "checkpoint_milestone_file VARCHAR(500)");
+            addColumnIfMissing(conn, "CHECKPOINT_MILESTONE_GOAL", "checkpoint_milestone_goal CLOB");
+            addColumnIfMissing(conn, "CHECKPOINT_PLANNED_CHANGE_SUMMARY",
+                    "checkpoint_planned_change_summary CLOB");
+            addColumnIfMissing(conn, "CHECKPOINT_COMPLETED_PHASES", "checkpoint_completed_phases CLOB");
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to initialize loop tables", e);
         }
+    }
+
+    private void addColumnIfMissing(Connection conn, String metadataName, String definition)
+            throws SQLException {
+        if (columnExists(conn, metadataName)) {
+            return;
+        }
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("ALTER TABLE loop_progress ADD " + definition);
+        } catch (SQLException e) {
+            if (!columnExists(conn, metadataName)) {
+                throw e;
+            }
+        }
+    }
+
+    private boolean columnExists(Connection conn, String metadataName) throws SQLException {
+        DatabaseMetaData metaData = conn.getMetaData();
+        String lowerName = metadataName.toLowerCase(Locale.ROOT);
+        for (String tableName : List.of("LOOP_PROGRESS", "loop_progress")) {
+            for (String columnName : List.of(metadataName, lowerName)) {
+                try (ResultSet columns = metaData.getColumns(null, null, tableName, columnName)) {
+                    if (columns.next()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private LoopPhaseCheckpoint resultSetToCheckpoint(ResultSet rs) throws SQLException {
+        String changeName = rs.getString("checkpoint_change_name");
+        String milestoneFile = rs.getString("checkpoint_milestone_file");
+        if (changeName == null || changeName.isBlank()
+                || milestoneFile == null || milestoneFile.isBlank()) {
+            return null;
+        }
+        return new LoopPhaseCheckpoint(
+                changeName,
+                milestoneFile,
+                rs.getString("checkpoint_milestone_goal"),
+                rs.getString("checkpoint_planned_change_summary"),
+                jsonToPhases(rs.getString("checkpoint_completed_phases"))
+        );
     }
 
     private void publishProgressSaved(int iterationCount, int completedChangeCount) {
@@ -213,5 +296,28 @@ public class LealoneLoopIterationStore implements LoopIterationStore {
             }
         }
         return Collections.unmodifiableSet(result);
+    }
+
+    static String phasesToJson(List<PipelinePhase> phases) {
+        if (phases == null || phases.isEmpty()) {
+            return "[]";
+        }
+        JsonArray arr = new JsonArray();
+        phases.forEach(phase -> arr.add(phase.name()));
+        return arr.encode();
+    }
+
+    static List<PipelinePhase> jsonToPhases(String jsonStr) {
+        if (jsonStr == null || jsonStr.isBlank() || "[]".equals(jsonStr.trim())) {
+            return List.of();
+        }
+        JsonArray arr = new JsonArray(jsonStr);
+        List<PipelinePhase> result = new ArrayList<>();
+        for (Object item : arr) {
+            if (item instanceof String s) {
+                result.add(PipelinePhase.valueOf(s));
+            }
+        }
+        return List.copyOf(result);
     }
 }

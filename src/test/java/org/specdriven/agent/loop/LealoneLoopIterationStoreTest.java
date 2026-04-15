@@ -2,6 +2,9 @@ package org.specdriven.agent.loop;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.util.*;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -130,6 +133,97 @@ class LealoneLoopIterationStoreTest {
 
         LoopProgress loaded = store.loadProgress().orElseThrow();
         assertEquals(0, loaded.tokenUsage());
+    }
+
+    @Test
+    void checkpointRoundTripPreservesPhaseData() {
+        LoopPhaseCheckpoint checkpoint = new LoopPhaseCheckpoint(
+                "change-a", "m35.md", "goal", "summary",
+                List.of(PipelinePhase.VERIFY, PipelinePhase.RECOMMEND));
+        store.saveProgress(new LoopProgress(LoopState.RUNNING, Set.of("done"), 1, 400,
+                checkpoint));
+
+        LoopProgress loaded = store.loadProgress().orElseThrow();
+        assertTrue(loaded.activeCheckpoint().isPresent());
+        LoopPhaseCheckpoint loadedCheckpoint = loaded.activeCheckpoint().orElseThrow();
+        assertEquals("change-a", loadedCheckpoint.changeName());
+        assertEquals("m35.md", loadedCheckpoint.milestoneFile());
+        assertEquals("goal", loadedCheckpoint.milestoneGoal());
+        assertEquals("summary", loadedCheckpoint.plannedChangeSummary());
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.VERIFY),
+                loadedCheckpoint.completedPhases());
+        assertEquals(400, loaded.tokenUsage());
+    }
+
+    @Test
+    void saveProgressWithoutCheckpointClearsPreviousCheckpoint() {
+        LoopPhaseCheckpoint checkpoint = new LoopPhaseCheckpoint(
+                "change-a", "m35.md", "goal", "summary",
+                List.of(PipelinePhase.RECOMMEND));
+        store.saveProgress(new LoopProgress(LoopState.RUNNING, Set.of(), 0, 0, checkpoint));
+        store.saveProgress(new LoopProgress(LoopState.STOPPED, Set.of("change-a"), 1, 0));
+
+        LoopProgress loaded = store.loadProgress().orElseThrow();
+        assertTrue(loaded.activeCheckpoint().isEmpty());
+        assertTrue(loaded.completedChangeNames().contains("change-a"));
+    }
+
+    @Test
+    void oldProgressSnapshotLoadsWithoutCheckpoint() throws Exception {
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "root", "");
+             PreparedStatement ps = conn.prepareStatement("""
+                     MERGE INTO loop_progress (
+                         id, loop_state, completed_change_names, total_iterations, token_usage, updated_at
+                     ) VALUES (?, ?, ?, ?, ?, ?)
+                     """)) {
+            ps.setInt(1, 1);
+            ps.setString(2, LoopState.RUNNING.name());
+            ps.setString(3, LealoneLoopIterationStore.setToJson(Set.of("done")));
+            ps.setInt(4, 3);
+            ps.setLong(5, 700);
+            ps.setLong(6, System.currentTimeMillis());
+            ps.executeUpdate();
+        }
+
+        LoopProgress loaded = store.loadProgress().orElseThrow();
+        assertEquals(LoopState.RUNNING, loaded.loopState());
+        assertEquals(Set.of("done"), loaded.completedChangeNames());
+        assertEquals(3, loaded.totalIterations());
+        assertEquals(700, loaded.tokenUsage());
+        assertTrue(loaded.activeCheckpoint().isEmpty());
+    }
+
+    @Test
+    void oldProgressTableSchemaIsUpgradedAndLoadsWithoutCheckpoint() throws Exception {
+        String dbName = "test_loop_old_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String oldJdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        try (Connection conn = DriverManager.getConnection(oldJdbcUrl, "root", "");
+             var stmt = conn.createStatement()) {
+            stmt.execute("""
+                    CREATE TABLE loop_progress (
+                        id INT PRIMARY KEY,
+                        loop_state VARCHAR(20) NOT NULL,
+                        completed_change_names CLOB,
+                        total_iterations INT NOT NULL DEFAULT 0,
+                        token_usage BIGINT NOT NULL DEFAULT 0,
+                        updated_at BIGINT NOT NULL
+                    )
+                    """);
+            stmt.executeUpdate("""
+                    INSERT INTO loop_progress (
+                        id, loop_state, completed_change_names, total_iterations, token_usage, updated_at
+                    ) VALUES (1, 'RUNNING', '["done"]', 4, 900, 1)
+                    """);
+        }
+
+        LealoneLoopIterationStore upgraded = new LealoneLoopIterationStore(eventBus, oldJdbcUrl);
+        LoopProgress loaded = upgraded.loadProgress().orElseThrow();
+
+        assertEquals(LoopState.RUNNING, loaded.loopState());
+        assertEquals(Set.of("done"), loaded.completedChangeNames());
+        assertEquals(4, loaded.totalIterations());
+        assertEquals(900, loaded.tokenUsage());
+        assertTrue(loaded.activeCheckpoint().isEmpty());
     }
 
     // --- clear ---

@@ -371,6 +371,79 @@ class DefaultLoopDriverTest {
     }
 
     @Test
+    void startupResumesCheckpointedCandidateBeforeSelectingNewWork() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        LoopPhaseCheckpoint checkpoint = new LoopPhaseCheckpoint(
+                "checkpointed-change", "m35.md", "goal", "summary",
+                List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE));
+        store.saveProgress(new LoopProgress(LoopState.PAUSED, Set.of(), 0, 0, checkpoint));
+
+        AtomicInteger schedulerCalls = new AtomicInteger();
+        AtomicReference<LoopCandidate> pipelineCandidate = new AtomicReference<>();
+        AtomicReference<Set<PipelinePhase>> pipelineSkipPhases = new AtomicReference<>();
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+        LoopScheduler scheduler = ctx -> {
+            schedulerCalls.incrementAndGet();
+            return Optional.of(new LoopCandidate("new-change", "m.md", "goal"));
+        };
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            pipelineCandidate.set(candidate);
+            pipelineSkipPhases.set(skipPhases);
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.SUCCESS, null, 10,
+                    List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                            PipelinePhase.REVIEW, PipelinePhase.ARCHIVE));
+        };
+
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        assertEquals(0, schedulerCalls.get());
+        assertEquals("checkpointed-change", pipelineCandidate.get().changeName());
+        assertEquals(Set.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE),
+                pipelineSkipPhases.get());
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertTrue(progress.activeCheckpoint().isEmpty());
+        assertTrue(progress.completedChangeNames().contains("checkpointed-change"));
+    }
+
+    @Test
+    void failedPhasePersistsRetryableCheckpointWithoutCompletingChange() throws Exception {
+        SimpleEventBus bus = eventBus();
+        LealoneLoopIterationStore store = createStore(bus);
+        CountDownLatch pipelineCalled = new CountDownLatch(1);
+
+        LoopPipeline pipeline = (candidate, config, skipPhases) -> {
+            pipelineCalled.countDown();
+            return new IterationResult(IterationStatus.FAILED, "verify failed", 10,
+                    List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE));
+        };
+        LoopScheduler scheduler = ctx ->
+                Optional.of(new LoopCandidate("failed-change", "m35.md", "goal", "summary"));
+        LoopConfig cfg = new LoopConfig(1, 60, List.of(), Path.of("/tmp"), bus);
+        DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
+        driver.start();
+
+        assertTrue(pipelineCalled.await(5, TimeUnit.SECONDS));
+        waitUntilState(driver, LoopState.STOPPED);
+
+        LoopProgress progress = store.loadProgress().orElseThrow();
+        assertFalse(progress.completedChangeNames().contains("failed-change"));
+        LoopPhaseCheckpoint checkpoint = progress.activeCheckpoint().orElseThrow();
+        assertEquals("failed-change", checkpoint.changeName());
+        assertEquals("m35.md", checkpoint.milestoneFile());
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE),
+                checkpoint.completedPhases());
+        assertEquals(1, store.loadIterations().size());
+        assertEquals(IterationStatus.FAILED, store.loadIterations().get(0).status());
+    }
+
+    @Test
     void stopPersistsFinalSnapshot() throws Exception {
         SimpleEventBus bus = eventBus();
         LealoneLoopIterationStore store = createStore(bus);
@@ -985,6 +1058,10 @@ class DefaultLoopDriverTest {
         LoopProgress progress = store.loadProgress().orElseThrow();
         assertEquals(LoopState.PAUSED, progress.loopState());
         assertFalse(progress.completedChangeNames().contains("approval-change"));
+        LoopPhaseCheckpoint checkpoint = progress.activeCheckpoint().orElseThrow();
+        assertEquals("approval-change", checkpoint.changeName());
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE),
+                checkpoint.completedPhases());
         assertEquals(1, store.loadIterations().size());
         assertEquals(IterationStatus.QUESTIONING, store.loadIterations().get(0).status());
 

@@ -48,6 +48,7 @@ public class DefaultLoopDriver implements LoopDriver {
     private volatile ContextWindowManager contextManager;
     private volatile long accumulatedTokenUsage = 0;
     private volatile InteractiveSession activeInteractiveSession;
+    private volatile LoopPhaseCheckpoint activeCheckpoint;
 
     public DefaultLoopDriver(LoopConfig config, LoopScheduler scheduler) {
         this(config, scheduler, new StubLoopPipeline(), null, null, null, null);
@@ -102,6 +103,7 @@ public class DefaultLoopDriver implements LoopDriver {
                 completedChangeNames.addAll(progress.completedChangeNames());
                 completedIterations.addAll(store.loadIterations());
                 accumulatedTokenUsage = progress.tokenUsage();
+                activeCheckpoint = progress.activeCheckpoint().orElse(null);
             }
         });
 
@@ -225,20 +227,29 @@ public class DefaultLoopDriver implements LoopDriver {
                 iterationCount++;
                 long startedAt = System.currentTimeMillis();
 
-                // Build context and select next
-                LoopContext ctx = new LoopContext(
-                        "", "", List.of(),
-                        Set.copyOf(completedChangeNames)
-                );
+                LoopPhaseCheckpoint checkpointAtStart = activeCheckpoint;
+                LoopCandidate c;
+                Set<PipelinePhase> skipPhases;
+                if (checkpointAtStart != null) {
+                    c = checkpointAtStart.candidate();
+                    skipPhases = new LinkedHashSet<>(checkpointAtStart.completedPhases());
+                } else {
+                    LoopContext ctx = new LoopContext(
+                            "", "", List.of(),
+                            Set.copyOf(completedChangeNames)
+                    );
 
-                Optional<LoopCandidate> candidate = scheduler.selectNext(ctx);
+                    Optional<LoopCandidate> candidate = scheduler.selectNext(ctx);
 
-                if (candidate.isEmpty()) {
-                    stopWithReason("no more candidates");
-                    return;
+                    if (candidate.isEmpty()) {
+                        stopWithReason("no more candidates");
+                        return;
+                    }
+                    c = candidate.get();
+                    skipPhases = Set.of();
+                    updateCheckpoint(c, List.of());
+                    persistSnapshot();
                 }
-
-                LoopCandidate c = candidate.get();
                 LoopIteration iteration = new LoopIteration(
                         iterationCount, c.changeName(), c.milestoneFile(),
                         startedAt, null, IterationStatus.SUCCESS, null
@@ -246,8 +257,10 @@ public class DefaultLoopDriver implements LoopDriver {
                 currentIteration.set(iteration);
 
                 // Execute pipeline
-                IterationResult pipelineResult = pipeline.execute(c, config);
+                IterationResult pipelineResult = pipeline.execute(c, config, skipPhases);
                 long iterationTokenUsage = pipelineResult.tokenUsage();
+                updateCheckpoint(c, mergeCompletedPhases(skipPhases, pipelineResult.phasesCompleted()));
+                persistSnapshot();
 
                 // Handle QUESTIONING: route to answer agent or escalate
                 if (pipelineResult.status() == IterationStatus.QUESTIONING) {
@@ -282,9 +295,13 @@ public class DefaultLoopDriver implements LoopDriver {
                             state.requireTransitionTo(LoopState.RUNNING);
                             state = LoopState.RUNNING;
                         }
-                        pipelineResult = pipeline.execute(
-                                c, config, Set.copyOf(pipelineResult.phasesCompleted()));
+                        Set<PipelinePhase> resumeSkipPhases = Set.copyOf(
+                                mergeCompletedPhases(skipPhases, pipelineResult.phasesCompleted()));
+                        pipelineResult = pipeline.execute(c, config, resumeSkipPhases);
                         iterationTokenUsage += pipelineResult.tokenUsage();
+                        updateCheckpoint(c, mergeCompletedPhases(
+                                resumeSkipPhases, pipelineResult.phasesCompleted()));
+                        persistSnapshot();
                         // Fall through to checkpoint/complete handling below
                     } else {
                         AnswerResolution.Escalated escalated = (AnswerResolution.Escalated) resolution;
@@ -379,7 +396,10 @@ public class DefaultLoopDriver implements LoopDriver {
 
                 synchronized (stateLock) {
                     completedIterations.add(completed);
-                    completedChangeNames.add(c.changeName());
+                    if (pipelineResult.status() == IterationStatus.SUCCESS) {
+                        completedChangeNames.add(c.changeName());
+                        activeCheckpoint = null;
+                    }
                     currentIteration.set(null);
                     if (state == LoopState.CHECKPOINT) {
                         state = LoopState.RECOMMENDING;
@@ -494,8 +514,28 @@ public class DefaultLoopDriver implements LoopDriver {
     private LoopProgress buildSnapshot() {
         synchronized (stateLock) {
             return new LoopProgress(state, Set.copyOf(completedChangeNames),
-                    completedIterations.size(), accumulatedTokenUsage);
+                    completedIterations.size(), accumulatedTokenUsage, activeCheckpoint);
         }
+    }
+
+    private void updateCheckpoint(LoopCandidate candidate, List<PipelinePhase> completedPhases) {
+        synchronized (stateLock) {
+            activeCheckpoint = new LoopPhaseCheckpoint(candidate, completedPhases);
+        }
+    }
+
+    private List<PipelinePhase> mergeCompletedPhases(Set<PipelinePhase> existing,
+                                                     List<PipelinePhase> latest) {
+        LinkedHashSet<PipelinePhase> merged = new LinkedHashSet<>();
+        if (existing != null) {
+            merged.addAll(existing);
+        }
+        if (latest != null) {
+            merged.addAll(latest);
+        }
+        return PipelinePhase.ordered().stream()
+                .filter(merged::contains)
+                .toList();
     }
 
     private void stopWithContextExhaustion(int completedIterations,
