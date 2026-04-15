@@ -5,7 +5,7 @@
  */
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SpecDrivenClient } from "./client.js";
 import { ApiError } from "./errors.js";
 
@@ -13,22 +13,36 @@ const BASE = "http://integration-test-backend";
 
 const agentStore: Record<string, { state: string; createdAt: number; updatedAt: number }> =
   {};
+const handledRequests: string[] = [];
+
+function resetAgentStore() {
+  for (const key of Object.keys(agentStore)) {
+    delete agentStore[key];
+  }
+}
+
+function recordRequest(request: Request) {
+  handledRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+}
 
 const server = setupServer(
-  http.get(`${BASE}/api/v1/health`, () =>
-    HttpResponse.json({ status: "ok", version: "0.1.0" }),
-  ),
+  http.get(`${BASE}/api/v1/health`, ({ request }) => {
+    recordRequest(request);
+    return HttpResponse.json({ status: "ok", version: "0.1.0" });
+  }),
 
-  http.get(`${BASE}/api/v1/tools`, () =>
-    HttpResponse.json({
+  http.get(`${BASE}/api/v1/tools`, ({ request }) => {
+    recordRequest(request);
+    return HttpResponse.json({
       tools: [
         { name: "bash", description: "Run shell commands", parameters: [] },
         { name: "read", description: "Read a file", parameters: [] },
       ],
-    }),
-  ),
+    });
+  }),
 
   http.post(`${BASE}/api/v1/agent/run`, async ({ request }) => {
+    recordRequest(request);
     const body = (await request.json()) as { prompt?: string };
     if (!body.prompt) {
       return HttpResponse.json(
@@ -46,6 +60,7 @@ const server = setupServer(
   }),
 
   http.get(`${BASE}/api/v1/agent/state`, ({ request }) => {
+    recordRequest(request);
     const url = new URL(request.url);
     const id = url.searchParams.get("id") ?? "";
     const entry = agentStore[id];
@@ -59,6 +74,7 @@ const server = setupServer(
   }),
 
   http.post(`${BASE}/api/v1/agent/stop`, ({ request }) => {
+    recordRequest(request);
     const url = new URL(request.url);
     const id = url.searchParams.get("id") ?? "";
     const entry = agentStore[id];
@@ -74,6 +90,7 @@ const server = setupServer(
   }),
 
   http.get(`${BASE}/api/v1/events`, ({ request }) => {
+    recordRequest(request);
     const url = new URL(request.url);
     const after = parseInt(url.searchParams.get("after") ?? "0", 10);
     const events = [
@@ -98,6 +115,10 @@ const server = setupServer(
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+beforeEach(() => {
+  resetAgentStore();
+  handledRequests.length = 0;
+});
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
@@ -179,10 +200,10 @@ describe("error propagation", () => {
 
 describe("hermetic: no live backend required", () => {
   it("all flows complete without any external network calls", async () => {
-    // If the MSW server intercepted all requests, the suite runs hermetically.
-    // This test documents that contract explicitly.
+    // The fake host plus `onUnhandledRequest: "error"` ensure the test suite
+    // cannot fall through to a live backend or external network.
     const client = makeClient();
     await client.health();
-    expect(true).toBe(true);
+    expect(handledRequests).toEqual(["GET /api/v1/health"]);
   });
 });
