@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.specdriven.agent.agent.AgentState;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.question.DeliveryAttempt;
 import org.specdriven.agent.question.DeliveryLogStore;
 import org.specdriven.agent.question.ReplyCallbackRouter;
@@ -23,11 +25,16 @@ import java.util.concurrent.ConcurrentHashMap;
 public class HttpApiServlet extends HttpServlet {
 
     private static final String VERSION = "0.1.0";
+    private static final int EVENT_BUFFER_CAPACITY = 1024;
+    private static final int EVENT_POLL_DEFAULT_LIMIT = 100;
+    private static final int EVENT_POLL_MAX_LIMIT = 500;
 
     private SpecDriven sdk;
     private ReplyCallbackRouter callbackRouter;
     private DeliveryLogStore deliveryLogStore;
     private final Map<String, TrackedAgent> agents = new ConcurrentHashMap<>();
+    private final HttpEventBuffer eventBuffer = new HttpEventBuffer(EVENT_BUFFER_CAPACITY);
+    private volatile boolean eventBufferSubscribed;
 
     /** Default constructor — SDK is created in {@link #init()}. */
     public HttpApiServlet() {}
@@ -55,11 +62,13 @@ public class HttpApiServlet extends HttpServlet {
         if (sdk == null) {
             sdk = SpecDriven.builder().build();
         }
+        ensureEventBufferSubscribed();
     }
 
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) {
         try {
+            ensureEventBufferSubscribed();
             Route route = parseRoute(req);
             String json = dispatch(route, req);
             sendJson(resp, 200, json);
@@ -94,6 +103,10 @@ public class HttpApiServlet extends HttpServlet {
         if ("health".equals(group) && route.length() >= 2) {
             requireGet(route.method(), "/health");
             return handleHealth();
+        }
+        if ("events".equals(group) && route.length() >= 2) {
+            requireGet(route.method(), "/events");
+            return handleEvents(req);
         }
         if ("callbacks".equals(group) && route.length() >= 3) {
             requirePost(route.method(), "/callbacks/" + route.segment(2));
@@ -242,6 +255,13 @@ public class HttpApiServlet extends HttpServlet {
         return HttpJsonCodec.encode(new HealthResponse("ok", VERSION));
     }
 
+    private String handleEvents(HttpServletRequest req) {
+        long after = parseNonNegativeLong(req.getParameter("after"), "after", 0L);
+        int limit = parseLimit(req.getParameter("limit"));
+        EventType type = parseEventType(req.getParameter("type"));
+        return encodeEventPage(eventBuffer.poll(after, limit, type));
+    }
+
     private String handleCallback(String channelType, HttpServletRequest req) {
         if (callbackRouter == null) {
             throw new HttpApiException(404, "not_found", "No callback router configured");
@@ -360,6 +380,55 @@ public class HttpApiServlet extends HttpServlet {
         }
     }
 
+    private long parseNonNegativeLong(String raw, String field, long defaultValue) {
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            long value = Long.parseLong(raw);
+            if (value < 0) {
+                throw new NumberFormatException("negative value");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new HttpApiException(400, "invalid_params", "Invalid query param '" + field + "'");
+        }
+    }
+
+    private int parseLimit(String raw) {
+        long value = parseNonNegativeLong(raw, "limit", EVENT_POLL_DEFAULT_LIMIT);
+        if (value < 1 || value > EVENT_POLL_MAX_LIMIT) {
+            throw new HttpApiException(400, "invalid_params", "Invalid query param 'limit'");
+        }
+        return (int) value;
+    }
+
+    private EventType parseEventType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return EventType.valueOf(raw.trim());
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", "Invalid query param 'type'");
+        }
+    }
+
+    private void ensureEventBufferSubscribed() {
+        if (sdk == null || eventBufferSubscribed) {
+            return;
+        }
+        synchronized (this) {
+            if (eventBufferSubscribed) {
+                return;
+            }
+            for (EventType type : EventType.values()) {
+                sdk.eventBus().subscribe(type, eventBuffer::record);
+            }
+            eventBufferSubscribed = true;
+        }
+    }
+
     private String readBody(HttpServletRequest req) {
         try (BufferedReader reader = req.getReader()) {
             StringBuilder sb = new StringBuilder();
@@ -371,6 +440,18 @@ public class HttpApiServlet extends HttpServlet {
         } catch (IOException e) {
             throw new HttpApiException(400, "invalid_params", "Failed to read request body");
         }
+    }
+
+    private String encodeEventPage(EventPollPage page) {
+        StringBuilder sb = new StringBuilder("{\"events\":[");
+        for (int i = 0; i < page.events().size(); i++) {
+            if (i > 0) {
+                sb.append(",");
+            }
+            sb.append(page.events().get(i).toJson());
+        }
+        sb.append("],\"nextCursor\":").append(page.nextCursor()).append("}");
+        return sb.toString();
     }
 
     private void sendJson(HttpServletResponse resp, int status, String json) {
@@ -390,6 +471,55 @@ public class HttpApiServlet extends HttpServlet {
     private record Route(String method, String[] segments) {
         int length() { return segments.length; }
         String segment(int i) { return i < segments.length ? segments[i] : null; }
+    }
+
+    private record EventPollPage(List<HttpEvent> events, long nextCursor) {}
+
+    private record HttpEvent(long sequence, Event event) {
+        String toJson() {
+            String eventJson = event.toJson();
+            return "{\"sequence\":" + sequence + "," + eventJson.substring(1);
+        }
+    }
+
+    private static class HttpEventBuffer {
+        private final int capacity;
+        private final Deque<HttpEvent> events = new ArrayDeque<>();
+        private long nextSequence;
+
+        HttpEventBuffer(int capacity) {
+            this.capacity = capacity;
+        }
+
+        synchronized void record(Event event) {
+            long sequence = ++nextSequence;
+            events.addLast(new HttpEvent(sequence, event));
+            while (events.size() > capacity) {
+                events.removeFirst();
+            }
+        }
+
+        synchronized EventPollPage poll(long after, int limit, EventType type) {
+            List<HttpEvent> matches = new ArrayList<>();
+            long highestSeen = after;
+            for (HttpEvent event : events) {
+                if (event.sequence() <= after) {
+                    continue;
+                }
+                highestSeen = Math.max(highestSeen, event.sequence());
+                if (type != null && event.event().type() != type) {
+                    continue;
+                }
+                matches.add(event);
+                if (matches.size() == limit) {
+                    break;
+                }
+            }
+            long nextCursor = matches.isEmpty()
+                    ? highestSeen
+                    : matches.get(matches.size() - 1).sequence();
+            return new EventPollPage(List.copyOf(matches), nextCursor);
+        }
     }
 
     private static class TrackedAgent {

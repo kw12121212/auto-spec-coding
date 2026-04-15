@@ -218,6 +218,33 @@ func (c *Client) GetAgentState(ctx context.Context, agentID string) (*AgentState
 	return &response, nil
 }
 
+// PollEvents calls GET /api/v1/events.
+func (c *Client) PollEvents(ctx context.Context, options EventPollOptions) (*EventPollResponse, error) {
+	values := url.Values{}
+	if options.After > 0 {
+		values.Set("after", fmt.Sprintf("%d", options.After))
+	}
+	if options.Limit > 0 {
+		values.Set("limit", fmt.Sprintf("%d", options.Limit))
+	}
+	if strings.TrimSpace(options.Type) != "" {
+		values.Set("type", strings.TrimSpace(options.Type))
+	}
+
+	path := "/events"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response EventPollResponse
+	if err := c.do(ctx, http.MethodGet, path, nil, true, &response); err != nil {
+		return nil, err
+	}
+	if response.Events == nil {
+		response.Events = []Event{}
+	}
+	return &response, nil
+}
+
 func (c *Client) do(ctx context.Context, method, apiPath string, body any, authenticated bool, out any) error {
 	if ctx == nil {
 		ctx = context.Background()

@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.agent.AgentState;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
@@ -33,6 +35,7 @@ class HttpApiServletTest {
                         List.of(new ToolParameter("command", "string", "the command", true))))
                 .build();
         servlet = new HttpApiServlet(sdk);
+        servlet.init();
     }
 
     // --- Route dispatching ---
@@ -288,6 +291,119 @@ class HttpApiServletTest {
         }
     }
 
+    // --- GET /events ---
+
+    @Nested
+    class EventsTests {
+
+        @Test
+        void pollEvents_returnsObservedEventsInSequenceOrder() {
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "RUNNING"));
+            publish(EventType.ERROR, "agent-1", Map.of("message", "failed"));
+
+            StubResponse resp = service("GET", "/events");
+
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"sequence\":1"));
+            assertTrue(resp.body().contains("\"sequence\":2"));
+            assertTrue(resp.body().contains("\"type\":\"AGENT_STATE_CHANGED\""));
+            assertTrue(resp.body().contains("\"type\":\"ERROR\""));
+            assertTrue(resp.body().contains("\"nextCursor\":2"));
+            assertTrue(resp.body().indexOf("\"sequence\":1") < resp.body().indexOf("\"sequence\":2"));
+        }
+
+        @Test
+        void pollEvents_usesAfterCursor() {
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "RUNNING"));
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "STOPPED"));
+            publish(EventType.ERROR, "agent-1", Map.of("message", "failed"));
+            StubRequest req = new StubRequest("GET", "/events");
+            req.queryParams.put("after", "1");
+            StubResponse resp = new StubResponse();
+
+            servlet.service(req, resp);
+
+            assertEquals(200, resp.status());
+            assertFalse(resp.body().contains("\"sequence\":1"));
+            assertTrue(resp.body().contains("\"sequence\":2"));
+            assertTrue(resp.body().contains("\"sequence\":3"));
+            assertTrue(resp.body().contains("\"nextCursor\":3"));
+        }
+
+        @Test
+        void pollEvents_appliesLimit() {
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "RUNNING"));
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "STOPPED"));
+            publish(EventType.ERROR, "agent-1", Map.of("message", "failed"));
+            StubRequest req = new StubRequest("GET", "/events");
+            req.queryParams.put("limit", "2");
+            StubResponse resp = new StubResponse();
+
+            servlet.service(req, resp);
+
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"sequence\":1"));
+            assertTrue(resp.body().contains("\"sequence\":2"));
+            assertFalse(resp.body().contains("\"sequence\":3"));
+            assertTrue(resp.body().contains("\"nextCursor\":2"));
+        }
+
+        @Test
+        void pollEvents_filtersByType() {
+            publish(EventType.AGENT_STATE_CHANGED, "agent-1", Map.of("state", "RUNNING"));
+            publish(EventType.ERROR, "agent-1", Map.of("message", "failed"));
+            StubRequest req = new StubRequest("GET", "/events");
+            req.queryParams.put("type", "ERROR");
+            StubResponse resp = new StubResponse();
+
+            servlet.service(req, resp);
+
+            assertEquals(200, resp.status());
+            assertFalse(resp.body().contains("\"type\":\"AGENT_STATE_CHANGED\""));
+            assertTrue(resp.body().contains("\"type\":\"ERROR\""));
+            assertTrue(resp.body().contains("\"nextCursor\":2"));
+        }
+
+        @Test
+        void pollEvents_emptyReturnsEmptyListAndCursor() {
+            StubResponse resp = service("GET", "/events");
+
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"events\":[]"));
+            assertTrue(resp.body().contains("\"nextCursor\":0"));
+        }
+
+        @Test
+        void pollEvents_invalidQueryValuesReturn400() {
+            StubRequest afterReq = new StubRequest("GET", "/events");
+            afterReq.queryParams.put("after", "-1");
+            StubResponse afterResp = new StubResponse();
+            servlet.service(afterReq, afterResp);
+            assertEquals(400, afterResp.status());
+
+            StubRequest limitReq = new StubRequest("GET", "/events");
+            limitReq.queryParams.put("limit", "0");
+            StubResponse limitResp = new StubResponse();
+            servlet.service(limitReq, limitResp);
+            assertEquals(400, limitResp.status());
+
+            StubRequest typeReq = new StubRequest("GET", "/events");
+            typeReq.queryParams.put("type", "NO_SUCH_EVENT");
+            StubResponse typeResp = new StubResponse();
+            servlet.service(typeReq, typeResp);
+            assertEquals(400, typeResp.status());
+            assertTrue(typeResp.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void pollEvents_wrongMethodReturns405() {
+            StubResponse resp = service("POST", "/events", "{}");
+
+            assertEquals(405, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"method_not_allowed\""));
+        }
+    }
+
     // --- Error handling ---
 
     @Nested
@@ -436,6 +552,10 @@ class HttpApiServletTest {
         StubResponse resp = service("POST", "/agent/run", "{\"prompt\":\"test\"}");
         assertEquals(200, resp.status());
         return extractJsonValue(resp.body(), "agentId");
+    }
+
+    private void publish(EventType type, String source, Map<String, Object> metadata) {
+        sdk.eventBus().publish(new Event(type, System.currentTimeMillis(), source, metadata));
     }
 
     private String extractJsonValue(String json, String key) {

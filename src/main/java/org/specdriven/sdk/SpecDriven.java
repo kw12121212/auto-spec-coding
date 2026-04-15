@@ -107,7 +107,7 @@ public class SpecDriven implements AutoCloseable {
     /**
      * Returns the shared event bus for this SDK instance.
      */
-    EventBus eventBus() {
+    public EventBus eventBus() {
         return eventBus;
     }
 
