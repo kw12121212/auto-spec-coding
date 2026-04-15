@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -15,14 +16,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.specdriven.agent.agent.AgentState;
 import org.specdriven.agent.agent.AssistantMessage;
-import org.specdriven.agent.agent.Conversation;
 import org.specdriven.agent.agent.LlmClient;
 import org.specdriven.agent.agent.LlmResponse;
 import org.specdriven.agent.agent.Message;
+import org.specdriven.agent.agent.SystemMessage;
 import org.specdriven.agent.agent.ToolCall;
 import org.specdriven.agent.agent.ToolMessage;
+import org.specdriven.agent.agent.UserMessage;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
@@ -273,7 +274,7 @@ class SpecDrivenPipelineTest {
     }
 
     @Test
-    void promptBackedConstructorCreatesOneClientPerPipelineExecution() {
+    void promptBackedConstructorCreatesOneClientPerExecutedPhase() {
         AtomicInteger creations = new AtomicInteger();
         LoopPipeline pipeline = new SpecDrivenPipeline(path -> {
             creations.incrementAndGet();
@@ -283,7 +284,63 @@ class SpecDrivenPipelineTest {
         IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig());
 
         assertEquals(IterationStatus.SUCCESS, result.status());
-        assertEquals(1, creations.get());
+        assertEquals(PipelinePhase.ordered().size(), creations.get());
+    }
+
+    @Test
+    void promptBackedPhasesStartWithFreshConversation() {
+        PhaseBoundaryClient client = new PhaseBoundaryClient();
+        LoopPipeline pipeline = new SpecDrivenPipeline(path -> client, Map.of("lookup", new LookupTool()));
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(), Set.of());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals(PipelinePhase.ordered().size(), client.phaseStarts.size());
+        for (List<Message> phaseStart : client.phaseStarts) {
+            assertEquals(2, phaseStart.size());
+            assertTrue(phaseStart.stream().anyMatch(SystemMessage.class::isInstance));
+            assertTrue(phaseStart.stream().anyMatch(UserMessage.class::isInstance));
+            assertFalse(phaseStart.stream().anyMatch(AssistantMessage.class::isInstance));
+            assertFalse(phaseStart.stream().anyMatch(ToolMessage.class::isInstance));
+            assertTrue(phaseStart.stream()
+                    .filter(UserMessage.class::isInstance)
+                    .map(UserMessage.class::cast)
+                    .anyMatch(message -> message.content().contains(TEST_CANDIDATE.changeName())
+                            && message.content().contains(TEST_CANDIDATE.milestoneFile())));
+        }
+    }
+
+    @Test
+    void commandBackedPipelineStartsIndependentProcessPerCommandPhase() throws Exception {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.RECOMMEND, List.of());
+        for (PipelinePhase phase : List.of(PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
+                PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE)) {
+            templates.put(phase, List.of(
+                    "/bin/sh",
+                    "-c",
+                    "printf '%s|%s|%s|%s\\n' \"$1\" \"$$\" \"$2\" \"$3\" >> process.log",
+                    "phase",
+                    "${phase}",
+                    "${changeName}",
+                    "${milestoneFile}"));
+        }
+        LoopPipeline pipeline = new SpecDrivenPipeline(new CommandSpecDrivenPhaseRunner(templates));
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(tempDir), Set.of());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        List<String> lines = Files.readAllLines(tempDir.resolve("process.log"), StandardCharsets.UTF_8);
+        assertEquals(5, lines.size());
+        Set<String> pids = new HashSet<>();
+        for (String line : lines) {
+            String[] parts = line.split("\\|");
+            assertEquals(4, parts.length);
+            assertEquals(TEST_CANDIDATE.changeName(), parts[2]);
+            assertEquals(TEST_CANDIDATE.milestoneFile(), parts[3]);
+            pids.add(parts[1]);
+        }
+        assertEquals(lines.size(), pids.size());
     }
 
     @Test
@@ -353,7 +410,29 @@ class SpecDrivenPipelineTest {
         assertEquals(IterationStatus.QUESTIONING, result.status());
         assertNotNull(result.question());
         assertEquals("q-phase2", result.question().questionId());
+        assertFalse(result.question().sessionId().isBlank());
         assertEquals(List.of(PipelinePhase.RECOMMEND), result.phasesCompleted());
+    }
+
+    @Test
+    void resumedPromptBackedPipelineStartsNextPhaseWithFreshConversation() {
+        PhaseBoundaryClient client = new PhaseBoundaryClient();
+        LoopPipeline pipeline = new SpecDrivenPipeline(path -> client, Map.of("lookup", new LookupTool()));
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(),
+                Set.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals(List.of(PipelinePhase.IMPLEMENT, PipelinePhase.VERIFY,
+                PipelinePhase.REVIEW, PipelinePhase.ARCHIVE), result.phasesCompleted());
+        assertEquals(4, client.phaseStarts.size());
+        List<Message> resumedPhaseStart = client.phaseStarts.get(0);
+        assertEquals(2, resumedPhaseStart.size());
+        assertFalse(resumedPhaseStart.stream().anyMatch(ToolMessage.class::isInstance));
+        assertTrue(resumedPhaseStart.stream()
+                .filter(UserMessage.class::isInstance)
+                .map(UserMessage.class::cast)
+                .anyMatch(message -> message.content().contains(TEST_CANDIDATE.changeName())));
     }
 
     @Test
@@ -431,6 +510,22 @@ class SpecDrivenPipelineTest {
             if (calls.size() == 1) {
                 return new LlmResponse.ToolCallResponse(List.of(
                         new ToolCall("lookup", Map.of(), "lookup-call-1")));
+            }
+            return new LlmResponse.TextResponse("done");
+        }
+    }
+
+    private static final class PhaseBoundaryClient implements LlmClient {
+        private final List<List<Message>> phaseStarts = new ArrayList<>();
+
+        @Override
+        public LlmResponse chat(List<Message> messages) {
+            List<Message> snapshot = List.copyOf(messages);
+            boolean hasToolResult = snapshot.stream().anyMatch(ToolMessage.class::isInstance);
+            if (!hasToolResult) {
+                phaseStarts.add(snapshot);
+                return new LlmResponse.ToolCallResponse(List.of(
+                        new ToolCall("lookup", Map.of(), "lookup-call-" + phaseStarts.size())));
             }
             return new LlmResponse.TextResponse("done");
         }

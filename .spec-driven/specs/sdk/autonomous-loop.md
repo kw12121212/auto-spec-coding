@@ -271,6 +271,55 @@ mapping:
 - If all phases complete, MUST return `IterationResult` with `status=SUCCESS`
 - `durationMs` MUST reflect wall-clock time from start to finish of `execute()`
 - Prompt-backed phase execution MUST load the instruction template from classpath, substitute candidate and project variables, build user prompt containing the selected candidate change name, milestone file, milestone goal, planned change summary, and project root, create `Conversation`, assemble `SimpleAgentContext`, run `Orchestrator`, and accumulate returned LLM token usage
+- `SpecDrivenPipeline` MUST preserve phase ordering while enforcing fresh phase execution context for every non-skipped phase
+
+### Requirement: Loop phase session reset
+
+The autonomous loop pipeline MUST start each non-skipped phase with a fresh phase execution context.
+
+#### Scenario: Prompt-backed phases do not inherit chat history
+- GIVEN a prompt-backed `SpecDrivenPipeline` executing multiple phases for one loop candidate
+- WHEN a later phase begins
+- THEN the later phase MUST receive a new phase session
+- AND it MUST NOT receive the previous phase's `Conversation` history as input
+- AND it MUST use phase-local LLM client state for that phase's calls
+- AND it MUST still receive the selected candidate name, milestone file, milestone goal, planned change summary, and project root
+
+#### Scenario: Command-backed phases do not reuse process state
+- GIVEN a command-backed phase runner executes two command phases in one iteration
+- WHEN the second command phase starts
+- THEN it MUST run as an independent command invocation in the configured project root
+- AND it MUST NOT reuse the first phase's process, stdin stream, stdout stream, or stderr stream as phase input
+- AND command template substitution MUST still receive the selected candidate and project variables
+
+#### Scenario: Files remain the cross-phase handoff
+- GIVEN an earlier phase creates or modifies spec-driven artifacts or repository files
+- WHEN a later phase starts with fresh phase context
+- THEN the later phase MAY observe those artifacts and files from disk
+- AND the later phase MUST treat those artifacts, repository state, and persisted loop state as the authoritative cross-phase handoff
+
+#### Scenario: Skipped phases do not leak prior context
+- GIVEN a pipeline resumes with one or more phases listed in `skipPhases`
+- WHEN execution continues at the first non-skipped phase
+- THEN that phase MUST start with a fresh phase execution context
+- AND it MUST NOT depend on the interrupted phase's chat history or session object
+
+### Requirement: Phase session identity
+
+Each prompt-backed phase execution MUST expose a phase-local session identity to components that observe the `AgentContext`.
+
+#### Scenario: Phase sessions are distinct
+- GIVEN two prompt-backed phases execute during one loop iteration
+- WHEN each phase creates its agent execution context
+- THEN each phase MUST use a distinct non-blank session identifier
+- AND the session identifier MUST remain stable within that single phase execution
+- AND the LLM client factory MUST be invoked separately for each executed prompt-backed phase
+
+#### Scenario: Question events identify the interrupted phase session
+- GIVEN a prompt-backed phase raises a structured question
+- WHEN the pipeline returns `IterationResult(status=QUESTIONING)`
+- THEN the returned question MUST identify the session for the interrupted phase
+- AND `phasesCompleted` MUST include only phases completed before that interrupted phase
 
 ### Requirement: Phase instruction template resources
 

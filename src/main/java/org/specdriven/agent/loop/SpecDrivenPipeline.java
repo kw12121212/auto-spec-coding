@@ -86,14 +86,6 @@ public class SpecDrivenPipeline implements LoopPipeline {
     @Override
     public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
         long startMs = System.currentTimeMillis();
-        if (phaseRunner instanceof ExecutionScopedPhaseRunner scopedRunner) {
-            scopedRunner.begin(config);
-            try {
-                return executePhases(candidate, config, skipPhases, startMs);
-            } finally {
-                scopedRunner.end();
-            }
-        }
         return executePhases(candidate, config, skipPhases, startMs);
     }
 
@@ -195,16 +187,9 @@ public class SpecDrivenPipeline implements LoopPipeline {
         );
     }
 
-    private interface ExecutionScopedPhaseRunner extends SpecDrivenPhaseRunner {
-        void begin(LoopConfig config);
-
-        void end();
-    }
-
-    private static final class PromptBackedPhaseRunner implements ExecutionScopedPhaseRunner {
+    private static final class PromptBackedPhaseRunner implements SpecDrivenPhaseRunner {
         private final Function<Path, LlmClient> llmClientFactory;
         private final Map<String, Tool> toolRegistry;
-        private final ThreadLocal<TokenAccumulator> activeTokenAccumulator = new ThreadLocal<>();
 
         private PromptBackedPhaseRunner(Function<Path, LlmClient> llmClientFactory,
                                         Map<String, Tool> toolRegistry) {
@@ -214,43 +199,22 @@ public class SpecDrivenPipeline implements LoopPipeline {
         }
 
         @Override
-        public void begin(LoopConfig config) {
-            LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
-            activeTokenAccumulator.set(new TokenAccumulator(rawClient));
-        }
-
-        @Override
-        public void end() {
-            activeTokenAccumulator.remove();
-        }
-
-        @Override
         public PhaseExecutionResult run(PipelinePhase phase, LoopCandidate candidate, LoopConfig config) {
-            TokenAccumulator tokenAccumulator = activeTokenAccumulator.get();
-            boolean localAccumulator = false;
-            long beforeTokens = 0;
+            TokenAccumulator tokenAccumulator = null;
             try {
-                if (tokenAccumulator == null) {
-                    LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
-                    tokenAccumulator = new TokenAccumulator(rawClient);
-                    localAccumulator = true;
-                }
-                beforeTokens = tokenAccumulator.totalTokens();
+                LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
+                tokenAccumulator = new TokenAccumulator(rawClient);
                 LlmClient phaseClient = contextOptimizedClient(tokenAccumulator, config);
                 executePhase(phase, candidate, config, phaseClient);
-                return PhaseExecutionResult.success(tokenAccumulator.totalTokens() - beforeTokens);
+                return PhaseExecutionResult.success(tokenAccumulator.totalTokens());
             } catch (QuestionCaptureException e) {
-                long tokens = tokenAccumulator != null ? tokenAccumulator.totalTokens() - beforeTokens : e.tokenUsage();
+                long tokens = tokenAccumulator != null ? tokenAccumulator.totalTokens() : e.tokenUsage();
                 throw new QuestionCaptureException(e.question(), tokens);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return PhaseExecutionResult.timedOut("Interrupted during " + phase.name() + " phase");
             } catch (Exception e) {
                 return PhaseExecutionResult.failed(failureMessage(e));
-            } finally {
-                if (localAccumulator) {
-                    activeTokenAccumulator.remove();
-                }
             }
         }
 
