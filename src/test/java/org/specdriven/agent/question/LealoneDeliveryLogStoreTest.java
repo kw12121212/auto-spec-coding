@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -53,6 +54,43 @@ class LealoneDeliveryLogStoreTest {
 
         List<DeliveryAttempt> results = store.findByQuestion("q-round-trip");
         assertEquals(List.of(attempt), results);
+    }
+
+    @Test
+    void storeSavedAttempt_isVisibleThroughExistingDeliveryLogTableColumns() throws Exception {
+        DeliveryAttempt attempt = new DeliveryAttempt(
+                "q-table-visible",
+                "discord",
+                5,
+                DeliveryStatus.FAILED,
+                502,
+                "bad gateway",
+                987654321L
+        );
+
+        store.save(attempt);
+
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "root", "");
+             PreparedStatement ps = conn.prepareStatement("""
+                     SELECT question_id, channel_type, attempt_number, status,
+                            status_code, error_message, attempted_at
+                     FROM delivery_log
+                     WHERE question_id = ?
+                     """)) {
+            ps.setString(1, "q-table-visible");
+
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(attempt.questionId(), rs.getString("question_id"));
+                assertEquals(attempt.channelType(), rs.getString("channel_type"));
+                assertEquals(attempt.attemptNumber(), rs.getInt("attempt_number"));
+                assertEquals(attempt.status().name(), rs.getString("status"));
+                assertEquals(attempt.statusCode(), rs.getInt("status_code"));
+                assertEquals(attempt.errorMessage(), rs.getString("error_message"));
+                assertEquals(attempt.attemptedAt(), rs.getLong("attempted_at"));
+                assertFalse(rs.next());
+            }
+        }
     }
 
     @Test
