@@ -34,6 +34,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -43,7 +44,7 @@ import java.util.logging.Logger;
 
 /**
  * Pipeline implementation that executes the spec-driven workflow
- * (recommend → propose → implement → verify → review → archive) for a single change.
+ * (recommend -> propose -> implement -> verify -> review -> archive) for a single change.
  */
 public class SpecDrivenPipeline implements LoopPipeline {
 
@@ -58,14 +59,20 @@ public class SpecDrivenPipeline implements LoopPipeline {
             "grep", new GrepTool()
     );
 
-    private final Function<Path, LlmClient> llmClientFactory;
-    private final Map<String, Tool> toolRegistry;
+    private final SpecDrivenPhaseRunner phaseRunner;
+
+    /**
+     * Creates a pipeline backed by an explicit phase runner.
+     */
+    public SpecDrivenPipeline(SpecDrivenPhaseRunner phaseRunner) {
+        this.phaseRunner = Objects.requireNonNull(phaseRunner, "phaseRunner must not be null");
+    }
 
     /**
      * Creates a pipeline with default tools (bash, read, write, edit, glob, grep).
      */
     public SpecDrivenPipeline(Function<Path, LlmClient> llmClientFactory) {
-        this(llmClientFactory, DEFAULT_TOOLS);
+        this(new PromptBackedPhaseRunner(llmClientFactory, DEFAULT_TOOLS));
     }
 
     /**
@@ -73,123 +80,86 @@ public class SpecDrivenPipeline implements LoopPipeline {
      */
     public SpecDrivenPipeline(Function<Path, LlmClient> llmClientFactory,
                               Map<String, Tool> toolRegistry) {
-        this.llmClientFactory = llmClientFactory;
-        this.toolRegistry = Collections.unmodifiableMap(new HashMap<>(toolRegistry));
+        this(new PromptBackedPhaseRunner(llmClientFactory, toolRegistry));
     }
 
     @Override
     public IterationResult execute(LoopCandidate candidate, LoopConfig config, Set<PipelinePhase> skipPhases) {
         long startMs = System.currentTimeMillis();
+        if (phaseRunner instanceof ExecutionScopedPhaseRunner scopedRunner) {
+            scopedRunner.begin(config);
+            try {
+                return executePhases(candidate, config, skipPhases, startMs);
+            } finally {
+                scopedRunner.end();
+            }
+        }
+        return executePhases(candidate, config, skipPhases, startMs);
+    }
+
+    private IterationResult executePhases(LoopCandidate candidate,
+                                          LoopConfig config,
+                                          Set<PipelinePhase> skipPhases,
+                                          long startMs) {
         long deadlineMs = startMs + config.iterationTimeoutSeconds() * 1000L;
         List<PipelinePhase> completed = new ArrayList<>();
+        long tokenUsage = 0;
 
-        try {
-            LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
-            TokenAccumulator tokenAccumulator = new TokenAccumulator(rawClient);
-            LlmClient phaseClient = contextOptimizedClient(tokenAccumulator, config);
+        for (PipelinePhase phase : PipelinePhase.ordered()) {
+            if (skipPhases.contains(phase)) {
+                continue;
+            }
 
-            for (PipelinePhase phase : PipelinePhase.ordered()) {
-                if (skipPhases.contains(phase)) {
+            if (System.currentTimeMillis() > deadlineMs) {
+                return result(IterationStatus.TIMED_OUT,
+                        "Timeout exceeded before " + phase.name() + " phase",
+                        startMs, completed, tokenUsage, null);
+            }
+
+            Consumer<Event> questionListener = event -> {
+                throw new QuestionCaptureException(reconstructQuestion(event), 0);
+            };
+            config.eventBus().subscribe(EventType.QUESTION_CREATED, questionListener);
+            try {
+                PhaseExecutionResult phaseResult = phaseRunner.run(phase, candidate, config);
+                tokenUsage += phaseResult.tokenUsage();
+                if (phaseResult.status() == IterationStatus.SUCCESS) {
+                    completed.add(phase);
                     continue;
                 }
-
-                if (System.currentTimeMillis() > deadlineMs) {
-                    return result(IterationStatus.TIMED_OUT,
-                            "Timeout exceeded before " + phase.name() + " phase",
-                            startMs, completed, tokenAccumulator.totalTokens(), null);
-                }
-
-                QuestionRuntime questionRuntime = new QuestionRuntime(config.eventBus());
-                Consumer<Event> questionListener = event -> {
-                    throw new QuestionCaptureException(reconstructQuestion(event));
-                };
-                config.eventBus().subscribe(EventType.QUESTION_CREATED, questionListener);
-                try {
-                    executePhase(phase, candidate, config, phaseClient, questionRuntime);
-                    completed.add(phase);
-                } catch (QuestionCaptureException e) {
+                if (phaseResult.status() == IterationStatus.QUESTIONING) {
                     return result(IterationStatus.QUESTIONING, null, startMs, completed,
-                            tokenAccumulator.totalTokens(), e.question());
-                } finally {
-                    config.eventBus().unsubscribe(EventType.QUESTION_CREATED, questionListener);
+                            tokenUsage, phaseResult.question());
                 }
+                return result(phaseResult.status(), phaseFailureReason(phase, phaseResult),
+                        startMs, completed, tokenUsage, null);
+            } catch (QuestionCaptureException e) {
+                tokenUsage += e.tokenUsage();
+                return result(IterationStatus.QUESTIONING, null, startMs, completed,
+                        tokenUsage, e.question());
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Pipeline phase failed: " + phase.name(), e);
+                return result(IterationStatus.FAILED,
+                        "Phase " + phase.name() + " failed: " + failureMessage(e),
+                        startMs, completed, tokenUsage, null);
+            } finally {
+                config.eventBus().unsubscribe(EventType.QUESTION_CREATED, questionListener);
             }
-
-            return result(IterationStatus.SUCCESS, null, startMs, completed,
-                    tokenAccumulator.totalTokens(), null);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return result(IterationStatus.TIMED_OUT,
-                    "Interrupted during pipeline execution",
-                    startMs, completed, 0, null);
-        } catch (Exception e) {
-            LOG.log(Level.WARNING, "Pipeline execution failed", e);
-            return result(IterationStatus.FAILED,
-                    e.getMessage() != null ? e.getMessage() : "unknown error",
-                    startMs, completed, 0, null);
         }
+
+        return result(IterationStatus.SUCCESS, null, startMs, completed, tokenUsage, null);
     }
 
-    private void executePhase(PipelinePhase phase,
-                              LoopCandidate candidate,
-                              LoopConfig config,
-                              LlmClient llmClient,
-                              QuestionRuntime questionRuntime) throws IOException, InterruptedException {
-        String template = loadTemplate(phase);
-        String systemPrompt = substituteVariables(template, candidate, config);
-        String userPrompt = buildUserPrompt(phase, candidate, config);
-
-        Conversation conversation = new Conversation();
-        conversation.append(new SystemMessage(systemPrompt, System.currentTimeMillis()));
-        conversation.append(new UserMessage(userPrompt, System.currentTimeMillis()));
-
-        Map<String, String> contextConfig = new HashMap<>();
-        contextConfig.put("workDir", config.projectRoot().toAbsolutePath().toString());
-        contextConfig.put("skill_id", "loop-" + phase.name().toLowerCase());
-
-        SimpleAgentContext context = new SimpleAgentContext(
-                UUID.randomUUID().toString(),
-                contextConfig,
-                toolRegistry,
-                conversation,
-                null,
-                null,
-                questionRuntime
-        );
-
-        OrchestratorConfig orchestratorConfig = OrchestratorConfig.defaults();
-        DefaultOrchestrator orchestrator = new DefaultOrchestrator(
-                orchestratorConfig, () -> AgentState.RUNNING);
-        orchestrator.run(context, llmClient);
-    }
-
-    private String loadTemplate(PipelinePhase phase) throws IOException {
-        String resourcePath = phase.templateResource();
-        try (InputStream is = SpecDrivenPipeline.class.getResourceAsStream(resourcePath)) {
-            if (is == null) {
-                throw new IOException("Template resource not found: " + resourcePath);
-            }
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+    private static String phaseFailureReason(PipelinePhase phase, PhaseExecutionResult phaseResult) {
+        String reason = phaseResult.failureReason();
+        if (reason == null || reason.isBlank()) {
+            return "Phase " + phase.name() + " returned " + phaseResult.status();
         }
+        return reason.contains(phase.name()) ? reason : "Phase " + phase.name() + " failed: " + reason;
     }
 
-    private String substituteVariables(String template,
-                                       LoopCandidate candidate,
-                                       LoopConfig config) {
-        return template
-                .replace("${changeName}", candidate.changeName())
-                .replace("${milestoneGoal}", candidate.milestoneGoal() != null ? candidate.milestoneGoal() : "")
-                .replace("${plannedChangeSummary}", candidate.plannedChangeSummary())
-                .replace("${projectRoot}", config.projectRoot().toAbsolutePath().toString());
-    }
-
-    private String buildUserPrompt(PipelinePhase phase,
-                                   LoopCandidate candidate,
-                                   LoopConfig config) {
-        return "Execute the " + phase.name() + " phase for change '" + candidate.changeName()
-                + "' from milestone '" + candidate.milestoneFile() + "'."
-                + "\nPlanned change summary: " + candidate.plannedChangeSummary()
-                + "\nProject root: " + config.projectRoot().toAbsolutePath();
+    private static String failureMessage(Exception e) {
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 
     private IterationResult result(IterationStatus status,
@@ -225,17 +195,144 @@ public class SpecDrivenPipeline implements LoopPipeline {
         );
     }
 
+    private interface ExecutionScopedPhaseRunner extends SpecDrivenPhaseRunner {
+        void begin(LoopConfig config);
+
+        void end();
+    }
+
+    private static final class PromptBackedPhaseRunner implements ExecutionScopedPhaseRunner {
+        private final Function<Path, LlmClient> llmClientFactory;
+        private final Map<String, Tool> toolRegistry;
+        private final ThreadLocal<TokenAccumulator> activeTokenAccumulator = new ThreadLocal<>();
+
+        private PromptBackedPhaseRunner(Function<Path, LlmClient> llmClientFactory,
+                                        Map<String, Tool> toolRegistry) {
+            this.llmClientFactory = Objects.requireNonNull(llmClientFactory, "llmClientFactory must not be null");
+            this.toolRegistry = Collections.unmodifiableMap(new HashMap<>(
+                    Objects.requireNonNull(toolRegistry, "toolRegistry must not be null")));
+        }
+
+        @Override
+        public void begin(LoopConfig config) {
+            LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
+            activeTokenAccumulator.set(new TokenAccumulator(rawClient));
+        }
+
+        @Override
+        public void end() {
+            activeTokenAccumulator.remove();
+        }
+
+        @Override
+        public PhaseExecutionResult run(PipelinePhase phase, LoopCandidate candidate, LoopConfig config) {
+            TokenAccumulator tokenAccumulator = activeTokenAccumulator.get();
+            boolean localAccumulator = false;
+            long beforeTokens = 0;
+            try {
+                if (tokenAccumulator == null) {
+                    LlmClient rawClient = llmClientFactory.apply(config.projectRoot());
+                    tokenAccumulator = new TokenAccumulator(rawClient);
+                    localAccumulator = true;
+                }
+                beforeTokens = tokenAccumulator.totalTokens();
+                LlmClient phaseClient = contextOptimizedClient(tokenAccumulator, config);
+                executePhase(phase, candidate, config, phaseClient);
+                return PhaseExecutionResult.success(tokenAccumulator.totalTokens() - beforeTokens);
+            } catch (QuestionCaptureException e) {
+                long tokens = tokenAccumulator != null ? tokenAccumulator.totalTokens() - beforeTokens : e.tokenUsage();
+                throw new QuestionCaptureException(e.question(), tokens);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return PhaseExecutionResult.timedOut("Interrupted during " + phase.name() + " phase");
+            } catch (Exception e) {
+                return PhaseExecutionResult.failed(failureMessage(e));
+            } finally {
+                if (localAccumulator) {
+                    activeTokenAccumulator.remove();
+                }
+            }
+        }
+
+        private void executePhase(PipelinePhase phase,
+                                  LoopCandidate candidate,
+                                  LoopConfig config,
+                                  LlmClient llmClient) throws IOException, InterruptedException {
+            String template = loadTemplate(phase);
+            String systemPrompt = substituteVariables(template, candidate, config);
+            String userPrompt = buildUserPrompt(phase, candidate, config);
+
+            Conversation conversation = new Conversation();
+            conversation.append(new SystemMessage(systemPrompt, System.currentTimeMillis()));
+            conversation.append(new UserMessage(userPrompt, System.currentTimeMillis()));
+
+            Map<String, String> contextConfig = new HashMap<>();
+            contextConfig.put("workDir", config.projectRoot().toAbsolutePath().toString());
+            contextConfig.put("skill_id", "loop-" + phase.name().toLowerCase());
+
+            SimpleAgentContext context = new SimpleAgentContext(
+                    UUID.randomUUID().toString(),
+                    contextConfig,
+                    toolRegistry,
+                    conversation,
+                    null,
+                    null,
+                    new QuestionRuntime(config.eventBus())
+            );
+
+            OrchestratorConfig orchestratorConfig = OrchestratorConfig.defaults();
+            DefaultOrchestrator orchestrator = new DefaultOrchestrator(
+                    orchestratorConfig, () -> AgentState.RUNNING);
+            orchestrator.run(context, llmClient);
+        }
+
+        private String loadTemplate(PipelinePhase phase) throws IOException {
+            String resourcePath = phase.templateResource();
+            try (InputStream is = SpecDrivenPipeline.class.getResourceAsStream(resourcePath)) {
+                if (is == null) {
+                    throw new IOException("Template resource not found: " + resourcePath);
+                }
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        }
+
+        private String substituteVariables(String template,
+                                           LoopCandidate candidate,
+                                           LoopConfig config) {
+            return template
+                    .replace("${changeName}", candidate.changeName())
+                    .replace("${milestoneGoal}", candidate.milestoneGoal() != null ? candidate.milestoneGoal() : "")
+                    .replace("${plannedChangeSummary}", candidate.plannedChangeSummary())
+                    .replace("${projectRoot}", config.projectRoot().toAbsolutePath().toString());
+        }
+
+        private String buildUserPrompt(PipelinePhase phase,
+                                       LoopCandidate candidate,
+                                       LoopConfig config) {
+            return "Execute the " + phase.name() + " phase for change '" + candidate.changeName()
+                    + "' from milestone '" + candidate.milestoneFile() + "'."
+                    + "\nPlanned change summary: " + candidate.plannedChangeSummary()
+                    + "\nProject root: " + config.projectRoot().toAbsolutePath();
+        }
+    }
+
     private static final class QuestionCaptureException extends RuntimeException {
         private final Question question;
+        private final long tokenUsage;
 
-        QuestionCaptureException(Question question) {
+        QuestionCaptureException(Question question, long tokenUsage) {
             super("Question captured: " + (question != null ? question.questionId() : "null"),
                     null, true, false);
             this.question = question;
+            this.tokenUsage = tokenUsage;
         }
 
         Question question() {
             return question;
+        }
+
+        long tokenUsage() {
+            return tokenUsage;
         }
     }
 }

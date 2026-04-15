@@ -32,7 +32,7 @@
 
 ## Planned Changes
 - `loop-auto-recommend-phase` - Declared: complete - 为自主循环增加正式的 roadmap recommend 阶段，并提供仅限 loop 内使用的无确认推荐执行路径
-- `loop-skill-phase-runner` - Declared: planned - 用真实 `spec-driven-propose/apply/verify/review/archive` skill 执行器替换现有 loop phase prompt runner，保留可审计的阶段结果
+- `loop-skill-phase-runner` - Declared: complete - 用真实 `spec-driven-propose/apply/verify/review/archive` skill 执行器替换现有 loop phase prompt runner，保留可审计的阶段结果
 - `loop-phase-session-reset` - Declared: planned - 为 recommend/propose/apply/verify/review/archive 各阶段定义独立 session/context reset 契约，禁止跨阶段复用 chat history 作为权威上下文
 - `loop-phase-checkpoint-recovery` - Declared: planned - 扩展 loop 持久化模型到阶段粒度，支持 phase 中断、Question 升级与 resume 后从正确阶段恢复
 - `loop-cumulative-context-budget` - Declared: planned - 在已修复当前 `LoopProgress.tokenUsage` 累计持久化基线的前提下，继续收敛 phase 化 skill 流水线中的 context budget、phase checkpoint 与跨 session 预算语义
@@ -63,4 +63,3 @@
 - 手动 `/roadmap-recommend` 仍保留给用户的确认 checkpoint；loop 自动 recommend 需要单独约束其无确认语义，避免影响交互式规划体验
 - 如需在未来引入跨 phase 的最小摘要或审计回放，应将其视为持久化结构化元数据，而不是恢复完整对话历史
 - 当前代码基线已修复 `DefaultLoopDriver` 将 `LoopProgress.tokenUsage` 误存为单轮值或 `0` 的问题；本 milestone 关注 phase 化改造后的长期语义收敛，不重复把该已修复缺陷当作未开始工作
-

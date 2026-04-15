@@ -2,13 +2,19 @@ package org.specdriven.agent.loop;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.agent.AgentState;
 import org.specdriven.agent.agent.AssistantMessage;
 import org.specdriven.agent.agent.Conversation;
@@ -29,8 +35,133 @@ class SpecDrivenPipelineTest {
     private static final LoopCandidate TEST_CANDIDATE =
             new LoopCandidate("test-change", "m1.md", "test goal", "test summary");
 
+    @TempDir
+    Path tempDir;
+
     private LoopConfig testConfig() {
         return new LoopConfig(1, 600, List.of(), Path.of("/tmp"), new SimpleEventBus());
+    }
+
+    private LoopConfig testConfig(Path root) {
+        return new LoopConfig(1, 600, List.of(), root, new SimpleEventBus());
+    }
+
+    @Test
+    void phaseExecutionResultRequiresQuestionForQuestioningStatus() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new PhaseExecutionResult(IterationStatus.QUESTIONING, null, 0, null));
+
+        assertTrue(error.getMessage().contains("question"));
+    }
+
+    @Test
+    void executeDelegatesPhasesToConfiguredRunnerInOrder() {
+        List<PipelinePhase> calls = new ArrayList<>();
+        SpecDrivenPhaseRunner runner = (phase, candidate, config) -> {
+            calls.add(phase);
+            return PhaseExecutionResult.success(2);
+        };
+
+        LoopPipeline pipeline = new SpecDrivenPipeline(runner);
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals(PipelinePhase.ordered(), calls);
+        assertEquals(PipelinePhase.ordered(), result.phasesCompleted());
+        assertEquals(PipelinePhase.ordered().size() * 2L, result.tokenUsage());
+    }
+
+    @Test
+    void executeDoesNotDelegateSkippedPhases() {
+        List<PipelinePhase> calls = new ArrayList<>();
+        SpecDrivenPhaseRunner runner = (phase, candidate, config) -> {
+            calls.add(phase);
+            return PhaseExecutionResult.success();
+        };
+
+        LoopPipeline pipeline = new SpecDrivenPipeline(runner);
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig(), Set.of(PipelinePhase.PROPOSE));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertFalse(calls.contains(PipelinePhase.PROPOSE));
+        assertFalse(result.phasesCompleted().contains(PipelinePhase.PROPOSE));
+        assertTrue(calls.containsAll(List.of(PipelinePhase.RECOMMEND, PipelinePhase.IMPLEMENT,
+                PipelinePhase.VERIFY, PipelinePhase.REVIEW, PipelinePhase.ARCHIVE)));
+    }
+
+    @Test
+    void executeStopsWhenRunnerFailsPhase() {
+        List<PipelinePhase> calls = new ArrayList<>();
+        SpecDrivenPhaseRunner runner = (phase, candidate, config) -> {
+            calls.add(phase);
+            if (phase == PipelinePhase.VERIFY) {
+                return PhaseExecutionResult.failed("verification failed");
+            }
+            return PhaseExecutionResult.success();
+        };
+
+        LoopPipeline pipeline = new SpecDrivenPipeline(runner);
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig());
+
+        assertEquals(IterationStatus.FAILED, result.status());
+        assertTrue(result.failureReason().contains("VERIFY"));
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT),
+                result.phasesCompleted());
+        assertEquals(List.of(PipelinePhase.RECOMMEND, PipelinePhase.PROPOSE, PipelinePhase.IMPLEMENT,
+                PipelinePhase.VERIFY), calls);
+    }
+
+    @Test
+    void defaultCommandRunnerTreatsRecommendAsNoOp() {
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner();
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.RECOMMEND, TEST_CANDIDATE, testConfig(tempDir));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void commandRunnerExecutesConfiguredCommandInProjectRoot() throws Exception {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.PROPOSE, List.of(
+                "/bin/sh",
+                "-c",
+                "printf '%s|%s' \"$PWD\" \"$1\" > command.log",
+                "phase",
+                "${changeName}"));
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner(templates);
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.PROPOSE, TEST_CANDIDATE, testConfig(tempDir));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals(tempDir.toAbsolutePath() + "|test-change",
+                Files.readString(tempDir.resolve("command.log"), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void commandRunnerReportsNonZeroExitCode() {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.VERIFY, List.of("/bin/sh", "-c", "echo bad >&2; exit 7"));
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner(templates);
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.VERIFY, TEST_CANDIDATE, testConfig(tempDir));
+
+        assertEquals(IterationStatus.FAILED, result.status());
+        assertTrue(result.failureReason().contains("VERIFY"));
+        assertTrue(result.failureReason().contains("code 7"));
+    }
+
+    @Test
+    void commandRunnerReportsTimeoutAndDestroysProcess() {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.REVIEW, List.of("/bin/sh", "-c", "sleep 2"));
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner(templates);
+        LoopConfig config = new LoopConfig(1, 1, List.of(), tempDir, new SimpleEventBus());
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.REVIEW, TEST_CANDIDATE, config);
+
+        assertEquals(IterationStatus.TIMED_OUT, result.status());
+        assertTrue(result.failureReason().contains("REVIEW"));
     }
 
     @Test
@@ -139,6 +270,20 @@ class SpecDrivenPipelineTest {
         IterationResult result2 = pipeline.execute(TEST_CANDIDATE, testConfig(), Set.of());
         assertEquals(result1.status(), result2.status());
         assertEquals(result1.phasesCompleted(), result2.phasesCompleted());
+    }
+
+    @Test
+    void promptBackedConstructorCreatesOneClientPerPipelineExecution() {
+        AtomicInteger creations = new AtomicInteger();
+        LoopPipeline pipeline = new SpecDrivenPipeline(path -> {
+            creations.incrementAndGet();
+            return new StubLlmClient(textResponse("done"));
+        });
+
+        IterationResult result = pipeline.execute(TEST_CANDIDATE, testConfig());
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals(1, creations.get());
     }
 
     @Test

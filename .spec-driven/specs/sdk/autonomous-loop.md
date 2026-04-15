@@ -24,6 +24,9 @@ mapping:
     - src/main/java/org/specdriven/agent/loop/PipelinePhase.java
     - src/main/java/org/specdriven/agent/loop/PlannedChange.java
     - src/main/java/org/specdriven/agent/loop/SequentialMilestoneScheduler.java
+    - src/main/java/org/specdriven/agent/loop/CommandSpecDrivenPhaseRunner.java
+    - src/main/java/org/specdriven/agent/loop/PhaseExecutionResult.java
+    - src/main/java/org/specdriven/agent/loop/SpecDrivenPhaseRunner.java
     - src/main/java/org/specdriven/agent/loop/SpecDrivenPipeline.java
     - src/main/java/org/specdriven/agent/loop/StubLoopPipeline.java
     - src/main/java/org/specdriven/agent/interactive/InteractiveSession.java
@@ -229,20 +232,45 @@ mapping:
 - `execute(LoopCandidate, LoopConfig)` MUST remain as a default method delegating to the new overload with an empty set
 - Implementations MUST NOT throw checked exceptions — all failures MUST be captured in the returned `IterationResult` with appropriate `IterationStatus`
 
+### Requirement: Spec-driven phase runner contract
+
+- MUST provide a `SpecDrivenPhaseRunner` contract for executing one `PipelinePhase` against a `LoopCandidate` and `LoopConfig`
+- A phase runner MUST return a structured `PhaseExecutionResult` describing phase status, failure reason, token usage, and any captured question
+- `PhaseExecutionResult` MUST reject negative token usage
+- `PhaseExecutionResult` MUST require a non-null question when status is `QUESTIONING`
+- `PhaseExecutionResult` MUST reject non-null questions when status is not `QUESTIONING`
+- `PhaseExecutionResult` MUST provide convenience factories for success, failed, timed out, and questioning results
+
+### Requirement: Command-backed spec-driven phase runner
+
+- MUST provide a `CommandSpecDrivenPhaseRunner` implementation of `SpecDrivenPhaseRunner`
+- The default command runner MUST map `PROPOSE`, `IMPLEMENT`, `VERIFY`, `REVIEW`, and `ARCHIVE` to `spec-driven propose`, `spec-driven apply`, `spec-driven verify`, `spec-driven review`, and `spec-driven archive` with the selected change name
+- The default command runner MUST treat `RECOMMEND` as a no-op success because the loop candidate has already been selected
+- Command templates MUST support substitution for `${phase}`, `${phaseCommand}`, `${changeName}`, `${milestoneFile}`, `${milestoneGoal}`, `${plannedChangeSummary}`, and `${projectRoot}`
+- Commands MUST run with `LoopConfig.projectRoot()` as their working directory
+- A non-zero command exit MUST return `PhaseExecutionResult` with status `FAILED` and a failure reason containing the phase name and exit code
+- A command that exceeds `LoopConfig.iterationTimeoutSeconds()` MUST be forcibly destroyed and return status `TIMED_OUT`
+
 ### Requirement: SpecDrivenPipeline
 
 - MUST implement `LoopPipeline` in `org.specdriven.agent.loop`
+- Constructor MUST accept a `SpecDrivenPhaseRunner` for executing individual phases
 - Constructor MUST accept a `Function<Path, LlmClient>` factory for creating LLM clients
 - Constructor MUST accept a `Map<String, Tool>` tool registry
 - Constructor MUST provide a convenience overload with default tools (bash, read, write, edit, glob, grep)
+- Existing LLM-client constructors MUST remain available and MUST use a prompt-backed phase runner internally
 - `execute(candidate, config, skipPhases)` MUST iterate through `PipelinePhase.ordered()` sequentially, skipping any phases in `skipPhases`
-- For each phase, MUST load the instruction template from classpath, build user prompt containing the selected candidate change name, milestone file, milestone goal, planned change summary, and project root, create Conversation, assemble SimpleAgentContext, run Orchestrator, track the phase as completed only if the orchestrator finishes without exception
+- For each non-skipped phase, MUST delegate execution to the configured `SpecDrivenPhaseRunner`
+- For each phase, MUST track the phase as completed only when the phase runner returns `SUCCESS`
 - For each phase, MUST subscribe to `QUESTION_CREATED` events on the EventBus before running the orchestrator, and unsubscribe after the phase completes or is aborted
 - When a `QUESTION_CREATED` event fires during a phase, MUST abort that phase and return `IterationResult(status=QUESTIONING, question=<captured question>, phasesCompleted=<phases completed before the interrupted phase>)`
+- When a phase runner returns `QUESTIONING`, MUST stop execution and return `IterationResult(status=QUESTIONING, question=<captured question>, phasesCompleted=<phases completed before the interrupted phase>)`
+- When a phase runner returns `FAILED` or `TIMED_OUT`, MUST stop execution and return an `IterationResult` with the same status and a failure reason describing the phase failure
 - If any phase throws an exception (other than a QUESTION_CREATED abort), MUST stop execution and return an `IterationResult` with `status=FAILED` and `failureReason` describing which phase failed and why
 - If timeout deadline is exceeded before a phase, MUST return `IterationResult` with `status=TIMED_OUT`
 - If all phases complete, MUST return `IterationResult` with `status=SUCCESS`
 - `durationMs` MUST reflect wall-clock time from start to finish of `execute()`
+- Prompt-backed phase execution MUST load the instruction template from classpath, substitute candidate and project variables, build user prompt containing the selected candidate change name, milestone file, milestone goal, planned change summary, and project root, create `Conversation`, assemble `SimpleAgentContext`, run `Orchestrator`, and accumulate returned LLM token usage
 
 ### Requirement: Phase instruction template resources
 
