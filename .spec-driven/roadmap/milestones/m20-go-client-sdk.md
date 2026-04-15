@@ -35,7 +35,7 @@
 - `go-sdk-agent` - Declared: complete - Agent 操作封装：create、run、stop、状态查询
 - `go-sdk-tools` - Declared: complete - 工具注册与调用封装
 - `go-sdk-events` - Declared: complete - 事件流订阅封装（SSE/polling）
-- `go-sdk-tests` - Declared: planned - 集成测试（需 Java 后端运行）
+- `go-sdk-tests` - Declared: complete - 集成测试（需 Java 后端运行）
 
 ## Dependencies
 
@@ -49,8 +49,7 @@
 - Go SDK 的 API 设计需兼顾惯用 Go 风格与 Java 后端 API 的一致性
 
 ## Status
-
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -58,6 +57,8 @@
 - 参考 Java SDK (M12) 的公共 API 设计，保持多语言 SDK 使用体验一致
 - 可与 M21 (TypeScript SDK) 并行开发
 - 发布为 Go module，用户通过 `go get github.com/.../specdriven-go` 引入
+
+
 
 
 

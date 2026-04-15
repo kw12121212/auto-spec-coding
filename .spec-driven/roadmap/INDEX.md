@@ -20,7 +20,7 @@
 - [m17-db-cache-layer.md](milestones/m17-db-cache-layer.md) - M17 - Lealone DB 缓存层 - complete
 - [m18-secret-vault.md](milestones/m18-secret-vault.md) - M18 - 密钥保险库 - complete
 - [m19-llm-streaming-token.md](milestones/m19-llm-streaming-token.md) - M19 - LLM Streaming & Token Management - complete
-- [m20-go-client-sdk.md](milestones/m20-go-client-sdk.md) - M20 - Go Client SDK - proposed
+- [m20-go-client-sdk.md](milestones/m20-go-client-sdk.md) - M20 - Go Client SDK - complete
 - [m21-typescript-client-sdk.md](milestones/m21-typescript-client-sdk.md) - M21 - TypeScript Client SDK - proposed
 - [m22-question-resolution.md](milestones/m22-question-resolution.md) - M22 - 交互问题解析与多通道回复 - complete
 - [m23-mobile-interaction-integration.md](milestones/m23-mobile-interaction-integration.md) - M23 - 配置化移动交互集成层 - complete
