@@ -35,7 +35,7 @@
 - `delivery-log-orm-pilot` - Declared: complete - 将 LealoneDeliveryLogStore 作为优先试点迁移到 ORM，并验证行为一致性与样板代码收益
 - `question-store-feasibility` - Declared: complete - 评估 LealoneQuestionStore 迁移到 ORM 的真实收益；仅在收益明确且不引入额外复杂度时推进迁移
 - `orm-jdbc-coexistence` - Declared: complete - 确保 ORM Store 与 raw JDBC Store 在同一数据库实例上混合共存，事务一致性不受影响
-- `orm-adoption-guidelines` - Declared: planned - 形成 ORM 继续推广的准入标准、适用场景和 escape hatch 规则
+- `orm-adoption-guidelines` - Declared: complete - 形成 ORM 继续推广的准入标准、适用场景和 escape hatch 规则
 
 ## Dependencies
 
@@ -53,7 +53,7 @@
 - 若在试点阶段过早引入通用 ORM 基类，可能先得到额外抽象层而不是真实收益
 
 ## Status
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -61,4 +61,6 @@
 - 应保留 escape hatch：允许在需要时降级到 raw PreparedStatement 执行复杂 SQL
 - 不强制全部迁移——对于 LealoneLlmCache 这种高度优化过的 Store，raw JDBC 可能更合适
 - 该里程碑首先是一次受控试点；只有当试点证明收益明确时，才适合扩大 ORM 覆盖面
+
+
 

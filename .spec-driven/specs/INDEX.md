@@ -85,6 +85,10 @@
 - [go-client-sdk.md](sdk/go-client-sdk.md) - Go HTTP client SDK for Java backend REST API
 - [ts-client-sdk.md](sdk/ts-client-sdk.md) - TypeScript HTTP client SDK for Java backend REST API
 
+## ORM (ORM 采用准则)
+
+- [orm-adoption.md](orm/orm-adoption.md) - ORM migration admission criteria, escape-hatch rules, and coexistence contract
+
 ## Release (发布准备)
 
 - [release-preparation.md](release/release-preparation.md) - Repository release overview and Maven release metadata
