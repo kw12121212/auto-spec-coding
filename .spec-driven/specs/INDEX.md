@@ -83,6 +83,7 @@
 - [sdk-public-api.md](sdk/sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException
 - [autonomous-loop.md](sdk/autonomous-loop.md) - LoopDriver, LoopScheduler, LoopConfig, LoopState, LoopIteration
 - [go-client-sdk.md](sdk/go-client-sdk.md) - Go HTTP client SDK for Java backend REST API
+- [ts-client-sdk.md](sdk/ts-client-sdk.md) - TypeScript HTTP client SDK for Java backend REST API
 
 ## Release (发布准备)
 
