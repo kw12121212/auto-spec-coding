@@ -375,17 +375,29 @@ The `SdkBuilder` MUST support registering mobile channel providers for use by al
 
 ### Requirement: SpecDriven platform accessor
 
-`SpecDriven` MUST expose a `platform()` method returning the assembled `LealonePlatform`.
+`SpecDriven` MUST expose a `platform()` method returning the assembled `LealonePlatform`. SDK-owned Lealone-backed helper services assembled after `build()` MUST use the same effective platform configuration represented by that assembled platform.
 
 #### Scenario: platform() returns non-null platform after build()
 - GIVEN a `SpecDriven` instance built via `SpecDriven.builder().build()`
 - WHEN `platform()` is called
 - THEN it MUST return a non-null `LealonePlatform` instance
 
+#### Scenario: Lazy SDK service uses assembled platform configuration
+- GIVEN a `SpecDriven` instance built with a custom `PlatformConfig`
+- WHEN the caller triggers initialization of an SDK-owned Lealone-backed helper service after `build()`
+- THEN that service MUST use the same effective platform configuration exposed by `sdk.platform()`
+- AND it MUST NOT silently fall back to the repository default embedded JDBC URL
+
 #### Scenario: platform() exposes checkHealth after build
 - GIVEN a `SpecDriven` instance built via `SpecDriven.builder().build()`
 - WHEN `sdk.platform().checkHealth()` is called
 - THEN it MUST return a non-null `PlatformHealth` result without throwing
+
+#### Scenario: Existing platform accessor remains compatible
+- GIVEN existing application code that calls `sdk.platform()` after `SpecDriven.builder().build()`
+- WHEN the migration adapters are present
+- THEN `platform()` MUST remain available and non-null
+- AND existing platform-backed behavior observed through that accessor MUST remain compatible with prior behavior
 
 ### Requirement: SdkBuilder channel configs
 

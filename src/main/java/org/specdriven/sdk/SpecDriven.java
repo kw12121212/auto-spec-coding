@@ -132,7 +132,7 @@ public class SpecDriven implements AutoCloseable {
                     try {
                         QuestionRuntime questionRuntime = new QuestionRuntime(eventBus);
                         QuestionStore questionStore = new LealoneQuestionStore(eventBus,
-                                "jdbc:lealone:embed:agent_db");
+                                platform.database().jdbcUrl());
                         questionRuntime.setQuestionStore(questionStore);
 
                         QuestionDeliveryChannel channel;

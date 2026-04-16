@@ -96,7 +96,13 @@ The initial `LealonePlatform` contract MUST expose the capability domains in thi
 
 ### Requirement: Platform core preserves underlying capability behavior
 
-The system MUST preserve all existing capability behavior when capabilities are assembled using a `PlatformConfig` — including when a non-default `PlatformConfig` is supplied. Behavioral preservation applies to any JDBC URL and compile cache path supplied through `PlatformConfig`.
+The system MUST preserve all existing capability behavior when capabilities are assembled using a `PlatformConfig` — including when a non-default `PlatformConfig` is supplied. Behavioral preservation applies to any JDBC URL and compile cache path supplied through `PlatformConfig`, and to any public or SDK-owned Lealone-backed assembly path migrated onto the platform adapter surface.
+
+#### Scenario: Migrated platform-backed entry paths preserve default behavior
+- GIVEN existing callers that rely on the repository's default platform configuration
+- WHEN they construct the platform or SDK through the supported public entry paths
+- THEN the observable behavior of those entry paths MUST remain compatible with the pre-migration behavior
+- AND the change MUST NOT require callers to supply new configuration only to preserve existing defaults
 
 #### Scenario: Platform access does not alter LLM runtime semantics
 - GIVEN existing runtime LLM behavior for snapshot resolution, mutation, and event publication
@@ -131,12 +137,18 @@ The system MUST provide a `PlatformConfig` type that holds all Lealone platform-
 
 ### Requirement: SdkBuilder accepts PlatformConfig
 
-`SdkBuilder` MUST accept an optional `PlatformConfig` and use it to assemble the platform when provided.
+`SdkBuilder` MUST accept an optional `PlatformConfig` and use it to assemble the platform when provided. The same effective platform configuration MUST also govern adapted SDK-owned Lealone-backed assembly paths that are created from the resulting SDK instance.
 
 #### Scenario: Explicit PlatformConfig is applied
 - GIVEN a `SdkBuilder` with `platformConfig(PlatformConfig)` set to a non-default config
 - WHEN `buildPlatform()` is called
 - THEN `platform.database().jdbcUrl()` MUST equal the JDBC URL from the supplied `PlatformConfig`
+
+#### Scenario: Explicit PlatformConfig governs adapted SDK assembly
+- GIVEN a `SdkBuilder` with `platformConfig(PlatformConfig)` set to a non-default config
+- WHEN `build()` creates an SDK instance and that SDK later initializes an adapted Lealone-backed helper service
+- THEN the helper service MUST use the same effective platform configuration exposed by `sdk.platform()`
+- AND it MUST NOT silently recreate the repository default platform settings
 
 #### Scenario: YAML platform keys override defaults
 - GIVEN a YAML config file containing `platform.jdbcUrl` and/or `platform.compileCachePath` keys
@@ -147,6 +159,11 @@ The system MUST provide a `PlatformConfig` type that holds all Lealone platform-
 - GIVEN a YAML config file that does not contain `platform.*` keys
 - WHEN `SdkBuilder.config(path).buildPlatform()` is called
 - THEN the platform MUST use `PlatformConfig.defaults()` values for platform-level parameters
+
+#### Scenario: Default PlatformConfig still governs adapted SDK assembly
+- GIVEN a `SdkBuilder` without an explicit `platformConfig(...)` call
+- WHEN `build()` creates an SDK instance and that SDK later initializes an adapted Lealone-backed helper service
+- THEN the helper service MUST use `PlatformConfig.defaults()` or the YAML-derived effective platform configuration, consistent with the assembled platform
 
 ### Requirement: LealonePlatform lifecycle — start
 

@@ -40,7 +40,7 @@
 - `lealone-platform-core` - Declared: complete - 定义 LealonePlatform 及最小能力注册机制，统一四大能力域（DB/LLM/Compile/Agent）的发现与启动入口
 - `platform-config-lifecycle` - Declared: complete - 实现统一配置中心与生命周期管理：聚合 JDBC URL、LLM 参数、编译路径、Agent 配置，有序启停各子系统
 - `platform-health-metrics` - Declared: complete - 实现聚合健康检查与度量指标收集：检测 DB/LLM/Compiler/Agent 状态，收集 Token 用量、编译次数、缓存命中率等指标
-- `platform-migration-adapters` - Declared: planned - 编写最小向后兼容适配器：将现有分散的 Lealone 使用方式平滑迁移到平台层，不破坏上层 API
+- `platform-migration-adapters` - Declared: complete - 编写最小向后兼容适配器：将现有分散的 Lealone 使用方式平滑迁移到平台层，不破坏上层 API
 
 ## Dependencies
 
@@ -61,7 +61,7 @@
 - 若过早承诺通用平台可替换性，容易驱动不必要的抽象膨胀
 
 ## Status
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -72,6 +72,8 @@
 - 若平台层要在共享或生产环境暴露动态 LLM 配置或动态编译入口，应与相应治理 milestone（如 M33、M34）配套规划
 - 若未来真的出现非 Lealone 平台诉求，应基于已验证的痛点另开 roadmap，而不是在本 milestone 里预支抽象成本
 - 该里程碑完成后，项目的架构宣言可更新为："Built on Lealone Platform — unified DB, LLM runtime, compiler, and agent interaction"
+
+
 
 
 
