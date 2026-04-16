@@ -86,6 +86,32 @@ class ServiceRuntimeLauncherTest {
         }
     }
 
+    @Test
+    void defaultOptionsUsePlatformDefaults() {
+        Path servicesSql = tempDir.resolve("services.sql");
+
+        ServiceRuntimeLauncher.Options options = ServiceRuntimeLauncher.defaultOptions(servicesSql);
+
+        assertEquals("127.0.0.1", options.host());
+        assertEquals(8080, options.port());
+        assertEquals(PlatformConfig.defaults().jdbcUrl(), options.jdbcUrl());
+        assertEquals(PlatformConfig.defaults().compileCachePath(), options.compileCachePath());
+        assertEquals(Set.of(), options.apiKeys());
+    }
+
+    @Test
+    void startupRejectsRuntimeDirectivesFromServicesSql() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, "SET MODE MYSQL;\n", StandardCharsets.UTF_8);
+
+        ServiceRuntimeLauncher.ServiceRuntimeException error = org.junit.jupiter.api.Assertions.assertThrows(
+                ServiceRuntimeLauncher.ServiceRuntimeException.class,
+                () -> new ServiceRuntimeLauncher().start(options(servicesSql, Set.of()), (serviceName, methodName, args) -> Map.of()));
+
+        assertEquals("bootstrap_error", error.errorCode());
+        assertTrue(error.getMessage().contains("Unsupported services.sql statement"));
+    }
+
     private ServiceRuntimeLauncher.Options options(Path servicesSql, Set<String> apiKeys) {
         PlatformConfig defaults = PlatformConfig.defaults();
         return new ServiceRuntimeLauncher.Options(

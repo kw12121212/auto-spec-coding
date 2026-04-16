@@ -190,6 +190,31 @@ class LealonePlatformTest {
         }
     }
 
+    @Test
+    void bootstrapServicesRejectsNonIdempotentCreateStatementsExplicitly() throws Exception {
+        PlatformConfig config = testPlatformConfig("platform-bootstrap-non-idempotent");
+        LealonePlatform platform = SpecDriven.builder()
+                .platformConfig(config)
+                .buildPlatform();
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, """
+                CREATE TABLE platform_bootstrap_state (
+                    id varchar primary key
+                );
+                """);
+
+        try {
+            LealonePlatform.BootstrapValidationException error = assertThrows(
+                    LealonePlatform.BootstrapValidationException.class,
+                    () -> platform.bootstrapServices(servicesSql));
+
+            assertTrue(error.getMessage().contains("Unsupported services.sql statement"));
+            assertFalse(tableExists(config.jdbcUrl(), "PLATFORM_BOOTSTRAP_STATE"));
+        } finally {
+            platform.close();
+        }
+    }
+
     private PlatformConfig testPlatformConfig(String prefix) {
         String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "");
         return new PlatformConfig(

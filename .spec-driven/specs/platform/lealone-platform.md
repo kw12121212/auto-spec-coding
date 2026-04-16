@@ -183,11 +183,31 @@ The Lealone platform integration surface MUST support bootstrapping a supported 
 - AND it MUST support idempotent `CREATE SERVICE IF NOT EXISTS` statements for service bootstrap
 - AND it MUST treat other statement types or runtime directives as unsupported input for this change
 
+#### Scenario: mixed bootstrap file is rejected atomically
+- GIVEN a readable `services.sql` file whose first statement is supported
+- AND a later statement in the same file is unsupported or non-idempotent
+- WHEN bootstrap validation runs
+- THEN bootstrap MUST fail explicitly
+- AND it MUST NOT execute the earlier supported statement
+- AND it MUST NOT report any bootstrap-managed object from that file as applied
+
 #### Scenario: repeated bootstrap converges idempotently
 - GIVEN the same supported `services.sql` input is bootstrapped twice against the same target runtime state
 - WHEN the second bootstrap runs
 - THEN it MUST converge without requiring manual cleanup of objects created by the first bootstrap
 - AND it MUST NOT report success by creating duplicate bootstrap-managed objects
+
+#### Scenario: non-idempotent table declaration is rejected
+- GIVEN a readable `services.sql` file that contains `CREATE TABLE` without `IF NOT EXISTS`
+- WHEN bootstrap validation runs
+- THEN bootstrap MUST fail explicitly
+- AND it MUST identify the unsupported statement as outside the automatic bootstrap contract
+
+#### Scenario: runtime directive inside services.sql is rejected
+- GIVEN a readable `services.sql` file that attempts to set runtime configuration or other startup directives in addition to bootstrap-managed SQL
+- WHEN bootstrap validation runs
+- THEN bootstrap MUST fail explicitly
+- AND it MUST treat the directive as unsupported startup input
 
 #### Scenario: unsupported bootstrap input fails explicitly
 - GIVEN a bootstrap attempt includes declarative application input outside the supported first-change contract

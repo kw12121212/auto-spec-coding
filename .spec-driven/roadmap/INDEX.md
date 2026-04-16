@@ -36,6 +36,6 @@
 - [m33-llm-config-secret-governance.md](milestones/m33-llm-config-secret-governance.md) - M33 - LLM 配置密钥引用与权限治理 - complete
 - [m34-skill-hotload-governance.md](milestones/m34-skill-hotload-governance.md) - M34 - Skill 动态编译治理与审计 - complete
 - [m35-loop-skill-pipeline-context-boundaries.md](milestones/m35-loop-skill-pipeline-context-boundaries.md) - M35 - 自主循环 Skill 化阶段流水线与上下文边界 - complete
-- [m36-lealone-service-app-runtime.md](milestones/m36-lealone-service-app-runtime.md) - M36 - Lealone 原生服务应用运行时 - proposed
+- [m36-lealone-service-app-runtime.md](milestones/m36-lealone-service-app-runtime.md) - M36 - Lealone 原生服务应用运行时 - complete
 - [m37-enterprise-workflow-runtime-governance.md](milestones/m37-enterprise-workflow-runtime-governance.md) - M37 - 企业级工作流运行与治理 - proposed
 - [m38-fast-profiled-sandbox-runtime.md](milestones/m38-fast-profiled-sandbox-runtime.md) - M38 - 快速 Profile 化沙箱运行环境 - proposed
