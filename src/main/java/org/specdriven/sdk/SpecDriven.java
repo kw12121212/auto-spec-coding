@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class SpecDriven implements AutoCloseable {
 
+    private final LealonePlatform platform;
     private final LlmProviderRegistry providerRegistry;
     private final List<Tool> tools;
     private final Map<String, Tool> remoteTools = new ConcurrentHashMap<>();
@@ -29,7 +30,8 @@ public class SpecDriven implements AutoCloseable {
     private final List<MobileChannelConfig> channelConfigs;
     private volatile QuestionDeliveryService deliveryService;
 
-    SpecDriven(LlmProviderRegistry providerRegistry,
+    SpecDriven(LealonePlatform platform,
+               LlmProviderRegistry providerRegistry,
                List<Tool> tools,
                String systemPrompt,
                SdkConfig sdkConfig,
@@ -38,6 +40,7 @@ public class SpecDriven implements AutoCloseable {
                DeliveryMode deliveryModeOverride,
                MobileChannelRegistry channelRegistry,
                List<MobileChannelConfig> channelConfigs) {
+        this.platform = platform;
         this.providerRegistry = providerRegistry;
         this.tools = tools;
         this.systemPrompt = systemPrompt;
@@ -54,6 +57,13 @@ public class SpecDriven implements AutoCloseable {
      */
     public static SdkBuilder builder() {
         return new SdkBuilder();
+    }
+
+    /**
+     * Returns the assembled platform capabilities backing this SDK instance.
+     */
+    public LealonePlatform platform() {
+        return platform;
     }
 
     /**
@@ -167,8 +177,8 @@ public class SpecDriven implements AutoCloseable {
             try { ds.channel().close(); } catch (Exception ignored) {}
             try { ds.collector().close(); } catch (Exception ignored) {}
         }
-        if (providerRegistry != null) {
-            try { providerRegistry.close(); } catch (Exception ignored) {}
+        if (platform != null) {
+            try { platform.close(); } catch (Exception ignored) {}
         }
     }
 }

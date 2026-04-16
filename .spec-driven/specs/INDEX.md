@@ -78,6 +78,10 @@
 - [skill-sql-converter.md](skill/skill-sql-converter.md) - SkillFrontmatter, SkillMarkdownParser, SkillSqlConverter
 - [skill-hot-loader.md](skill/skill-hot-loader.md) - SkillHotLoader, SkillHotLoaderException, SkillLoadResult, LealoneSkillHotLoader — runtime registry of compiled skill ClassLoaders with hot-replace
 
+## Platform (平台基础设施)
+
+- [lealone-platform.md](platform/lealone-platform.md) - LealonePlatform and typed platform capability access for DB, runtime LLM, compiler/hot-load, and interactive session
+
 ## SDK (SDK 公共 API)
 
 - [sdk-public-api.md](sdk/sdk-public-api.md) - SpecDriven, SdkBuilder, SdkAgent, SdkConfig, SdkException

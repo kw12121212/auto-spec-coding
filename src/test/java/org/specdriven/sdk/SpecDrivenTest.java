@@ -16,6 +16,7 @@ class SpecDrivenTest {
     void builderCreatesSdkInstance() {
         SpecDriven sdk = SpecDriven.builder().build();
         assertNotNull(sdk);
+        assertNotNull(sdk.platform());
         sdk.close();
     }
 
@@ -24,6 +25,17 @@ class SpecDrivenTest {
         SpecDriven sdk = SpecDriven.builder().build();
         SdkAgent agent = sdk.createAgent();
         assertNotNull(agent);
+        sdk.close();
+    }
+
+    @Test
+    void platformCoexistsWithSpecDrivenEntryPoint() {
+        SpecDriven sdk = SpecDriven.builder().build();
+
+        assertNotNull(sdk.platform().database());
+        assertNotNull(sdk.platform().llm());
+        assertNotNull(sdk.platform().compiler());
+        assertNotNull(sdk.platform().interactive());
         sdk.close();
     }
 

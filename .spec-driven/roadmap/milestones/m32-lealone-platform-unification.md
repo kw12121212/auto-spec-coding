@@ -18,6 +18,9 @@
 - 替换 Lealone 本身的功能（本里程碑是整合不是重写）
 - 新增非 Lealone 能力的外部依赖
 - 分布式/集群模式的多节点平台管理
+- 声明式 `services.sql` 应用启动入口与应用级打包运行约定
+- 面向业务应用的 `/service/<service>/<method>` 服务暴露契约
+- 跨 service/tool/agent 的企业级 workflow 运行编排与治理
 - 平台的可视化管理 UI
 - 为未来非 Lealone 后端预先构建厚重的通用可移植抽象层
 - 承诺“替换底层平台实现即可上层零改动”之类的可移植性目标
@@ -34,8 +37,7 @@
 - 平台层 MUST 保持为薄胶水层，不得为尚不存在的第二实现预先引入大范围抽象回填
 
 ## Planned Changes
-
-- `lealone-platform-core` - Declared: planned - 定义 LealonePlatform 及最小能力注册机制，统一四大能力域（DB/LLM/Compile/Agent）的发现与启动入口
+- `lealone-platform-core` - Declared: complete - 定义 LealonePlatform 及最小能力注册机制，统一四大能力域（DB/LLM/Compile/Agent）的发现与启动入口
 - `platform-config-lifecycle` - Declared: planned - 实现统一配置中心与生命周期管理：聚合 JDBC URL、LLM 参数、编译路径、Agent 配置，有序启停各子系统
 - `platform-health-metrics` - Declared: planned - 实现聚合健康检查与度量指标收集：检测 DB/LLM/Compiler/Agent 状态，收集 Token 用量、编译次数、缓存命中率等指标
 - `platform-migration-adapters` - Declared: planned - 编写最小向后兼容适配器：将现有分散的 Lealone 使用方式平滑迁移到平台层，不破坏上层 API
@@ -66,6 +68,8 @@
 - 这是整个 Lealone 增强 roadmap 的"收尾"里程碑，不应在 M27-M31 任一完成前启动
 - 平台层的核心理念是"约定优于配置" + "渐进式迁移"——不强求一步到位
 - 设计原则：LealonePlatform 是薄胶水层，不是厚抽象层，每个能力域的实现仍在各自模块内
+- Lealone README 中更偏应用运行时的 `services.sql`、`/service/...`、`workflow` 方向由后续 M36/M37 单独承接，避免把平台整合层做成超大杂糅里程碑
 - 若平台层要在共享或生产环境暴露动态 LLM 配置或动态编译入口，应与相应治理 milestone（如 M33、M34）配套规划
 - 若未来真的出现非 Lealone 平台诉求，应基于已验证的痛点另开 roadmap，而不是在本 milestone 里预支抽象成本
 - 该里程碑完成后，项目的架构宣言可更新为："Built on Lealone Platform — unified DB, LLM runtime, compiler, and agent interaction"
+

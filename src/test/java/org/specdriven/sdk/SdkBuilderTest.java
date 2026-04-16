@@ -26,7 +26,10 @@ class SdkBuilderTest {
     @Test
     void buildWithDefaultsReturnsNonNull() {
         SpecDriven sdk = SpecDriven.builder().build();
+        LealonePlatform platform = SpecDriven.builder().buildPlatform();
         assertNotNull(sdk);
+        assertNotNull(platform);
+        platform.close();
         sdk.close();
     }
 
@@ -38,6 +41,18 @@ class SdkBuilderTest {
                 .build();
         assertNotNull(sdk);
         sdk.close();
+    }
+
+    @Test
+    void buildPlatformWithManualProviderRegistry() {
+        LlmProviderRegistry registry = new DefaultLlmProviderRegistry();
+        LealonePlatform platform = SpecDriven.builder()
+                .providerRegistry(registry)
+                .buildPlatform();
+
+        assertNotNull(platform);
+        assertSame(registry, platform.llm().providerRegistry());
+        platform.close();
     }
 
     @Test

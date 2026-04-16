@@ -4,11 +4,15 @@ import org.specdriven.agent.agent.*;
 import org.specdriven.agent.config.Config;
 import org.specdriven.agent.config.ConfigException;
 import org.specdriven.agent.config.ConfigLoader;
+import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.permission.PermissionProvider;
 import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.question.MobileChannelConfig;
 import org.specdriven.agent.question.MobileChannelProvider;
 import org.specdriven.agent.question.MobileChannelRegistry;
+import org.specdriven.agent.loop.InteractiveSessionFactory;
+import org.specdriven.agent.llm.LealoneRuntimeLlmConfigStore;
+import org.specdriven.agent.llm.RuntimeLlmConfigStore;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.tool.Tool;
@@ -16,6 +20,12 @@ import org.specdriven.agent.tool.builtin.BuiltinToolManager;
 import org.specdriven.agent.tool.builtin.DefaultBuiltinToolManager;
 import org.specdriven.agent.vault.VaultException;
 import org.specdriven.agent.vault.VaultFactory;
+import org.specdriven.skill.compiler.ClassCacheManager;
+import org.specdriven.skill.compiler.LealoneClassCacheManager;
+import org.specdriven.skill.compiler.LealoneSkillSourceCompiler;
+import org.specdriven.skill.compiler.SkillSourceCompiler;
+import org.specdriven.skill.hotload.LealoneSkillHotLoader;
+import org.specdriven.skill.hotload.SkillHotLoader;
 
 import java.nio.file.Path;
 import java.util.*;
@@ -124,50 +134,16 @@ public class SdkBuilder {
 
     public SpecDriven build() {
         try {
-            Map<String, String> configMap = Collections.emptyMap();
-            LlmProviderRegistry registry = this.providerRegistry;
-            SimpleEventBus eventBus = new SimpleEventBus();
-
-            // Auto-assembly from config file
-            if (configPath != null && registry == null) {
-                Config config = ConfigLoader.load(configPath, true);
-                configMap = config.asMap();
-
-                // Try vault-aware loading if vault references exist
-                Map<String, String> resolvedMap = tryResolveVault(configMap);
-                if (resolvedMap != null) {
-                    configMap = resolvedMap;
-                }
-
-                // Auto-assemble provider registry
-                Map<String, LlmProviderFactory> factories = new HashMap<>();
-                factories.put("openai", new OpenAiProviderFactory());
-                factories.put("claude", new ClaudeProviderFactory());
-                registry = DefaultLlmProviderRegistry.fromConfig(config, factories, null, eventBus, permissionProvider);
-            }
-
-            // Merge system prompt: explicit > sdkConfig > config
-            String effectiveSystemPrompt = systemPrompt != null ? systemPrompt : sdkConfig.systemPrompt();
-
-            // Wire global listeners onto the shared event bus
-            for (SdkEventListener listener : globalListeners) {
-                for (EventType type : EventType.values()) {
-                    eventBus.subscribe(type, listener);
-                }
-            }
-            for (Map.Entry<EventType, List<SdkEventListener>> entry : typedGlobalListeners.entrySet()) {
-                for (SdkEventListener listener : entry.getValue()) {
-                    eventBus.subscribe(entry.getKey(), listener);
-                }
-            }
+            AssembledComponents assembled = assembleComponents();
 
             return new SpecDriven(
-                    registry,
+                    assembled.platform(),
+                    assembled.sdkProviderRegistry(),
                     List.copyOf(tools),
-                    effectiveSystemPrompt,
+                    assembled.effectiveSystemPrompt(),
                     sdkConfig,
-                    configMap,
-                    eventBus,
+                    assembled.configMap(),
+                    assembled.eventBus(),
                     deliveryModeOverride,
                     channelRegistry,
                     channelConfigs
@@ -180,6 +156,96 @@ public class SdkBuilder {
             if (e instanceof SdkException) throw (SdkException) e;
             throw new SdkException("Failed to build SDK: " + e.getMessage(), e);
         }
+    }
+
+    public LealonePlatform buildPlatform() {
+        try {
+            return assembleComponents().platform();
+        } catch (ConfigException e) {
+            throw new SdkConfigException("Failed to load config: " + configPath, e);
+        } catch (VaultException e) {
+            throw new SdkVaultException("Vault resolution failed: " + e.getMessage(), e);
+        } catch (Exception e) {
+            if (e instanceof SdkException) throw (SdkException) e;
+            throw new SdkException("Failed to build platform: " + e.getMessage(), e);
+        }
+    }
+
+    private AssembledComponents assembleComponents() {
+        Map<String, String> configMap = Collections.emptyMap();
+        LlmProviderRegistry registry = this.providerRegistry;
+        LlmProviderRegistry sdkProviderRegistry = this.providerRegistry;
+        SimpleEventBus eventBus = new SimpleEventBus();
+        Optional<RuntimeLlmConfigStore> runtimeConfigStore = tryCreateRuntimeConfigStore();
+
+        if (configPath != null && registry == null) {
+            Config config = ConfigLoader.load(configPath, true);
+            configMap = config.asMap();
+
+            Map<String, String> resolvedMap = tryResolveVault(configMap);
+            if (resolvedMap != null) {
+                configMap = resolvedMap;
+            }
+
+            Map<String, LlmProviderFactory> factories = new HashMap<>();
+            factories.put("openai", new OpenAiProviderFactory());
+            factories.put("claude", new ClaudeProviderFactory());
+            registry = DefaultLlmProviderRegistry.fromConfig(config, factories, runtimeConfigStore.orElse(null), eventBus,
+                    permissionProvider);
+            sdkProviderRegistry = registry;
+        }
+
+        if (registry == null) {
+            registry = new DefaultLlmProviderRegistry(runtimeConfigStore.orElse(null), eventBus, permissionProvider);
+        }
+
+        wireGlobalListeners(eventBus);
+
+        String effectiveSystemPrompt = systemPrompt != null ? systemPrompt : sdkConfig.systemPrompt();
+        SkillSourceCompiler sourceCompiler = new LealoneSkillSourceCompiler();
+        ClassCacheManager classCacheManager = new LealoneClassCacheManager(
+                Path.of(System.getProperty("java.io.tmpdir"), "specdriven-skill-cache"));
+        SkillHotLoader hotLoader = new LealoneSkillHotLoader(sourceCompiler, classCacheManager, false);
+        InteractiveSessionFactory sessionFactory = sessionId -> new org.specdriven.agent.interactive.LealoneAgentAdapter(
+                LealonePlatform.DEFAULT_JDBC_URL);
+
+        LealonePlatform platform = new LealonePlatform(
+                new LealonePlatform.DatabaseCapability(LealonePlatform.DEFAULT_JDBC_URL),
+                new LealonePlatform.LlmCapability(registry, runtimeConfigStore),
+                new LealonePlatform.CompilerCapability(sourceCompiler, classCacheManager, hotLoader),
+                new LealonePlatform.InteractiveCapability(sessionFactory));
+
+        return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
+                effectiveSystemPrompt);
+    }
+
+    private void wireGlobalListeners(EventBus eventBus) {
+        for (SdkEventListener listener : globalListeners) {
+            for (EventType type : EventType.values()) {
+                eventBus.subscribe(type, listener);
+            }
+        }
+        for (Map.Entry<EventType, List<SdkEventListener>> entry : typedGlobalListeners.entrySet()) {
+            for (SdkEventListener listener : entry.getValue()) {
+                eventBus.subscribe(entry.getKey(), listener);
+            }
+        }
+    }
+
+    private Optional<RuntimeLlmConfigStore> tryCreateRuntimeConfigStore() {
+        try {
+            return Optional.of(new LealoneRuntimeLlmConfigStore(LealonePlatform.DEFAULT_JDBC_URL));
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private record AssembledComponents(
+            LealonePlatform platform,
+            LlmProviderRegistry sdkProviderRegistry,
+            Map<String, String> configMap,
+            SimpleEventBus eventBus,
+            String effectiveSystemPrompt) {
     }
 
     /**
