@@ -1,15 +1,29 @@
 package org.specdriven.sdk;
 
 import org.specdriven.agent.agent.LlmProviderRegistry;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventBus;
+import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.llm.RuntimeLlmConfigStore;
 import org.specdriven.agent.loop.InteractiveSessionFactory;
 import org.specdriven.skill.compiler.ClassCacheManager;
 import org.specdriven.skill.compiler.SkillSourceCompiler;
 import org.specdriven.skill.hotload.SkillHotLoader;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 /**
  * Public platform-level entry point for assembled Lealone-centered capabilities.
@@ -22,18 +36,32 @@ public final class LealonePlatform implements AutoCloseable {
     private final LlmCapability llm;
     private final CompilerCapability compiler;
     private final InteractiveCapability interactive;
+    private final EventBus eventBus;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
+
+    // Metric counters
+    private final AtomicLong compilationOps = new AtomicLong();
+    private final AtomicLong llmCacheHits = new AtomicLong();
+    private final AtomicLong llmCacheMisses = new AtomicLong();
+    private final AtomicLong toolCacheHits = new AtomicLong();
+    private final AtomicLong toolCacheMisses = new AtomicLong();
+    private final AtomicLong interactionCount = new AtomicLong();
+
+    // Metric-accumulation EventBus subscriptions (stored for cleanup in stop())
+    private final List<ConsumerRegistration> metricSubscriptions = new ArrayList<>();
 
     LealonePlatform(
             DatabaseCapability database,
             LlmCapability llm,
             CompilerCapability compiler,
-            InteractiveCapability interactive) {
+            InteractiveCapability interactive,
+            EventBus eventBus) {
         this.database = Objects.requireNonNull(database, "database must not be null");
         this.llm = Objects.requireNonNull(llm, "llm must not be null");
         this.compiler = Objects.requireNonNull(compiler, "compiler must not be null");
         this.interactive = Objects.requireNonNull(interactive, "interactive must not be null");
+        this.eventBus = Objects.requireNonNull(eventBus, "eventBus must not be null");
     }
 
     /**
@@ -60,18 +88,39 @@ public final class LealonePlatform implements AutoCloseable {
     }
 
     /**
-     * Records the platform as running. Safe to call multiple times (idempotent).
+     * Records the platform as running and registers EventBus subscriptions for metric accumulation.
+     * Safe to call multiple times (idempotent).
      */
     public void start() {
-        started.compareAndSet(false, true);
+        if (!started.compareAndSet(false, true)) return;
+        registerMetricSubscription(EventType.SKILL_HOT_LOAD_OPERATION, e -> compilationOps.incrementAndGet());
+        registerMetricSubscription(EventType.INTERACTIVE_COMMAND_HANDLED, e -> interactionCount.incrementAndGet());
+        registerMetricSubscription(EventType.LLM_CACHE_HIT, e -> llmCacheHits.incrementAndGet());
+        registerMetricSubscription(EventType.LLM_CACHE_MISS, e -> llmCacheMisses.incrementAndGet());
+        registerMetricSubscription(EventType.TOOL_CACHE_HIT, e -> toolCacheHits.incrementAndGet());
+        registerMetricSubscription(EventType.TOOL_CACHE_MISS, e -> toolCacheMisses.incrementAndGet());
+    }
+
+    private void registerMetricSubscription(EventType type, Consumer<Event> listener) {
+        eventBus.subscribe(type, listener);
+        metricSubscriptions.add(new ConsumerRegistration(type, listener));
     }
 
     /**
      * Tears down all capability domains in reverse dependency order with per-subsystem
-     * exception suppression. Safe to call multiple times (idempotent).
+     * exception suppression. Also unsubscribes metric-accumulation EventBus listeners.
+     * Safe to call multiple times (idempotent).
      */
     public void stop() {
         if (!stopped.compareAndSet(false, true)) return;
+        // Unsubscribe metric listeners
+        for (ConsumerRegistration reg : metricSubscriptions) {
+            try {
+                eventBus.unsubscribe(reg.type(), reg.listener());
+            } catch (Exception ignored) {
+            }
+        }
+        metricSubscriptions.clear();
         // Interactive (no explicit teardown needed beyond session GC)
         // Compiler (no explicit teardown needed)
         // LLM
@@ -92,6 +141,108 @@ public final class LealonePlatform implements AutoCloseable {
     public void close() {
         stop();
     }
+
+    /**
+     * Synchronously probes each capability domain and returns an aggregated health result.
+     * Publishes a {@code PLATFORM_HEALTH_CHECKED} event after the probes complete.
+     */
+    public PlatformHealth checkHealth() {
+        long start = System.currentTimeMillis();
+        List<SubsystemHealth> subsystems = new ArrayList<>(4);
+        subsystems.add(probeDb());
+        subsystems.add(probeLlm());
+        subsystems.add(probeCompiler());
+        subsystems.add(probeAgent());
+        long probedAt = System.currentTimeMillis();
+        PlatformHealth health = PlatformHealth.of(subsystems, probedAt);
+
+        long durationMs = probedAt - start;
+        eventBus.publish(new Event(
+                EventType.PLATFORM_HEALTH_CHECKED,
+                probedAt,
+                "platform",
+                Map.of("overallStatus", health.overallStatus().name(), "probeDurationMs", durationMs)));
+        return health;
+    }
+
+    /**
+     * Returns a snapshot of cumulative metric counters accumulated since the last {@code start()}.
+     * Publishes a {@code PLATFORM_METRICS_SNAPSHOT} event.
+     */
+    public PlatformMetrics metrics() {
+        long snapshotAt = System.currentTimeMillis();
+        PlatformMetrics snapshot = new PlatformMetrics(
+                0L, // promptTokens: no dedicated event emitted yet
+                0L, // completionTokens: no dedicated event emitted yet
+                compilationOps.get(),
+                llmCacheHits.get(),
+                llmCacheMisses.get(),
+                toolCacheHits.get(),
+                toolCacheMisses.get(),
+                interactionCount.get(),
+                snapshotAt);
+
+        eventBus.publish(new Event(
+                EventType.PLATFORM_METRICS_SNAPSHOT,
+                snapshotAt,
+                "platform",
+                Map.of(
+                        "compilationOps", snapshot.compilationOps(),
+                        "llmCacheHits", snapshot.llmCacheHits(),
+                        "llmCacheMisses", snapshot.llmCacheMisses(),
+                        "toolCacheHits", snapshot.toolCacheHits(),
+                        "toolCacheMisses", snapshot.toolCacheMisses(),
+                        "interactionCount", snapshot.interactionCount())));
+        return snapshot;
+    }
+
+    // --- Health probes ---
+
+    private SubsystemHealth probeDb() {
+        try (Connection conn = DriverManager.getConnection(database.jdbcUrl(), "root", "");
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT 1")) {
+            if (rs.next()) {
+                return SubsystemHealth.up("db");
+            }
+            return SubsystemHealth.down("db", "SELECT 1 returned no rows");
+        } catch (Exception e) {
+            return SubsystemHealth.down("db", e.getMessage());
+        }
+    }
+
+    private SubsystemHealth probeLlm() {
+        try {
+            if (llm.providerRegistry().providerNames().isEmpty()) {
+                return SubsystemHealth.degraded("llm", "No LLM providers registered");
+            }
+            return SubsystemHealth.up("llm");
+        } catch (Exception e) {
+            return SubsystemHealth.down("llm", e.getMessage());
+        }
+    }
+
+    private SubsystemHealth probeCompiler() {
+        try {
+            Path cachePath = compiler.compileCachePath();
+            if (!Files.exists(cachePath)) {
+                Files.createDirectories(cachePath);
+            }
+            if (!Files.isDirectory(cachePath) || !Files.isWritable(cachePath)) {
+                return SubsystemHealth.down("compiler", "Compile cache path is not a writable directory: " + cachePath);
+            }
+            return SubsystemHealth.up("compiler");
+        } catch (Exception e) {
+            return SubsystemHealth.down("compiler", e.getMessage());
+        }
+    }
+
+    private SubsystemHealth probeAgent() {
+        // InteractiveSessionFactory is assembled at build time; if we got here it's non-null
+        return SubsystemHealth.up("agent");
+    }
+
+    // --- Inner types ---
 
     public record DatabaseCapability(String jdbcUrl) {
 
@@ -115,12 +266,14 @@ public final class LealonePlatform implements AutoCloseable {
     public record CompilerCapability(
             SkillSourceCompiler sourceCompiler,
             ClassCacheManager classCacheManager,
-            SkillHotLoader hotLoader) {
+            SkillHotLoader hotLoader,
+            Path compileCachePath) {
 
         public CompilerCapability {
             Objects.requireNonNull(sourceCompiler, "sourceCompiler must not be null");
             Objects.requireNonNull(classCacheManager, "classCacheManager must not be null");
             Objects.requireNonNull(hotLoader, "hotLoader must not be null");
+            Objects.requireNonNull(compileCachePath, "compileCachePath must not be null");
         }
     }
 
@@ -130,4 +283,6 @@ public final class LealonePlatform implements AutoCloseable {
             Objects.requireNonNull(sessionFactory, "sessionFactory must not be null");
         }
     }
+
+    private record ConsumerRegistration(EventType type, Consumer<Event> listener) {}
 }

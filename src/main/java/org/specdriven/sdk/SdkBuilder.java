@@ -225,8 +225,10 @@ public class SdkBuilder {
         LealonePlatform platform = new LealonePlatform(
                 new LealonePlatform.DatabaseCapability(jdbcUrl),
                 new LealonePlatform.LlmCapability(registry, runtimeConfigStore),
-                new LealonePlatform.CompilerCapability(sourceCompiler, classCacheManager, hotLoader),
-                new LealonePlatform.InteractiveCapability(sessionFactory));
+                new LealonePlatform.CompilerCapability(sourceCompiler, classCacheManager, hotLoader,
+                        effectivePlatform.compileCachePath()),
+                new LealonePlatform.InteractiveCapability(sessionFactory),
+                eventBus);
 
         return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
                 effectiveSystemPrompt);

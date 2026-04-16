@@ -104,6 +104,10 @@ public class HttpApiServlet extends HttpServlet {
             requireGet(route.method(), "/health");
             return handleHealth();
         }
+        if ("platform".equals(group) && route.length() >= 3 && "health".equals(route.segment(2))) {
+            requireGet(route.method(), "/platform/health");
+            return handlePlatformHealth();
+        }
         if ("events".equals(group) && route.length() >= 2) {
             requireGet(route.method(), "/events");
             return handleEvents(req);
@@ -253,6 +257,13 @@ public class HttpApiServlet extends HttpServlet {
 
     private String handleHealth() {
         return HttpJsonCodec.encode(new HealthResponse("ok", VERSION));
+    }
+
+    private String handlePlatformHealth() {
+        if (sdk == null || sdk.platform() == null) {
+            throw new HttpApiException(404, "not_found", "Platform not assembled");
+        }
+        return HttpJsonCodec.encode(PlatformHealthResponse.from(sdk.platform().checkHealth()));
     }
 
     private String handleEvents(HttpServletRequest req) {

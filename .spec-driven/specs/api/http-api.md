@@ -16,6 +16,7 @@ mapping:
     - src/main/java/org/specdriven/agent/http/RunAgentRequest.java
     - src/main/java/org/specdriven/agent/http/RunAgentResponse.java
     - src/main/java/org/specdriven/agent/http/ToolInfo.java
+    - src/main/java/org/specdriven/agent/http/PlatformHealthResponse.java
     - src/main/java/org/specdriven/agent/http/ToolsListResponse.java
     - src/main/java/org/specdriven/sdk/SpecDriven.java
   tests:
@@ -548,3 +549,36 @@ The system MUST provide `RateLimitFilter` in `org.specdriven.agent.http` extendi
 ### Requirement: Middleware error response format
 
 All middleware error responses MUST use `HttpJsonCodec.encode(ErrorResponse)` with `Content-Type: application/json; charset=utf-8`, matching the existing servlet error format.
+
+### Requirement: Platform health route
+
+The HTTP API MUST provide a `GET /platform/health` route that returns platform subsystem health when a `LealonePlatform` is assembled into the SDK.
+
+#### Scenario: Platform health returns aggregated status
+- GIVEN an `HttpApiServlet` backed by a `SpecDriven` instance that has an assembled `LealonePlatform`
+- WHEN a GET request with `pathInfo="/platform/health"` is received
+- THEN a `PlatformHealthResponse` MUST be returned with HTTP 200
+- AND the response MUST include `overallStatus`, a `subsystems` array (each with `name`, `status`, and optional `message`), and `probedAt`
+
+#### Scenario: Platform health returns 404 when no platform is assembled
+- GIVEN an `HttpApiServlet` backed by a `SpecDriven` instance built without `buildPlatform()`
+- WHEN a GET request with `pathInfo="/platform/health"` is received
+- THEN an `ErrorResponse` with `status=404` and `error="not_found"` MUST be returned
+
+### Requirement: PlatformHealthResponse type
+
+The system MUST provide an immutable `PlatformHealthResponse` record in `org.specdriven.agent.http` for JSON serialization of platform health results.
+
+#### Scenario: Response carries subsystem details
+- GIVEN a `PlatformHealth` with two subsystems
+- WHEN a `PlatformHealthResponse` is constructed from it
+- THEN `overallStatus()` MUST match the `PlatformHealth` overall status name
+- AND `subsystems()` MUST contain one entry per `SubsystemHealth` with matching name, status, and message
+
+### Requirement: Route dispatching — platform health
+
+The servlet MUST additionally dispatch `GET /platform/health` to the platform health handler.
+
+### Requirement: HttpJsonCodec encoding — PlatformHealthResponse
+
+`HttpJsonCodec` MUST additionally support `encode(PlatformHealthResponse)`.

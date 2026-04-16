@@ -35,6 +35,7 @@ mapping:
 - MUST additionally define: LOOP_INTERACTIVE_ENTERED, LOOP_INTERACTIVE_EXITED
 - MUST additionally define: SKILL_HOT_LOAD_OPERATION
 - MUST additionally define: INTERACTIVE_COMMAND_HANDLED
+- MUST additionally define: PLATFORM_HEALTH_CHECKED, PLATFORM_METRICS_SNAPSHOT
 - MAY be extended in future milestones
 
 ### Requirement: EventBus pub/sub

@@ -535,6 +535,46 @@ class HttpApiServletTest {
         }
     }
 
+    // --- GET /platform/health ---
+
+    @Nested
+    class PlatformHealthTests {
+
+        @Test
+        void getPlatformHealth_returns200WithSubsystems() {
+            StubResponse resp = service("GET", "/platform/health");
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"overallStatus\":"));
+            assertTrue(resp.body().contains("\"subsystems\":["));
+            assertTrue(resp.body().contains("\"probedAt\":"));
+        }
+
+        @Test
+        void getPlatformHealth_containsKnownSubsystemNames() {
+            StubResponse resp = service("GET", "/platform/health");
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"name\":\"db\"") ||
+                    resp.body().contains("\"name\":\"llm\"") ||
+                    resp.body().contains("\"name\":\"compiler\"") ||
+                    resp.body().contains("\"name\":\"agent\""));
+        }
+
+        @Test
+        void getPlatformHealth_wrongMethod_returns405() {
+            StubResponse resp = service("POST", "/platform/health");
+            assertEquals(405, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"method_not_allowed\""));
+        }
+
+        @Test
+        void existingHealthEndpoint_isUnchanged() {
+            StubResponse resp = service("GET", "/health");
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"status\":\"ok\""));
+            assertTrue(resp.body().contains("\"version\":\"0.1.0\""));
+        }
+    }
+
     // --- Helpers ---
 
     private StubResponse service(String method, String path) {

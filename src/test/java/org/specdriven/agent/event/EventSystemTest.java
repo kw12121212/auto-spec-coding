@@ -23,7 +23,7 @@ class EventSystemTest {
     @Test
     void eventTypeCoversAllValues() {
         EventType[] types = EventType.values();
-        assertEquals(42, types.length);
+        assertEquals(44, types.length);
         assertNotNull(EventType.valueOf("TOOL_EXECUTED"));
         assertNotNull(EventType.valueOf("AGENT_STATE_CHANGED"));
         assertNotNull(EventType.valueOf("TASK_CREATED"));
@@ -66,6 +66,8 @@ class EventSystemTest {
         assertNotNull(EventType.valueOf("LOOP_INTERACTIVE_ENTERED"));
         assertNotNull(EventType.valueOf("LOOP_INTERACTIVE_EXITED"));
         assertNotNull(EventType.valueOf("LOOP_ERROR"));
+        assertNotNull(EventType.valueOf("PLATFORM_HEALTH_CHECKED"));
+        assertNotNull(EventType.valueOf("PLATFORM_METRICS_SNAPSHOT"));
     }
 
     @Test

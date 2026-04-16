@@ -76,6 +76,22 @@ public final class HttpJsonCodec {
         return w.build();
     }
 
+    public static String encode(PlatformHealthResponse r) {
+        List<String> subsystemJson = new ArrayList<>();
+        for (PlatformHealthResponse.SubsystemEntry entry : r.subsystems()) {
+            subsystemJson.add(JsonWriter.object()
+                    .field("name", entry.name())
+                    .field("status", entry.status())
+                    .field("message", entry.message())
+                    .build());
+        }
+        return JsonWriter.object()
+                .field("overallStatus", r.overallStatus())
+                .arrayField("subsystems", subsystemJson)
+                .field("probedAt", r.probedAt())
+                .build();
+    }
+
     public static String encode(RemoteToolInvocationRequest r) {
         return JsonWriter.object()
                 .field("toolName", r.toolName())

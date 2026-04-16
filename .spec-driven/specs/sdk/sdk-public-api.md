@@ -25,6 +25,7 @@ mapping:
     - src/test/java/org/specdriven/sdk/SdkExceptionTest.java
     - src/test/java/org/specdriven/sdk/SdkSubclassExceptionTest.java
     - src/test/java/org/specdriven/sdk/SpecDrivenTest.java
+    - src/test/java/org/specdriven/sdk/SpecDrivenPlatformTest.java
 ---
 
 # sdk-public-api.md
@@ -371,6 +372,20 @@ The `SdkBuilder` MUST support registering mobile channel providers for use by al
 - GIVEN a builder with `.config(Path)` where the YAML contains a `mobile-channels` section
 - WHEN `.build()` is invoked
 - THEN providers matching the configured channel types MUST be resolved from the registry
+
+### Requirement: SpecDriven platform accessor
+
+`SpecDriven` MUST expose a `platform()` method returning the assembled `LealonePlatform`.
+
+#### Scenario: platform() returns non-null platform after build()
+- GIVEN a `SpecDriven` instance built via `SpecDriven.builder().build()`
+- WHEN `platform()` is called
+- THEN it MUST return a non-null `LealonePlatform` instance
+
+#### Scenario: platform() exposes checkHealth after build
+- GIVEN a `SpecDriven` instance built via `SpecDriven.builder().build()`
+- WHEN `sdk.platform().checkHealth()` is called
+- THEN it MUST return a non-null `PlatformHealth` result without throwing
 
 ### Requirement: SdkBuilder channel configs
 
