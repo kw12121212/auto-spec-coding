@@ -163,11 +163,30 @@ class ConfigLoaderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                          - /opt/node-22/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                       node:
                         nodeHome: /opt/node-22
                     ci:
+                      runtime:
+                        home: /work/ci-home
+                        path:
+                          - /opt/go-1.23/bin
+                        cache:
+                          maven: /work/ci-cache/maven
+                          npm: /work/ci-cache/npm
+                          go: /work/ci-cache/go
+                          pip: /work/ci-cache/pip
                       go:
                         goRoot: /opt/go-1.23
                 """);
@@ -175,9 +194,11 @@ class ConfigLoaderTest {
         Config config = ConfigLoader.load(file);
 
         assertEquals("dev", config.getString("environmentProfiles.default"));
+        assertEquals("/work/dev-home", config.getString("environmentProfiles.profiles.dev.runtime.home"));
         assertEquals("/opt/jdk-25", config.getString("environmentProfiles.profiles.dev.jdk.javaHome"));
         assertEquals("/opt/node-22", config.getString("environmentProfiles.profiles.dev.node.nodeHome"));
         assertEquals("/opt/go-1.23", config.getString("environmentProfiles.profiles.ci.go.goRoot"));
+        assertEquals("/work/ci-cache/go", config.getString("environmentProfiles.profiles.ci.runtime.cache.go"));
     }
 
     @Test
@@ -188,6 +209,15 @@ class ConfigLoaderTest {
                   default: prod
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                 """);
@@ -205,6 +235,15 @@ class ConfigLoaderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome:
                           nested: invalid
@@ -213,6 +252,56 @@ class ConfigLoaderTest {
         ConfigException ex = assertThrows(ConfigException.class, () -> ConfigLoader.load(file));
 
         assertTrue(ex.getMessage().contains("environmentProfiles.profiles.dev.jdk.javaHome"));
+    }
+
+    @Test
+    void environmentProfiles_missingRuntimeHome_throwsConfigException(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("profiles.yaml");
+        Files.writeString(file, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      runtime:
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
+                      jdk:
+                        javaHome: /opt/jdk-25
+                """);
+
+        ConfigException ex = assertThrows(ConfigException.class, () -> ConfigLoader.load(file));
+
+        assertTrue(ex.getMessage().contains("environmentProfiles.profiles.dev.runtime.home"));
+    }
+
+    @Test
+    void environmentProfiles_missingRequiredRuntimeCache_throwsConfigException(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("profiles.yaml");
+        Files.writeString(file, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                      jdk:
+                        javaHome: /opt/jdk-25
+                """);
+
+        ConfigException ex = assertThrows(ConfigException.class, () -> ConfigLoader.load(file));
+
+        assertTrue(ex.getMessage().contains("environmentProfiles.profiles.dev.runtime.cache.pip"));
     }
 
     // --- Immutability ---

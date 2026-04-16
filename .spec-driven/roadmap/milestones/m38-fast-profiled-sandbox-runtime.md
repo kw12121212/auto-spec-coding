@@ -38,7 +38,7 @@
 ## Planned Changes
 - `environment-profile-contract` - Declared: complete - 定义项目级环境 profile 的声明、解析、选择优先级和可观察错误契约，首期覆盖 JDK、Node.js、Go、Python 技术栈
 - `sandlock-runner-integration` - Declared: complete - 集成 Sandlock 可用性检测与命令封装入口，支持通过命名 profile 启动受隔离进程并返回结构化执行结果
-- `profile-toolchain-isolation` - Declared: planned - 为每个 profile 提供独立的 PATH、HOME、缓存目录和语言工具链环境，避免 Maven/npm/go/pip 等状态跨项目污染
+- `profile-toolchain-isolation` - Declared: complete - 为每个 profile 提供独立的 PATH、HOME、缓存目录和语言工具链环境，避免 Maven/npm/go/pip 等状态跨项目污染
 - `profile-tool-execution-binding` - Declared: planned - 将 BashTool、后台进程和 loop phase 命令执行接入 profile 选择规则，保证项目命令在预期隔离环境中运行
 - `profile-governance-observability` - Declared: planned - 增加 profile 使用的权限边界、审计事件、健康诊断和不支持环境的快速失败输出
 
@@ -68,5 +68,6 @@
 - 本里程碑聚焦“项目技术栈环境隔离”，不是安全边界完整替代方案；安全治理仍以现有权限模型和后续明确 spec 为准
 - 首期 profile 应优先覆盖本项目真实使用的 JDK/Maven、Node.js、Go、Python 工具链和缓存目录，避免为未使用语言预先扩张配置模型
 - 如果后续需要自动安装语言运行时或远程执行环境，应另开独立 milestone，而不是扩大本里程碑
+
 
 

@@ -23,6 +23,8 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +36,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 /**
  * Public platform-level entry point for assembled Lealone-centered capabilities.
@@ -402,12 +405,12 @@ public final class LealonePlatform implements AutoCloseable {
     public static final class SandlockCapability {
 
         private final SandlockRuntime runtime;
-        private final Set<String> declaredProfiles;
+        private final Map<String, SandlockProfile> declaredProfiles;
         private final String selectedProfile;
 
-        SandlockCapability(SandlockRuntime runtime, Set<String> declaredProfiles, String selectedProfile) {
+        SandlockCapability(SandlockRuntime runtime, Map<String, SandlockProfile> declaredProfiles, String selectedProfile) {
             this.runtime = Objects.requireNonNull(runtime, "runtime must not be null");
-            this.declaredProfiles = Set.copyOf(declaredProfiles == null ? Set.of() : new LinkedHashSet<>(declaredProfiles));
+            this.declaredProfiles = Map.copyOf(declaredProfiles == null ? Map.of() : new LinkedHashMap<>(declaredProfiles));
             this.selectedProfile = selectedProfile;
         }
 
@@ -417,7 +420,7 @@ public final class LealonePlatform implements AutoCloseable {
 
         public SandlockExecutionResult execute(String requestedProfile, List<String> command) {
             List<String> normalizedCommand = normalizeCommand(command);
-            String resolvedProfile = resolveProfile(requestedProfile);
+            SandlockProfile resolvedProfile = resolveProfile(requestedProfile);
             SandlockLaunchCheck check = runtime.check();
             if (!check.isAvailable()) {
                 throw new SandlockExecutionException(check.failureCode(), check.message());
@@ -425,7 +428,7 @@ public final class LealonePlatform implements AutoCloseable {
             try {
                 SandlockProcessOutput output = runtime.execute(resolvedProfile, normalizedCommand);
                 return new SandlockExecutionResult(
-                        resolvedProfile,
+                        resolvedProfile.name(),
                         normalizedCommand,
                         output.exitCode(),
                         output.stdout(),
@@ -446,25 +449,34 @@ public final class LealonePlatform implements AutoCloseable {
             }
         }
 
-        private String resolveProfile(String requestedProfile) {
+        private SandlockProfile resolveProfile(String requestedProfile) {
             if (requestedProfile != null) {
                 String normalizedProfile = requestedProfile.trim();
                 if (normalizedProfile.isEmpty()) {
                     throw new IllegalArgumentException("requestedProfile must not be blank");
                 }
-                if (!declaredProfiles.contains(normalizedProfile)) {
+                SandlockProfile explicitProfile = declaredProfiles.get(normalizedProfile);
+                if (explicitProfile == null) {
                     throw new SandlockExecutionException(
                             SandlockFailureCode.UNKNOWN_PROFILE,
                             "Unknown requested environment profile '" + normalizedProfile + "'");
                 }
-                return normalizedProfile;
+                explicitProfile.validateForExecution();
+                return explicitProfile;
             }
             if (selectedProfile == null || selectedProfile.isBlank()) {
                 throw new SandlockExecutionException(
                         SandlockFailureCode.NO_EFFECTIVE_PROFILE,
                         "No effective environment profile is available for Sandlock-backed execution");
             }
-            return selectedProfile;
+            SandlockProfile effectiveProfile = declaredProfiles.get(selectedProfile);
+            if (effectiveProfile == null) {
+                throw new SandlockExecutionException(
+                        SandlockFailureCode.NO_EFFECTIVE_PROFILE,
+                        "No effective environment profile is available for Sandlock-backed execution");
+            }
+            effectiveProfile.validateForExecution();
+            return effectiveProfile;
         }
 
         private static List<String> normalizeCommand(List<String> command) {
@@ -525,6 +537,7 @@ public final class LealonePlatform implements AutoCloseable {
         UNSUPPORTED_HOST,
         UNKNOWN_PROFILE,
         NO_EFFECTIVE_PROFILE,
+        INVALID_PROFILE,
         LAUNCH_FAILED
     }
 
@@ -532,7 +545,7 @@ public final class LealonePlatform implements AutoCloseable {
 
         SandlockLaunchCheck check();
 
-        SandlockProcessOutput execute(String resolvedProfile, List<String> command) throws Exception;
+        SandlockProcessOutput execute(SandlockProfile resolvedProfile, List<String> command) throws Exception;
     }
 
     record SandlockLaunchCheck(SandlockFailureCode failureCode, String message) {
@@ -562,10 +575,179 @@ public final class LealonePlatform implements AutoCloseable {
         }
     }
 
+    public record SandlockProfile(
+            String name,
+            String isolatedHome,
+            List<String> executableSearchPaths,
+            Map<String, String> environmentOverrides,
+            Map<String, String> cacheRoots,
+            Map<String, Map<String, String>> toolchains) {
+
+        private static final List<String> REQUIRED_CACHE_KEYS = List.of("maven", "npm", "go", "pip");
+
+        public SandlockProfile {
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("name must not be null or blank");
+            }
+            executableSearchPaths = List.copyOf(executableSearchPaths == null ? List.of() : executableSearchPaths);
+            environmentOverrides = Map.copyOf(environmentOverrides == null ? Map.of() : new LinkedHashMap<>(environmentOverrides));
+            cacheRoots = Map.copyOf(cacheRoots == null ? Map.of() : new LinkedHashMap<>(cacheRoots));
+            if (toolchains == null || toolchains.isEmpty()) {
+                toolchains = Map.of();
+            } else {
+                Map<String, Map<String, String>> copied = new LinkedHashMap<>();
+                for (Map.Entry<String, Map<String, String>> entry : toolchains.entrySet()) {
+                    copied.put(entry.getKey(), Map.copyOf(entry.getValue()));
+                }
+                toolchains = Map.copyOf(copied);
+            }
+        }
+
+        static SandlockProfile fromFlatConfig(String profileName, Map<String, String> config) {
+            Map<String, String> safeConfig = config == null ? Map.of() : config;
+            String isolatedHome = trimToNull(safeConfig.get("runtime.home"));
+            List<String> executableSearchPaths = splitSearchPath(safeConfig.get("runtime.path"));
+            Map<String, String> environmentOverrides = extractPrefixed(safeConfig, "runtime.env.");
+            Map<String, String> cacheRoots = extractCacheRoots(safeConfig);
+            Map<String, Map<String, String>> toolchains = extractToolchains(safeConfig);
+            return new SandlockProfile(profileName, isolatedHome, executableSearchPaths, environmentOverrides, cacheRoots,
+                    toolchains);
+        }
+
+        void validateForExecution() {
+            if (isolatedHome == null) {
+                throw invalidProfile("Missing required isolation setting 'runtime.home' for profile '" + name + "'");
+            }
+            for (String cacheKey : REQUIRED_CACHE_KEYS) {
+                String cachePath = cacheRoots.get(cacheKey);
+                if (cachePath == null || cachePath.isBlank()) {
+                    throw invalidProfile("Missing required isolation setting 'runtime.cache." + cacheKey
+                            + "' for profile '" + name + "'");
+                }
+            }
+        }
+
+        Map<String, String> applyToEnvironment(Map<String, String> baseEnvironment) {
+            Map<String, String> environment = new LinkedHashMap<>(baseEnvironment == null ? Map.of() : baseEnvironment);
+            environment.put("HOME", isolatedHome);
+            if (!executableSearchPaths.isEmpty()) {
+                environment.put("PATH", String.join(java.io.File.pathSeparator, executableSearchPaths));
+            }
+            environment.put("MAVEN_USER_HOME", cacheRoots.get("maven"));
+            environment.put("NPM_CONFIG_CACHE", cacheRoots.get("npm"));
+            environment.put("GOMODCACHE", cacheRoots.get("go"));
+            environment.put("GOCACHE", cacheRoots.get("go"));
+            environment.put("PIP_CACHE_DIR", cacheRoots.get("pip"));
+            environment.putAll(environmentOverrides);
+            return environment;
+        }
+
+        private static Map<String, String> extractCacheRoots(Map<String, String> config) {
+            Map<String, String> cacheRoots = new LinkedHashMap<>();
+            for (String key : REQUIRED_CACHE_KEYS) {
+                String value = trimToNull(config.get("runtime.cache." + key));
+                if (value != null) {
+                    cacheRoots.put(key, value);
+                }
+            }
+            return cacheRoots;
+        }
+
+        private static Map<String, Map<String, String>> extractToolchains(Map<String, String> config) {
+            Map<String, Map<String, String>> toolchains = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : config.entrySet()) {
+                int separator = entry.getKey().indexOf('.');
+                if (separator <= 0) {
+                    continue;
+                }
+                String family = entry.getKey().substring(0, separator);
+                if (!(family.equals("jdk") || family.equals("node") || family.equals("go") || family.equals("python"))) {
+                    continue;
+                }
+                String field = entry.getKey().substring(separator + 1);
+                if (field.isBlank()) {
+                    continue;
+                }
+                toolchains.computeIfAbsent(family, ignored -> new LinkedHashMap<>())
+                        .put(field, entry.getValue());
+            }
+            return toolchains;
+        }
+
+        private static Map<String, String> extractPrefixed(Map<String, String> config, String prefix) {
+            Map<String, String> extracted = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : config.entrySet()) {
+                if (entry.getKey().startsWith(prefix)) {
+                    String key = entry.getKey().substring(prefix.length());
+                    if (!key.isBlank()) {
+                        extracted.put(key, entry.getValue());
+                    }
+                }
+            }
+            return extracted;
+        }
+
+        private static List<String> splitSearchPath(String rawPath) {
+            String trimmed = trimToNull(rawPath);
+            if (trimmed == null) {
+                return List.of();
+            }
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                String body = trimToNull(trimmed.substring(1, trimmed.length() - 1));
+                if (body == null) {
+                    return List.of();
+                }
+                List<String> parts = new ArrayList<>();
+                for (String part : body.split(",")) {
+                    String candidate = trimToNull(part);
+                    if (candidate != null) {
+                        parts.add(candidate);
+                    }
+                }
+                return List.copyOf(parts);
+            }
+            List<String> parts = new ArrayList<>();
+            for (String part : trimmed.split(Pattern.quote(java.io.File.pathSeparator))) {
+                String candidate = trimToNull(part);
+                if (candidate != null) {
+                    parts.add(candidate);
+                }
+            }
+            return List.copyOf(parts);
+        }
+
+        private static String trimToNull(String value) {
+            if (value == null) {
+                return null;
+            }
+            String trimmed = value.trim();
+            return trimmed.isEmpty() ? null : trimmed;
+        }
+
+        private static SandlockExecutionException invalidProfile(String message) {
+            return new SandlockExecutionException(SandlockFailureCode.INVALID_PROFILE, message);
+        }
+    }
+
     static final class SystemSandlockRuntime implements SandlockRuntime {
 
         private static final String ENTRY_ENV = "SPEC_DRIVEN_SANDLOCK_ENTRY";
+        private static final String BUNDLED_VERSION = "v0.6.0";
+        private static final String BUNDLED_PLATFORM_DIR = "linux-x86_64";
         private static final String ENTRY_NAME = "sandlock";
+        private final Map<String, String> environment;
+        private final Path repositoryRoot;
+
+        SystemSandlockRuntime() {
+            this(System.getenv(), Path.of(System.getProperty("user.dir", ".")));
+        }
+
+        SystemSandlockRuntime(Map<String, String> environment, Path repositoryRoot) {
+            this.environment = Map.copyOf(environment == null ? Map.of() : environment);
+            this.repositoryRoot = Objects.requireNonNull(repositoryRoot, "repositoryRoot must not be null")
+                    .toAbsolutePath()
+                    .normalize();
+        }
 
         @Override
         public SandlockLaunchCheck check() {
@@ -573,24 +755,26 @@ public final class LealonePlatform implements AutoCloseable {
                 return SandlockLaunchCheck.unsupportedHost(
                         "The current host environment is unsupported for Sandlock-backed execution");
             }
-            if (resolveEntryPath() == null) {
-                return SandlockLaunchCheck.unavailable(
-                        "Sandlock is unavailable because the supported entry was not found");
-            }
-            return SandlockLaunchCheck.ready();
+            return resolveEntry().launchCheck();
         }
 
         @Override
-        public SandlockProcessOutput execute(String resolvedProfile, List<String> command)
+        public SandlockProcessOutput execute(SandlockProfile resolvedProfile, List<String> command)
                 throws IOException, InterruptedException {
-            Path entryPath = resolveEntryPath();
-            if (entryPath == null) {
+            SandlockEntryResolution resolution = resolveEntry();
+            if (!resolution.launchCheck().isAvailable()) {
                 throw new SandlockExecutionException(
-                        SandlockFailureCode.UNAVAILABLE,
-                        "Sandlock is unavailable because the supported entry was not found");
+                        resolution.launchCheck().failureCode(),
+                        resolution.launchCheck().message());
             }
+            Path entryPath = Objects.requireNonNull(resolution.entryPath(), "entryPath must not be null when available");
 
-            Process process = new ProcessBuilder(buildCommand(entryPath, resolvedProfile, command)).start();
+            ProcessBuilder processBuilder = new ProcessBuilder(buildCommand(entryPath, resolvedProfile.name(), command));
+            Map<String, String> processEnvironment = resolvedProfile.applyToEnvironment(processBuilder.environment());
+            processBuilder.environment().clear();
+            processBuilder.environment().putAll(processEnvironment);
+            prepareBundledEnvironment(entryPath, processBuilder.environment());
+            Process process = processBuilder.start();
             AtomicReference<String> stdout = new AtomicReference<>("");
             AtomicReference<String> stderr = new AtomicReference<>("");
             AtomicReference<RuntimeException> readFailure = new AtomicReference<>();
@@ -613,37 +797,62 @@ public final class LealonePlatform implements AutoCloseable {
             return osName.contains("linux");
         }
 
-        private static Path resolveEntryPath() {
-            String override = System.getenv(ENTRY_ENV);
+        private SandlockEntryResolution resolveEntry() {
+            String override = environment.get(ENTRY_ENV);
             if (override != null && !override.isBlank()) {
                 try {
                     Path overridePath = Path.of(override).toAbsolutePath().normalize();
-                    return Files.isExecutable(overridePath) ? overridePath : null;
+                    if (Files.isExecutable(overridePath)) {
+                        return new SandlockEntryResolution(overridePath, SandlockLaunchCheck.ready());
+                    }
+                    return new SandlockEntryResolution(null, SandlockLaunchCheck.unavailable(
+                            "Sandlock is unavailable because SPEC_DRIVEN_SANDLOCK_ENTRY is not executable: "
+                                    + overridePath));
                 } catch (InvalidPathException ignored) {
-                    return null;
+                    return new SandlockEntryResolution(null, SandlockLaunchCheck.unavailable(
+                            "Sandlock is unavailable because SPEC_DRIVEN_SANDLOCK_ENTRY is invalid: " + override));
                 }
             }
-            String path = System.getenv("PATH");
-            if (path == null || path.isBlank()) {
-                return null;
+            Path bundledEntry = bundledEntryPath();
+            if (Files.isExecutable(bundledEntry)) {
+                return new SandlockEntryResolution(bundledEntry, SandlockLaunchCheck.ready());
             }
-            return Arrays.stream(path.split(java.io.File.pathSeparator))
-                    .map(String::trim)
-                    .filter(entry -> !entry.isEmpty())
-                    .map(SystemSandlockRuntime::toPath)
-                    .filter(Objects::nonNull)
-                    .map(candidate -> candidate.resolve(ENTRY_NAME))
-                    .filter(Files::isExecutable)
-                    .findFirst()
-                    .orElse(null);
+            return new SandlockEntryResolution(null, SandlockLaunchCheck.unavailable(
+                    "Sandlock is unavailable because the repository-bundled entry was not found or is not executable: "
+                            + bundledEntry));
         }
 
-        private static Path toPath(String entry) {
-            try {
-                return Path.of(entry);
-            } catch (InvalidPathException ignored) {
-                return null;
+        Path bundledEntryPath() {
+            return repositoryRoot
+                    .resolve("depends")
+                    .resolve("sandlock")
+                    .resolve(BUNDLED_VERSION)
+                    .resolve(BUNDLED_PLATFORM_DIR)
+                    .resolve(ENTRY_NAME)
+                    .toAbsolutePath()
+                    .normalize();
+        }
+
+        private void prepareBundledEnvironment(Path entryPath, Map<String, String> processEnvironment) {
+            Path bundledDir = bundledEntryPath().getParent();
+            if (bundledDir == null) {
+                return;
             }
+            Path actualDir = entryPath.toAbsolutePath().normalize().getParent();
+            if (actualDir == null || !actualDir.equals(bundledDir)) {
+                return;
+            }
+            prependEnv(processEnvironment, "LD_LIBRARY_PATH", bundledDir.toString());
+            prependEnv(processEnvironment, "PATH", bundledDir.toString());
+        }
+
+        private static void prependEnv(Map<String, String> environment, String key, String value) {
+            String current = environment.get(key);
+            if (current == null || current.isBlank()) {
+                environment.put(key, value);
+                return;
+            }
+            environment.put(key, value + java.io.File.pathSeparator + current);
         }
 
         private static List<String> buildCommand(Path entryPath, String resolvedProfile, List<String> command) {
@@ -666,6 +875,8 @@ public final class LealonePlatform implements AutoCloseable {
                 return "";
             }
         }
+
+        private record SandlockEntryResolution(Path entryPath, SandlockLaunchCheck launchCheck) {}
     }
 
     private record ConsumerRegistration(EventType type, Consumer<Event> listener) {}

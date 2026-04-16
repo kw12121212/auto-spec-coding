@@ -182,9 +182,27 @@ class SdkBuilderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                     ci:
+                      runtime:
+                        home: /work/ci-home
+                        path:
+                          - /opt/python-3.12/bin
+                        cache:
+                          maven: /work/ci-cache/maven
+                          npm: /work/ci-cache/npm
+                          go: /work/ci-cache/go
+                          pip: /work/ci-cache/pip
                       python:
                         pythonHome: /opt/python-3.12
                 """);
@@ -194,6 +212,7 @@ class SdkBuilderTest {
                 .providerRegistry(new DefaultLlmProviderRegistry())
                 .build()) {
             assertEquals("dev", sdk.configMap().get("environmentProfiles.selected"));
+            assertEquals("/work/dev-home", sdk.configMap().get("environmentProfiles.selected.runtime.home"));
             assertEquals("/opt/jdk-25", sdk.configMap().get("environmentProfiles.selected.jdk.javaHome"));
             assertNull(sdk.configMap().get("environmentProfiles.selected.python.pythonHome"));
         }
@@ -207,9 +226,27 @@ class SdkBuilderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                     ci:
+                      runtime:
+                        home: /work/ci-home
+                        path:
+                          - /opt/python-3.12/bin
+                        cache:
+                          maven: /work/ci-cache/maven
+                          npm: /work/ci-cache/npm
+                          go: /work/ci-cache/go
+                          pip: /work/ci-cache/pip
                       python:
                         pythonHome: /opt/python-3.12
                 """);
@@ -220,6 +257,7 @@ class SdkBuilderTest {
                 .providerRegistry(new DefaultLlmProviderRegistry())
                 .build()) {
             assertEquals("ci", sdk.configMap().get("environmentProfiles.selected"));
+            assertEquals("/work/ci-cache/pip", sdk.configMap().get("environmentProfiles.selected.runtime.cache.pip"));
             assertEquals("/opt/python-3.12", sdk.configMap().get("environmentProfiles.selected.python.pythonHome"));
             assertNull(sdk.configMap().get("environmentProfiles.selected.jdk.javaHome"));
         }
@@ -233,9 +271,27 @@ class SdkBuilderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                     ci:
+                      runtime:
+                        home: /work/ci-home
+                        path:
+                          - /opt/python-3.12/bin
+                        cache:
+                          maven: /work/ci-cache/maven
+                          npm: /work/ci-cache/npm
+                          go: /work/ci-cache/go
+                          pip: /work/ci-cache/pip
                       python:
                         pythonHome: /opt/python-3.12
                 """);
@@ -264,6 +320,15 @@ class SdkBuilderTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
                 """);
@@ -304,7 +369,8 @@ class SdkBuilderTest {
         }
 
         @Override
-        public LealonePlatform.SandlockProcessOutput execute(String resolvedProfile, List<String> command) {
+        public LealonePlatform.SandlockProcessOutput execute(LealonePlatform.SandlockProfile resolvedProfile,
+                                                             List<String> command) {
             return new LealonePlatform.SandlockProcessOutput(3, "python 3.12", "");
         }
     }

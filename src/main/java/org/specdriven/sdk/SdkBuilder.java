@@ -253,7 +253,7 @@ public class SdkBuilder {
                 new LealonePlatform.InteractiveCapability(sessionFactory),
                 new LealonePlatform.SandlockCapability(
                         sandlockRuntime != null ? sandlockRuntime : new LealonePlatform.SystemSandlockRuntime(),
-                        extractDeclaredEnvironmentProfiles(configMap),
+                        extractEnvironmentProfiles(configMap),
                         configMap.get(SELECTED_ENVIRONMENT_PROFILE_KEY)),
                 eventBus);
 
@@ -303,19 +303,29 @@ public class SdkBuilder {
         return PlatformConfig.defaults();
     }
 
-    private Set<String> extractDeclaredEnvironmentProfiles(Map<String, String> configMap) {
-        Set<String> profileNames = new LinkedHashSet<>();
-        for (String key : configMap.keySet()) {
+    private Map<String, LealonePlatform.SandlockProfile> extractEnvironmentProfiles(Map<String, String> configMap) {
+        Map<String, Map<String, String>> rawProfiles = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : configMap.entrySet()) {
+            String key = entry.getKey();
             if (!key.startsWith(DECLARED_ENVIRONMENT_PROFILE_PREFIX)) {
                 continue;
             }
             String remainder = key.substring(DECLARED_ENVIRONMENT_PROFILE_PREFIX.length());
             int separator = remainder.indexOf('.');
-            if (separator > 0) {
-                profileNames.add(remainder.substring(0, separator));
+            if (separator <= 0) {
+                continue;
             }
+            String profileName = remainder.substring(0, separator);
+            String profileKey = remainder.substring(separator + 1);
+            rawProfiles.computeIfAbsent(profileName, ignored -> new LinkedHashMap<>())
+                    .put(profileKey, entry.getValue());
         }
-        return Set.copyOf(profileNames);
+
+        Map<String, LealonePlatform.SandlockProfile> profiles = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : rawProfiles.entrySet()) {
+            profiles.put(entry.getKey(), LealonePlatform.SandlockProfile.fromFlatConfig(entry.getKey(), entry.getValue()));
+        }
+        return Map.copyOf(profiles);
     }
 
     private void wireGlobalListeners(EventBus eventBus) {

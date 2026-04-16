@@ -22,6 +22,22 @@ The repository already includes the core runtime, built-in tool surface, eventin
 
 - JDK 25+
 - Maven 3.9+
+- Linux x86_64 if you want to use the built-in Sandlock-backed profile runner
+
+## Bundled Sandlock
+
+This repository now vendors a pinned Sandlock runtime for the supported Linux
+x86_64 path.
+
+- Bundled version: `v0.6.0`
+- Default bundled entry: `depends/sandlock/v0.6.0/linux-x86_64/sandlock`
+- Bundled shared library: `depends/sandlock/v0.6.0/linux-x86_64/libsandlock_ffi.so`
+
+By default, `LealonePlatform.sandlock()` uses the bundled repository copy and
+does not require a separate host `PATH` installation of `sandlock`.
+
+If you need to force a different executable for debugging or local experiments,
+set `SPEC_DRIVEN_SANDLOCK_ENTRY` to an explicit executable path.
 
 ## Lealone Upstream Baseline
 
@@ -46,6 +62,10 @@ LEALONE_SRC_DIR="$PWD/lealone" LEALONE_SKIP_FETCH=true ./scripts/install-lealone
 mvnd compile -q
 mvnd test -q -Dsurefire.useFile=false
 ```
+
+If you are testing the Sandlock-backed runner itself, keep the bundled files
+under `depends/sandlock/v0.6.0/linux-x86_64/` intact, or set
+`SPEC_DRIVEN_SANDLOCK_ENTRY` explicitly.
 
 ## Native Java SDK Quickstart
 

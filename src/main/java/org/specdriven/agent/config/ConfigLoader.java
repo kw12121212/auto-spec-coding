@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -25,6 +26,8 @@ public final class ConfigLoader {
     private static final ObjectMapper YAML_MAPPER = new ObjectMapper(new YAMLFactory());
     private static final Set<String> ENVIRONMENT_PROFILE_KEYS = Set.of("default", "profiles");
     private static final Set<String> SUPPORTED_PROFILE_FAMILIES = Set.of("jdk", "node", "go", "python");
+    private static final Set<String> SUPPORTED_RUNTIME_PROFILE_KEYS = Set.of("home", "path", "env", "cache");
+    private static final Set<String> REQUIRED_RUNTIME_CACHE_KEYS = Set.of("maven", "npm", "go", "pip");
 
     private ConfigLoader() {}
 
@@ -178,10 +181,15 @@ public final class ConfigLoader {
     }
 
     private static void validateProfileFamilies(String profileName, Map<?, ?> profileBody, String sourceDescription) {
+        validateRequiredRuntimeSection(profileName, profileBody, sourceDescription);
         for (Map.Entry<?, ?> familyEntry : profileBody.entrySet()) {
             if (!(familyEntry.getKey() instanceof String familyName) || familyName.isBlank()) {
                 throw new ConfigException("Environment profile '" + profileName
                         + "' contains a blank toolchain family key in " + sourceDescription);
+            }
+            if ("runtime".equals(familyName)) {
+                validateRuntimeSection(profileName, familyEntry.getValue(), sourceDescription);
+                continue;
             }
             if (!SUPPORTED_PROFILE_FAMILIES.contains(familyName)) {
                 throw new ConfigException("Unsupported environment profile key 'environmentProfiles.profiles."
@@ -193,6 +201,91 @@ public final class ConfigLoader {
             }
             validateProfileFields(profileName, familyName, familyConfig, sourceDescription);
         }
+    }
+
+    private static void validateRequiredRuntimeSection(String profileName,
+                                                       Map<?, ?> profileBody,
+                                                       String sourceDescription) {
+        Object runtimeSection = profileBody.get("runtime");
+        if (!(runtimeSection instanceof Map<?, ?> runtimeConfig)) {
+            throw new ConfigException("Environment profile '" + profileName
+                    + "' must declare a runtime section in " + sourceDescription);
+        }
+        Object rawHome = runtimeConfig.get("home");
+        requireNonBlankString(rawHome, "environmentProfiles.profiles." + profileName + ".runtime.home", sourceDescription);
+        Object rawCache = runtimeConfig.get("cache");
+        if (!(rawCache instanceof Map<?, ?> cacheConfig)) {
+            throw new ConfigException("Environment profile runtime cache 'environmentProfiles.profiles."
+                    + profileName + ".runtime.cache' must be a section in " + sourceDescription);
+        }
+        for (String requiredCacheKey : REQUIRED_RUNTIME_CACHE_KEYS) {
+            requireNonBlankString(cacheConfig.get(requiredCacheKey),
+                    "environmentProfiles.profiles." + profileName + ".runtime.cache." + requiredCacheKey,
+                    sourceDescription);
+        }
+    }
+
+    private static void validateRuntimeSection(String profileName, Object runtimeSection, String sourceDescription) {
+        if (!(runtimeSection instanceof Map<?, ?> runtimeConfig)) {
+            throw new ConfigException("Environment profile runtime 'environmentProfiles.profiles."
+                    + profileName + ".runtime' must be a section in " + sourceDescription);
+        }
+        for (Map.Entry<?, ?> entry : runtimeConfig.entrySet()) {
+            if (!(entry.getKey() instanceof String keyName) || keyName.isBlank()) {
+                throw new ConfigException("Environment profile runtime 'environmentProfiles.profiles."
+                        + profileName + ".runtime' contains a blank field name in " + sourceDescription);
+            }
+            if (!SUPPORTED_RUNTIME_PROFILE_KEYS.contains(keyName)) {
+                throw new ConfigException("Unsupported environment profile key 'environmentProfiles.profiles."
+                        + profileName + ".runtime." + keyName + "' in " + sourceDescription);
+            }
+            switch (keyName) {
+                case "home" -> requireNonBlankString(entry.getValue(),
+                        "environmentProfiles.profiles." + profileName + ".runtime.home", sourceDescription);
+                case "path" -> validateRuntimePath(profileName, entry.getValue(), sourceDescription);
+                case "env" -> validateRuntimeStringMap(profileName, "env", entry.getValue(), sourceDescription);
+                case "cache" -> validateRuntimeCache(profileName, entry.getValue(), sourceDescription);
+                default -> throw new ConfigException("Unsupported environment profile key 'environmentProfiles.profiles."
+                        + profileName + ".runtime." + keyName + "' in " + sourceDescription);
+            }
+        }
+    }
+
+    private static void validateRuntimePath(String profileName, Object runtimePath, String sourceDescription) {
+        if (!(runtimePath instanceof List<?> pathEntries) || pathEntries.isEmpty()) {
+            throw new ConfigException("Environment profile runtime path 'environmentProfiles.profiles."
+                    + profileName + ".runtime.path' must be a non-empty list in " + sourceDescription);
+        }
+        for (Object entry : pathEntries) {
+            if (!(entry instanceof String pathValue) || pathValue.isBlank()) {
+                throw new ConfigException("Invalid environment profile field 'environmentProfiles.profiles."
+                        + profileName + ".runtime.path' in " + sourceDescription);
+            }
+        }
+    }
+
+    private static void validateRuntimeStringMap(String profileName,
+                                                 String sectionName,
+                                                 Object value,
+                                                 String sourceDescription) {
+        if (!(value instanceof Map<?, ?> stringMap)) {
+            throw new ConfigException("Environment profile runtime section 'environmentProfiles.profiles."
+                    + profileName + ".runtime." + sectionName + "' must be a section in " + sourceDescription);
+        }
+        for (Map.Entry<?, ?> entry : stringMap.entrySet()) {
+            if (!(entry.getKey() instanceof String key) || key.isBlank()) {
+                throw new ConfigException("Environment profile runtime section 'environmentProfiles.profiles."
+                        + profileName + ".runtime." + sectionName + "' contains a blank field name in "
+                        + sourceDescription);
+            }
+            requireNonBlankString(entry.getValue(),
+                    "environmentProfiles.profiles." + profileName + ".runtime." + sectionName + "." + key,
+                    sourceDescription);
+        }
+    }
+
+    private static void validateRuntimeCache(String profileName, Object value, String sourceDescription) {
+        validateRuntimeStringMap(profileName, "cache", value, sourceDescription);
     }
 
     private static void validateProfileFields(String profileName,

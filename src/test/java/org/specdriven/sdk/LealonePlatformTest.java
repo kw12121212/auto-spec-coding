@@ -13,7 +13,9 @@ import java.sql.Statement;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -108,6 +110,29 @@ class LealonePlatformTest {
             assertEquals(0, result.exitCode());
             assertEquals("ok", result.stdout());
             assertEquals("", result.stderr());
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockAppliesSelectedProfileIsolationEnvironment() throws Exception {
+        Path configPath = writeProfilesConfig();
+        AtomicReference<LealonePlatform.SandlockProfile> capturedProfile = new AtomicReference<>();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new CapturingSandlockRuntime(capturedProfile))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionResult result = platform.sandlock().execute(List.of("echo", "hello"));
+
+            assertEquals("dev", result.resolvedProfile());
+            assertEquals("/work/dev-home", capturedProfile.get().isolatedHome());
+            assertEquals(List.of("/opt/jdk-25/bin", "/opt/node-22/bin"), capturedProfile.get().executableSearchPaths());
+            assertEquals("/work/dev-cache/maven", capturedProfile.get().cacheRoots().get("maven"));
+            assertEquals("/work/dev-cache/pip", capturedProfile.get().cacheRoots().get("pip"));
         } finally {
             platform.close();
         }
@@ -217,6 +242,114 @@ class LealonePlatformTest {
 
             assertEquals(LealonePlatform.SandlockFailureCode.NO_EFFECTIVE_PROFILE, error.failureCode());
             assertTrue(error.getMessage().contains("No effective environment profile"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockUsesBundledEntryByDefaultWhenPresent() throws Exception {
+        Path configPath = writeProfilesConfig();
+        Path bundledEntry = bundledEntryPath();
+        Files.createDirectories(bundledEntry.getParent());
+        Files.writeString(bundledEntry, "#!/bin/sh\nprintf 'bundled:%s\\n' \"$0\"\n");
+        bundledEntry.toFile().setExecutable(true);
+
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(Map.of(), tempDir))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionResult result = platform.sandlock().execute(List.of("echo", "hello"));
+
+            assertEquals(0, result.exitCode());
+            assertTrue(result.stdout().contains("bundled:" + bundledEntry.toAbsolutePath().normalize()));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockUsesExplicitOverrideInsteadOfBundledEntry() throws Exception {
+        Path configPath = writeProfilesConfig();
+        Path bundledEntry = bundledEntryPath();
+        Path overrideEntry = tempDir.resolve("custom").resolve("sandlock");
+        Files.createDirectories(bundledEntry.getParent());
+        Files.createDirectories(overrideEntry.getParent());
+        Files.writeString(bundledEntry, "#!/bin/sh\nprintf 'bundled:%s\\n' \"$0\"\n");
+        Files.writeString(overrideEntry, "#!/bin/sh\nprintf 'override:%s\\n' \"$0\"\n");
+        bundledEntry.toFile().setExecutable(true);
+        overrideEntry.toFile().setExecutable(true);
+
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(
+                        Map.of("SPEC_DRIVEN_SANDLOCK_ENTRY", overrideEntry.toString()), tempDir))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionResult result = platform.sandlock().execute(List.of("echo", "hello"));
+
+            assertEquals(0, result.exitCode());
+            assertTrue(result.stdout().contains("override:" + overrideEntry.toAbsolutePath().normalize()));
+            assertFalse(result.stdout().contains("bundled:"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsExplicitlyWhenOverrideIsInvalid() throws Exception {
+        Path configPath = writeProfilesConfig();
+        Path bundledEntry = bundledEntryPath();
+        Files.createDirectories(bundledEntry.getParent());
+        Files.writeString(bundledEntry, "#!/bin/sh\nprintf 'bundled:%s\\n' \"$0\"\n");
+        bundledEntry.toFile().setExecutable(true);
+
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(
+                        Map.of("SPEC_DRIVEN_SANDLOCK_ENTRY", tempDir.resolve("missing-sandlock").toString()), tempDir))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNAVAILABLE, error.failureCode());
+            assertTrue(error.getMessage().contains("SPEC_DRIVEN_SANDLOCK_ENTRY"));
+            assertFalse(error.getMessage().contains("repository-bundled entry was not found"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsExplicitlyWhenBundledEntryMissing() throws Exception {
+        Path configPath = writeProfilesConfig();
+        Path bundledEntry = bundledEntryPath();
+        Files.deleteIfExists(bundledEntry);
+        Files.createDirectories(bundledEntry.getParent());
+
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(Map.of(), tempDir))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNAVAILABLE, error.failureCode());
+            assertTrue(error.getMessage().contains("repository-bundled entry"));
+            assertTrue(error.getMessage().contains(bundledEntry.toAbsolutePath().normalize().toString()));
         } finally {
             platform.close();
         }
@@ -376,13 +509,39 @@ class LealonePlatformTest {
                   default: dev
                   profiles:
                     dev:
+                      runtime:
+                        home: /work/dev-home
+                        path:
+                          - /opt/jdk-25/bin
+                          - /opt/node-22/bin
+                        cache:
+                          maven: /work/dev-cache/maven
+                          npm: /work/dev-cache/npm
+                          go: /work/dev-cache/go
+                          pip: /work/dev-cache/pip
                       jdk:
                         javaHome: /opt/jdk-25
+                      node:
+                        nodeHome: /opt/node-22
                     ci:
+                      runtime:
+                        home: /work/ci-home
+                        path:
+                          - /opt/python-3.12/bin
+                        cache:
+                          maven: /work/ci-cache/maven
+                          npm: /work/ci-cache/npm
+                          go: /work/ci-cache/go
+                          pip: /work/ci-cache/pip
                       python:
                         pythonHome: /opt/python-3.12
                 """);
         return configPath;
+    }
+
+    private Path bundledEntryPath() {
+        return tempDir.resolve("depends").resolve("sandlock").resolve("v0.6.0")
+                .resolve("linux-x86_64").resolve("sandlock");
     }
 
     private record FakeSandlockRuntime(
@@ -390,11 +549,33 @@ class LealonePlatformTest {
             LealonePlatform.SandlockProcessOutput output) implements LealonePlatform.SandlockRuntime {
 
         @Override
-        public LealonePlatform.SandlockProcessOutput execute(String resolvedProfile, List<String> command) {
+        public LealonePlatform.SandlockProcessOutput execute(LealonePlatform.SandlockProfile resolvedProfile,
+                                                             List<String> command) {
             if (output == null) {
                 throw new IllegalStateException("output must not be null when execution is requested");
             }
             return output;
+        }
+    }
+
+    private static final class CapturingSandlockRuntime implements LealonePlatform.SandlockRuntime {
+
+        private final AtomicReference<LealonePlatform.SandlockProfile> capturedProfile;
+
+        private CapturingSandlockRuntime(AtomicReference<LealonePlatform.SandlockProfile> capturedProfile) {
+            this.capturedProfile = capturedProfile;
+        }
+
+        @Override
+        public LealonePlatform.SandlockLaunchCheck check() {
+            return LealonePlatform.SandlockLaunchCheck.ready();
+        }
+
+        @Override
+        public LealonePlatform.SandlockProcessOutput execute(LealonePlatform.SandlockProfile resolvedProfile,
+                                                             List<String> command) {
+            capturedProfile.set(resolvedProfile);
+            return new LealonePlatform.SandlockProcessOutput(0, "ok", "");
         }
     }
 

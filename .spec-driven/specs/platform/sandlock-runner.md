@@ -37,6 +37,24 @@ already-selected project environment profile.
 - THEN the command MUST be launched using the selected project profile `dev`
 - AND the returned execution result MUST identify `dev` as the resolved profile
 
+#### Scenario: repository-bundled Sandlock entry is used by default
+- GIVEN the current host environment is Linux x86_64 and satisfies the
+  supported Sandlock runtime contract
+- AND the repository-bundled pinned Sandlock entry is present and executable
+- AND the caller does not set `SPEC_DRIVEN_SANDLOCK_ENTRY`
+- WHEN a caller requests Sandlock-backed command execution
+- THEN the system MUST use the repository-bundled Sandlock entry by default
+- AND the default supported execution path MUST NOT require a separate host
+  `PATH` installation of `sandlock`
+
+#### Scenario: explicit Sandlock entry override takes precedence
+- GIVEN a caller sets `SPEC_DRIVEN_SANDLOCK_ENTRY` to an executable Sandlock
+  binary path
+- AND the repository-bundled Sandlock entry is also present
+- WHEN a caller requests Sandlock-backed command execution
+- THEN the system MUST use the explicitly configured override path
+- AND it MUST NOT silently replace that explicit override with the bundled copy
+
 ### Requirement: Structured Sandlock execution result
 
 The system MUST return a structured result for a launched Sandlock-backed
@@ -73,6 +91,17 @@ direct host execution.
 - AND the failure MUST identify that Sandlock is unavailable
 - AND the command MUST NOT be run directly on the host as a fallback
 
+#### Scenario: missing bundled Sandlock entry fails explicitly
+- GIVEN the current host environment is otherwise supported for Sandlock-backed
+  execution
+- AND `SPEC_DRIVEN_SANDLOCK_ENTRY` is not set
+- AND the repository-bundled pinned Sandlock entry is missing or not executable
+- WHEN a caller requests Sandlock-backed command execution
+- THEN the operation MUST fail explicitly
+- AND the failure MUST identify that the repository-bundled Sandlock entry is
+  unavailable
+- AND the command MUST NOT be run directly on the host as a fallback
+
 #### Scenario: unsupported host environment fails explicitly
 - GIVEN the current host environment does not satisfy the supported Sandlock
   runtime contract
@@ -96,3 +125,38 @@ direct host execution.
 - THEN the operation MUST fail explicitly
 - AND the failure MUST identify that no effective environment profile is
   available for Sandlock-backed execution
+
+### Requirement: Sandlock-backed execution uses profile-scoped isolation
+The system MUST launch a Sandlock-backed command by using the selected or explicitly requested profile's isolated home, executable-search path, and explicit tool-cache settings instead of unrelated host defaults.
+
+#### Scenario: selected profile applies isolated home and cache roots
+- GIVEN a platform assembled from project YAML whose effective selected environment profile declares an isolated home directory and explicit cache roots for Maven, npm, Go, and pip
+- AND Sandlock is available in the supported host environment
+- WHEN a caller requests Sandlock-backed command execution without overriding the profile
+- THEN the launched command MUST use the selected profile's declared isolated home directory
+- AND it MUST use the selected profile's declared cache roots instead of inheriting unrelated host-default Maven/npm/Go/pip state
+
+#### Scenario: explicit profile applies four-family toolchain lookup
+- GIVEN a platform assembled from project YAML that declares an environment profile with bounded toolchain settings for JDK, Node.js, Go, and Python
+- AND that profile declares an explicit runtime path setting
+- AND Sandlock is available in the supported host environment
+- WHEN a caller requests Sandlock-backed command execution with that explicit profile
+- THEN the launched command MUST use a profile-scoped executable-search path from the declared runtime path setting
+- AND it MUST NOT silently rely on unrelated host-global toolchain directories
+
+### Requirement: Invalid isolated profile fails before launch
+The system MUST fail before command execution when the selected or requested profile cannot provide the required isolated execution environment.
+
+#### Scenario: requested profile has missing isolation settings
+- GIVEN a platform assembled from project YAML that declares environment profiles
+- AND the selected or explicitly requested profile is missing the required isolated home directory or one of the required explicit Maven/npm/Go/pip cache-root settings
+- WHEN a caller requests Sandlock-backed command execution
+- THEN the operation MUST fail explicitly before command launch
+- AND the failure MUST identify the missing isolation setting
+
+#### Scenario: requested profile has invalid toolchain-isolation values
+- GIVEN a platform assembled from project YAML that declares environment profiles
+- AND the selected or explicitly requested profile contains invalid isolation settings for home, executable-search path resolution, or bounded toolchain lookup
+- WHEN a caller requests Sandlock-backed command execution
+- THEN the operation MUST fail explicitly before command launch
+- AND the failure MUST identify the invalid isolation setting
