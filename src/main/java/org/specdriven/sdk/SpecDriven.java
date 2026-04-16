@@ -29,6 +29,7 @@ public class SpecDriven implements AutoCloseable {
     private final DeliveryMode deliveryModeOverride;
     private final MobileChannelRegistry channelRegistry;
     private final List<MobileChannelConfig> channelConfigs;
+    private final WorkflowRuntime workflowRuntime;
     private volatile QuestionDeliveryService deliveryService;
 
     SpecDriven(LealonePlatform platform,
@@ -51,6 +52,7 @@ public class SpecDriven implements AutoCloseable {
         this.deliveryModeOverride = deliveryModeOverride;
         this.channelRegistry = channelRegistry;
         this.channelConfigs = channelConfigs;
+        this.workflowRuntime = new WorkflowRuntime(eventBus);
     }
 
     /**
@@ -84,6 +86,41 @@ public class SpecDriven implements AutoCloseable {
         }
         return new SdkAgent(providerRegistry, toolMap, sdkConfig, systemPrompt,
                 eventBus, deliveryModeOverride, deliveryService());
+    }
+
+    /**
+     * Registers a workflow through the supported domain declaration path.
+     */
+    public void declareWorkflow(String workflowName) {
+        workflowRuntime.declareWorkflow(workflowName);
+    }
+
+    /**
+     * Registers a workflow through the supported SQL declaration path.
+     */
+    public void declareWorkflowSql(String sql) {
+        workflowRuntime.declareWorkflowSql(sql);
+    }
+
+    /**
+     * Starts a previously declared workflow by name.
+     */
+    public WorkflowInstanceView startWorkflow(String workflowName, Map<String, Object> input) {
+        return workflowRuntime.startWorkflow(workflowName, input);
+    }
+
+    /**
+     * Returns the current state view for a workflow instance.
+     */
+    public WorkflowInstanceView workflowState(String workflowId) {
+        return workflowRuntime.workflowState(workflowId);
+    }
+
+    /**
+     * Returns the current result view for a workflow instance.
+     */
+    public WorkflowResultView workflowResult(String workflowId) {
+        return workflowRuntime.workflowResult(workflowId);
     }
 
     /**
@@ -185,6 +222,7 @@ public class SpecDriven implements AutoCloseable {
             try { ds.channel().close(); } catch (Exception ignored) {}
             try { ds.collector().close(); } catch (Exception ignored) {}
         }
+        try { workflowRuntime.close(); } catch (Exception ignored) {}
         if (platform != null) {
             try { platform.close(); } catch (Exception ignored) {}
         }

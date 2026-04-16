@@ -87,6 +87,94 @@ class HttpApiServletTest {
             servlet.service(req, resp);
             assertEquals(200, resp.status());
         }
+
+        @Test
+        void workflowRoutes_areDispatched() {
+            sdk.declareWorkflow("invoice-approval");
+
+            StubResponse start = service("POST", "/workflows",
+                    "{\"workflowName\":\"invoice-approval\",\"input\":{\"invoiceId\":\"inv-1\"}}");
+            assertEquals(202, start.status());
+            String workflowId = extractJsonValue(start.body(), "workflowId");
+
+            StubResponse state = service("GET", "/workflows/" + workflowId);
+            assertEquals(200, state.status());
+
+            StubResponse result = service("GET", "/workflows/" + workflowId + "/result");
+            assertEquals(200, result.status());
+        }
+    }
+
+    @Nested
+    class WorkflowRuntimeTests {
+
+        @Test
+        void workflowStartReturns202AndAcceptedInstance() {
+            sdk.declareWorkflow("invoice-approval");
+
+            StubResponse response = service("POST", "/workflows",
+                    "{\"workflowName\":\"invoice-approval\",\"input\":{\"invoiceId\":\"inv-1\"}}");
+
+            assertEquals(202, response.status());
+            assertTrue(response.body().contains("\"workflowId\":"));
+            assertTrue(response.body().contains("\"workflowName\":\"invoice-approval\""));
+            assertTrue(response.body().contains("\"status\":\"ACCEPTED\""));
+        }
+
+        @Test
+        void workflowStartMissingNameReturns400() {
+            StubResponse response = service("POST", "/workflows", "{\"input\":{}}" );
+
+            assertEquals(400, response.status());
+            assertTrue(response.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void workflowStartUnknownWorkflowReturns404() {
+            StubResponse response = service("POST", "/workflows", "{\"workflowName\":\"missing\"}");
+
+            assertEquals(404, response.status());
+            assertTrue(response.body().contains("\"error\":\"not_found\""));
+        }
+
+        @Test
+        void workflowStateAndResultQueriesReturn200() {
+            sdk.declareWorkflow("invoice-approval");
+
+            StubResponse start = service("POST", "/workflows",
+                    "{\"workflowName\":\"invoice-approval\",\"input\":{\"invoiceId\":\"inv-1\"}}");
+            String workflowId = extractJsonValue(start.body(), "workflowId");
+
+            StubResponse state = service("GET", "/workflows/" + workflowId);
+            StubResponse result = service("GET", "/workflows/" + workflowId + "/result");
+
+            assertEquals(200, state.status());
+            assertTrue(state.body().contains("\"workflowId\":\"" + workflowId + "\""));
+            assertEquals(200, result.status());
+            assertTrue(result.body().contains("\"workflowId\":\"" + workflowId + "\""));
+        }
+
+        @Test
+        void workflowQueriesUnknownIdReturn404() {
+            StubResponse state = service("GET", "/workflows/wf-missing");
+            StubResponse result = service("GET", "/workflows/wf-missing/result");
+
+            assertEquals(404, state.status());
+            assertEquals(404, result.status());
+        }
+
+        @Test
+        void existingRoutesRemainCompatibleWhenWorkflowRoutesExist() {
+            sdk.declareWorkflow("invoice-approval");
+
+            StubResponse health = service("GET", "/health");
+            StubResponse tools = service("GET", "/tools");
+
+            assertEquals(200, health.status());
+            assertTrue(health.body().contains("\"status\":\"ok\""));
+            assertEquals(200, tools.status());
+            assertTrue(tools.body().contains("\"name\":\"bash\""));
+        }
     }
 
     // --- POST /agent/run ---

@@ -80,13 +80,20 @@ public class HttpApiServlet extends HttpServlet {
             ensureEventBufferSubscribed();
             Route route = parseRoute(req);
             String json = dispatch(route, req);
-            sendJson(resp, 200, json);
+            sendJson(resp, responseStatus(route), json);
         } catch (HttpApiException e) {
             sendJson(resp, e.httpStatus(), HttpJsonCodec.encode(e.toErrorResponse()));
         } catch (Exception e) {
             HttpApiException mapped = mapException(e);
             sendJson(resp, mapped.httpStatus(), HttpJsonCodec.encode(mapped.toErrorResponse()));
         }
+    }
+
+    private int responseStatus(Route route) {
+        if ("POST".equals(route.method()) && "workflows".equals(route.segment(1)) && route.length() == 2) {
+            return 202;
+        }
+        return 200;
     }
 
     // --- Route parsing ---
@@ -108,6 +115,9 @@ public class HttpApiServlet extends HttpServlet {
         String group = route.segment(1);
         if ("agent".equals(group) && route.length() >= 3) {
             return dispatchAgent(route.method(), route.segment(2), req);
+        }
+        if ("workflows".equals(group) && route.length() >= 2) {
+            return dispatchWorkflow(route, req);
         }
         if ("tools".equals(group) && route.length() >= 2) {
             return dispatchTools(route.method(), route.segment(2), req);
@@ -137,6 +147,26 @@ public class HttpApiServlet extends HttpServlet {
             return dispatchService(route.method(), route, req);
         }
         throw new HttpApiException(404, "not_found", "Unknown route");
+    }
+
+    private String dispatchWorkflow(Route route, HttpServletRequest req) {
+        if (route.length() == 2) {
+            requirePost(route.method(), "/workflows");
+            return handleWorkflowStart(req);
+        }
+        String workflowId = route.segment(2);
+        if (workflowId == null || workflowId.isBlank()) {
+            throw new HttpApiException(404, "not_found", "Unknown workflow route");
+        }
+        if (route.length() == 3) {
+            requireGet(route.method(), "/workflows/" + workflowId);
+            return handleWorkflowState(workflowId);
+        }
+        if (route.length() == 4 && "result".equals(route.segment(3))) {
+            requireGet(route.method(), "/workflows/" + workflowId + "/result");
+            return handleWorkflowResult(workflowId);
+        }
+        throw new HttpApiException(404, "not_found", "Unknown workflow route");
     }
 
     private String dispatchAgent(String method, String action, HttpServletRequest req) {
@@ -236,6 +266,55 @@ public class HttpApiServlet extends HttpServlet {
             toolInfos.add(toolInfo(tool));
         }
         return HttpJsonCodec.encode(new ToolsListResponse(toolInfos));
+    }
+
+    private String handleWorkflowStart(HttpServletRequest req) {
+        String body = readBody(req);
+        if (body == null || body.isBlank()) {
+            throw new HttpApiException(400, "invalid_params", "Request body required");
+        }
+        WorkflowStartRequest request = HttpJsonCodec.decodeWorkflowStartRequest(body);
+        try {
+            WorkflowInstanceView view = sdk.startWorkflow(request.workflowName(), request.input());
+            return HttpJsonCodec.encode(new WorkflowInstanceResponse(
+                    view.workflowId(),
+                    view.workflowName(),
+                    view.status().name(),
+                    view.createdAt(),
+                    view.updatedAt()));
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(404, "not_found", e.getMessage());
+        }
+    }
+
+    private String handleWorkflowState(String workflowId) {
+        try {
+            WorkflowInstanceView view = sdk.workflowState(workflowId);
+            return HttpJsonCodec.encode(new WorkflowInstanceResponse(
+                    view.workflowId(),
+                    view.workflowName(),
+                    view.status().name(),
+                    view.createdAt(),
+                    view.updatedAt()));
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(404, "not_found", e.getMessage());
+        }
+    }
+
+    private String handleWorkflowResult(String workflowId) {
+        try {
+            WorkflowResultView view = sdk.workflowResult(workflowId);
+            return HttpJsonCodec.encode(new WorkflowResultResponse(
+                    view.workflowId(),
+                    view.workflowName(),
+                    view.status().name(),
+                    view.result(),
+                    view.failureSummary(),
+                    view.createdAt(),
+                    view.updatedAt()));
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(404, "not_found", e.getMessage());
+        }
     }
 
     private String handleServiceInvocation(String serviceName, String methodName, HttpServletRequest req) {

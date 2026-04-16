@@ -9,12 +9,14 @@ mapping:
     - src/main/java/org/specdriven/agent/event/LealoneAuditLogStore.java
     - src/main/java/org/specdriven/agent/interactive/InteractiveCommandHandler.java
     - src/main/java/org/specdriven/agent/event/SimpleEventBus.java
+    - src/main/java/org/specdriven/sdk/WorkflowRuntime.java
   tests:
     - src/test/java/org/specdriven/agent/event/EventJsonTest.java
     - src/test/java/org/specdriven/agent/event/EventSystemTest.java
     - src/test/java/org/specdriven/agent/event/LealoneAuditLogStoreTest.java
     - src/test/java/org/specdriven/agent/interactive/InteractiveCommandHandlerTest.java
     - src/test/java/org/specdriven/agent/event/SimpleEventBusTest.java
+    - src/test/java/org/specdriven/sdk/WorkflowRuntimeTest.java
 ---
 
 # Event System Spec
@@ -35,6 +37,7 @@ mapping:
 - MUST additionally define: LOOP_INTERACTIVE_ENTERED, LOOP_INTERACTIVE_EXITED
 - MUST additionally define: SKILL_HOT_LOAD_OPERATION
 - MUST additionally define: INTERACTIVE_COMMAND_HANDLED
+- MUST additionally define: WORKFLOW_DECLARED, WORKFLOW_STARTED, WORKFLOW_STATE_CHANGED, WORKFLOW_COMPLETED, WORKFLOW_FAILED
 - MUST additionally define: PLATFORM_HEALTH_CHECKED, PLATFORM_METRICS_SNAPSHOT
 - MAY be extended in future milestones
 
@@ -141,3 +144,27 @@ mapping:
 - WHEN the guidance message is enqueued to the session output
 - THEN an interactive-command audit event MUST be published
 - AND the audit event metadata MUST identify the command as unrecognized
+
+### Requirement: Workflow runtime audit event metadata
+
+Workflow runtime audit events MUST remain compatible with the existing event JSON serialization constraints.
+
+#### Scenario: Workflow declaration event is auditable
+- GIVEN a workflow declaration is accepted through a supported declaration path
+- WHEN the runtime emits `WORKFLOW_DECLARED`
+- THEN the event metadata MUST include `workflowName`
+- AND it MUST identify which declaration path was used
+
+#### Scenario: Workflow start and state change events are auditable
+- GIVEN a workflow instance is started and later changes status
+- WHEN the runtime emits `WORKFLOW_STARTED` or `WORKFLOW_STATE_CHANGED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND `WORKFLOW_STATE_CHANGED` metadata MUST include `fromStatus` and `toStatus`
+
+#### Scenario: Workflow failure event is auditable
+- GIVEN a workflow instance ends in `FAILED`
+- WHEN the runtime emits `WORKFLOW_FAILED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND it MUST include a stable `failureReason`

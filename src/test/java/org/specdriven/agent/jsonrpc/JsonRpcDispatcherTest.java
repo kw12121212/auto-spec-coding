@@ -369,6 +369,9 @@ class JsonRpcDispatcherTest {
         assertTrue(resp.isSuccess());
         String json = responseJson(resp);
         assertTrue(json.contains("question/answer"), "capabilities.methods should include question/answer");
+        assertTrue(json.contains("workflow/start"), "capabilities.methods should include workflow/start");
+        assertTrue(json.contains("workflow/state"), "capabilities.methods should include workflow/state");
+        assertTrue(json.contains("workflow/result"), "capabilities.methods should include workflow/result");
     }
 
     @Test
@@ -488,5 +491,70 @@ class JsonRpcDispatcherTest {
 
         String json = responseJson(resp);
         assertTrue(json.contains("\"status\":\"accepted\""), "Response should contain status accepted");
+    }
+
+    @Test
+    void workflowStart_withoutInitialize_rejected() {
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(1L, "workflow/start",
+                Map.of("workflowName", "invoice-approval")));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32600, resp.error().code());
+    }
+
+    @Test
+    void workflowStart_missingWorkflowName_returnsInvalidParams() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "workflow/start", Map.of()));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32602, resp.error().code());
+    }
+
+    @Test
+    void workflowStart_state_and_result_roundTrip() throws InterruptedException {
+        initializeSdk();
+        SpecDriven sdk = getSdkInstance();
+        sdk.declareWorkflow("invoice-approval");
+
+        JsonRpcResponse start = dispatch(new JsonRpcRequest(2L, "workflow/start",
+                Map.of("workflowName", "invoice-approval", "input", Map.of("invoiceId", "inv-1"))));
+        assertNotNull(start);
+        assertTrue(start.isSuccess(), "workflow/start should succeed");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> startResult = (Map<String, Object>) start.result();
+        String workflowId = String.valueOf(startResult.get("workflowId"));
+        assertEquals("invoice-approval", startResult.get("workflowName"));
+        assertEquals("ACCEPTED", startResult.get("status"));
+
+        JsonRpcResponse state = dispatch(new JsonRpcRequest(3L, "workflow/state", Map.of("workflowId", workflowId)));
+        assertNotNull(state);
+        assertTrue(state.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> stateResult = (Map<String, Object>) state.result();
+        assertEquals(workflowId, String.valueOf(stateResult.get("workflowId")));
+
+        JsonRpcResponse result = awaitWorkflowResult(workflowId, 10000L);
+        assertNotNull(result, "Timed out waiting for workflow/result response");
+        assertTrue(result.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> resultPayload = (Map<String, Object>) result.result();
+        assertEquals(workflowId, String.valueOf(resultPayload.get("workflowId")));
+        assertTrue(List.of("ACCEPTED", "RUNNING", "SUCCEEDED").contains(String.valueOf(resultPayload.get("status"))));
+    }
+
+    @Test
+    void workflowState_unknownInstance_returnsError() {
+        initializeSdk();
+        JsonRpcResponse resp = dispatch(new JsonRpcRequest(2L, "workflow/state", Map.of("workflowId", "wf-missing")));
+        assertNotNull(resp);
+        assertFalse(resp.isSuccess());
+        assertEquals(-32603, resp.error().code());
+    }
+
+    private JsonRpcResponse awaitWorkflowResult(String workflowId, long timeoutMs) throws InterruptedException {
+        JsonRpcRequest request = new JsonRpcRequest(4L, "workflow/result", Map.of("workflowId", workflowId));
+        dispatcher.onRequest(request);
+        return transport.awaitResponse(request.id(), timeoutMs);
     }
 }

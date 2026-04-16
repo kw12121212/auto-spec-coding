@@ -14,6 +14,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.nio.file.Path;
 import java.nio.file.Files;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -177,6 +178,23 @@ class SpecDrivenTest {
 
             QuestionDeliveryService service = sdk.deliveryService();
             assertNotNull(service);
+        } finally {
+            sdk.close();
+        }
+    }
+
+    @Test
+    void workflowDeclarationAndRuntimeSurfaceAreAvailable() {
+        SpecDriven sdk = SpecDriven.builder().build();
+        try {
+            sdk.declareWorkflow("invoice-approval");
+
+            WorkflowInstanceView started = sdk.startWorkflow("invoice-approval", Map.of("invoiceId", "inv-1"));
+
+            assertNotNull(started.workflowId());
+            assertEquals("invoice-approval", started.workflowName());
+            assertEquals(WorkflowStatus.ACCEPTED, started.status());
+            assertEquals(started.workflowId(), sdk.workflowState(started.workflowId()).workflowId());
         } finally {
             sdk.close();
         }

@@ -90,6 +90,10 @@
 - [go-client-sdk.md](sdk/go-client-sdk.md) - Go HTTP client SDK for Java backend REST API
 - [ts-client-sdk.md](sdk/ts-client-sdk.md) - TypeScript HTTP client SDK for Java backend REST API
 
+## Workflow (工作流)
+
+- [workflow-runtime.md](workflow/workflow-runtime.md) - Workflow declaration, lifecycle state, result, and audit visibility contract
+
 ## ORM (ORM 采用准则)
 
 - [orm-adoption.md](orm/orm-adoption.md) - ORM migration admission criteria, escape-hatch rules, and coexistence contract

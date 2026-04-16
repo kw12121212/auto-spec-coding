@@ -120,6 +120,36 @@ class HttpModelsTest {
     }
 
     @Nested
+    class WorkflowModelTests {
+
+        @Test
+        void workflowStartRequestDefaultsInputToEmptyMap() {
+            WorkflowStartRequest request = new WorkflowStartRequest("invoice-approval", null);
+            assertEquals("invoice-approval", request.workflowName());
+            assertTrue(request.input().isEmpty());
+        }
+
+        @Test
+        void workflowInstanceResponseCarriesFields() {
+            WorkflowInstanceResponse response = new WorkflowInstanceResponse(
+                    "wf-1", "invoice-approval", "RUNNING", 100L, 200L);
+            assertEquals("wf-1", response.workflowId());
+            assertEquals("invoice-approval", response.workflowName());
+            assertEquals("RUNNING", response.status());
+        }
+
+        @Test
+        void workflowResultResponseCarriesResultAndFailureSummary() {
+            WorkflowResultResponse response = new WorkflowResultResponse(
+                    "wf-1", "invoice-approval", "SUCCEEDED", Map.of("ok", true), null, 100L, 200L);
+            assertEquals("wf-1", response.workflowId());
+            assertEquals("invoice-approval", response.workflowName());
+            assertEquals("SUCCEEDED", response.status());
+            assertEquals(Map.of("ok", true), response.result());
+        }
+    }
+
+    @Nested
     class ServiceInvocationModelTests {
 
         @Test
@@ -245,6 +275,26 @@ class HttpModelsTest {
             assertTrue(json.contains("\"result\":"));
             assertTrue(json.contains("\"id\":\"inv-1\""));
         }
+
+        @Test
+        void encodeWorkflowInstanceResponse() {
+            WorkflowInstanceResponse response = new WorkflowInstanceResponse(
+                    "wf-1", "invoice-approval", "ACCEPTED", 100L, 200L);
+            String json = HttpJsonCodec.encode(response);
+            assertTrue(json.contains("\"workflowId\":\"wf-1\""));
+            assertTrue(json.contains("\"workflowName\":\"invoice-approval\""));
+            assertTrue(json.contains("\"status\":\"ACCEPTED\""));
+        }
+
+        @Test
+        void encodeWorkflowResultResponse() {
+            WorkflowResultResponse response = new WorkflowResultResponse(
+                    "wf-1", "invoice-approval", "SUCCEEDED", Map.of("ok", true), null, 100L, 200L);
+            String json = HttpJsonCodec.encode(response);
+            assertTrue(json.contains("\"workflowId\":\"wf-1\""));
+            assertTrue(json.contains("\"result\":"));
+            assertTrue(json.contains("\"ok\":true"));
+        }
     }
 
     // --- Codec decode tests ---
@@ -294,6 +344,22 @@ class HttpModelsTest {
         void rejectServiceInvocationRequestWithoutArgsArray() {
             HttpApiException ex = assertThrows(HttpApiException.class,
                     () -> HttpJsonCodec.decodeServiceInvocationRequest("{\"args\":\"x\"}"));
+            assertEquals(400, ex.httpStatus());
+            assertEquals("invalid_params", ex.errorCode());
+        }
+
+        @Test
+        void decodeWorkflowStartRequest() {
+            WorkflowStartRequest request = HttpJsonCodec.decodeWorkflowStartRequest(
+                    "{\"workflowName\":\"invoice-approval\",\"input\":{\"invoiceId\":\"inv-1\"}}");
+            assertEquals("invoice-approval", request.workflowName());
+            assertEquals("inv-1", request.input().get("invoiceId"));
+        }
+
+        @Test
+        void decodeWorkflowStartRequestRejectsMissingWorkflowName() {
+            HttpApiException ex = assertThrows(HttpApiException.class,
+                    () -> HttpJsonCodec.decodeWorkflowStartRequest("{\"input\":{}}"));
             assertEquals(400, ex.httpStatus());
             assertEquals("invalid_params", ex.errorCode());
         }

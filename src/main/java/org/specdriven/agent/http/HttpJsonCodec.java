@@ -92,6 +92,28 @@ public final class HttpJsonCodec {
                 .build();
     }
 
+    public static String encode(WorkflowInstanceResponse r) {
+        return JsonWriter.object()
+                .field("workflowId", r.workflowId())
+                .field("workflowName", r.workflowName())
+                .field("status", r.status())
+                .field("createdAt", r.createdAt())
+                .field("updatedAt", r.updatedAt())
+                .build();
+    }
+
+    public static String encode(WorkflowResultResponse r) {
+        return JsonWriter.object()
+                .field("workflowId", r.workflowId())
+                .field("workflowName", r.workflowName())
+                .field("status", r.status())
+                .rawField("result", encodeJsonValue(r.result()))
+                .field("failureSummary", r.failureSummary())
+                .field("createdAt", r.createdAt())
+                .field("updatedAt", r.updatedAt())
+                .build();
+    }
+
     public static String encode(ServiceInvocationResponse r) {
         return JsonWriter.object()
                 .rawField("result", encodeJsonValue(r.result()))
@@ -128,6 +150,26 @@ public final class HttpJsonCodec {
                     stringValue(root.get("description")),
                     mapList(root.get("parameters")),
                     stringValue(root.get("callbackUrl")));
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public static WorkflowStartRequest decodeWorkflowStartRequest(String json) {
+        try {
+            Map<String, Object> root = JsonReader.parseObject(json);
+            Object workflowNameRaw = root.get("workflowName");
+            if (!(workflowNameRaw instanceof String workflowName) || workflowName.isBlank()) {
+                throw new HttpApiException(400, "invalid_params", "Missing required field: workflowName");
+            }
+            Object inputRaw = root.get("input");
+            Map<String, Object> input = inputRaw instanceof Map<?, ?> map
+                    ? (Map<String, Object>) map
+                    : Map.of();
+            return new WorkflowStartRequest(workflowName, input);
+        } catch (HttpApiException e) {
+            throw e;
         } catch (IllegalArgumentException e) {
             throw new HttpApiException(400, "invalid_params", e.getMessage());
         }

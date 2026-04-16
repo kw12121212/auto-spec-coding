@@ -46,6 +46,9 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 case "agent/state" -> handleAgentState(request);
                 case "tools/list" -> handleToolsList(request);
                 case "question/answer" -> handleQuestionAnswer(request);
+                case "workflow/start" -> handleWorkflowStart(request);
+                case "workflow/state" -> handleWorkflowState(request);
+                case "workflow/result" -> handleWorkflowResult(request);
                 default -> sendError(request.id(), JsonRpcError.methodNotFound());
             }
         } catch (Exception e) {
@@ -103,7 +106,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", VERSION);
         result.put("capabilities", Map.of(
-                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer"),
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result"),
                 "notifications", List.of("$/cancel", "event")
         ));
         sendSuccess(request.id(), result);
@@ -276,6 +279,68 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         sendSuccess(request.id(), Map.of("status", "accepted"));
     }
 
+    private void handleWorkflowStart(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        Object params = request.params();
+        if (!(params instanceof Map<?, ?> map)) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+        Object workflowNameRaw = map.get("workflowName");
+        if (!(workflowNameRaw instanceof String workflowName) || workflowName.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> input = map.get("input") instanceof Map<?, ?> inputMap
+                ? (Map<String, Object>) inputMap
+                : Map.of();
+        try {
+            WorkflowInstanceView view = sdk.startWorkflow(workflowName, input);
+            sendSuccess(request.id(), workflowInstanceResult(view));
+        } catch (IllegalArgumentException e) {
+            sendError(request.id(), new JsonRpcError(-32603, e.getMessage(), null));
+        }
+    }
+
+    private void handleWorkflowState(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        String workflowId = extractStringParam(request, "workflowId");
+        if (workflowId == null || workflowId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+        try {
+            WorkflowInstanceView view = sdk.workflowState(workflowId);
+            sendSuccess(request.id(), workflowInstanceResult(view));
+        } catch (IllegalArgumentException e) {
+            sendError(request.id(), new JsonRpcError(-32603, e.getMessage(), null));
+        }
+    }
+
+    private void handleWorkflowResult(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        String workflowId = extractStringParam(request, "workflowId");
+        if (workflowId == null || workflowId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+        try {
+            WorkflowResultView view = sdk.workflowResult(workflowId);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("workflowId", view.workflowId());
+            result.put("workflowName", view.workflowName());
+            result.put("status", view.status().name());
+            result.put("result", view.result());
+            result.put("failureSummary", view.failureSummary());
+            result.put("createdAt", view.createdAt());
+            result.put("updatedAt", view.updatedAt());
+            sendSuccess(request.id(), result);
+        } catch (IllegalArgumentException e) {
+            sendError(request.id(), new JsonRpcError(-32603, e.getMessage(), null));
+        }
+    }
+
     // --- Event forwarding ---
 
     private void forwardEvent(Event event) {
@@ -339,6 +404,16 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         if (!(params instanceof Map<?, ?> map)) return null;
         Object value = map.get(name);
         return value instanceof String s ? s : null;
+    }
+
+    private Map<String, Object> workflowInstanceResult(WorkflowInstanceView view) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("workflowId", view.workflowId());
+        result.put("workflowName", view.workflowName());
+        result.put("status", view.status().name());
+        result.put("createdAt", view.createdAt());
+        result.put("updatedAt", view.updatedAt());
+        return result;
     }
 
     private void sendSuccess(Object id, Object result) {
