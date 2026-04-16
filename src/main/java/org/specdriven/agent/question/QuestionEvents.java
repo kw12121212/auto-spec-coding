@@ -30,6 +30,7 @@ public final class QuestionEvents {
         metadata.put("sessionId", question.sessionId());
         metadata.putAll(QuestionRoutingPolicy.routingMetadata(question.category(), question.deliveryMode()));
         metadata.put("status", question.status().name());
+        metadata.put("content", answer.content());
         metadata.putAll(answer.toAuditMetadata());
         return new Event(EventType.QUESTION_ANSWERED, timestamp, question.sessionId(), metadata);
     }

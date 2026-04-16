@@ -3,6 +3,11 @@ package org.specdriven.sdk;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.question.DeliveryMode;
+import org.specdriven.agent.question.Question;
+import org.specdriven.agent.question.QuestionCategory;
+import org.specdriven.agent.question.QuestionDeliveryService;
+import org.specdriven.agent.question.QuestionStatus;
 
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -10,11 +15,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,11 +33,19 @@ final class WorkflowRuntime implements AutoCloseable {
 
     private final EventBus eventBus;
     private final Map<WorkflowStep.StepType, WorkflowStepExecutor> stepExecutors;
+    private final QuestionDeliveryService questionDeliveryService;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final ConcurrentMap<String, WorkflowDeclaration> declarations = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, WorkflowRecord> instances = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, CompletableFuture<String>> pendingResumes = new ConcurrentHashMap<>();
+    private final Consumer<Event> questionAnsweredListener;
 
     WorkflowRuntime(EventBus eventBus, List<WorkflowStepExecutor> stepExecutors) {
+        this(eventBus, stepExecutors, null);
+    }
+
+    WorkflowRuntime(EventBus eventBus, List<WorkflowStepExecutor> stepExecutors,
+                    QuestionDeliveryService questionDeliveryService) {
         this.eventBus = Objects.requireNonNull(eventBus, "eventBus must not be null");
         Map<WorkflowStep.StepType, WorkflowStepExecutor> map = new EnumMap<>(WorkflowStep.StepType.class);
         if (stepExecutors != null) {
@@ -38,6 +54,13 @@ final class WorkflowRuntime implements AutoCloseable {
             }
         }
         this.stepExecutors = Map.copyOf(map);
+        this.questionDeliveryService = questionDeliveryService;
+        if (questionDeliveryService != null) {
+            this.questionAnsweredListener = this::onQuestionAnswered;
+            eventBus.subscribe(EventType.QUESTION_ANSWERED, this.questionAnsweredListener);
+        } else {
+            this.questionAnsweredListener = null;
+        }
     }
 
     void declareWorkflow(String workflowName, List<WorkflowStep> steps) {
@@ -103,6 +126,16 @@ final class WorkflowRuntime implements AutoCloseable {
         return requireWorkflow(workflowId).resultView();
     }
 
+    private void onQuestionAnswered(Event event) {
+        Object sessionIdObj = event.metadata().get("sessionId");
+        if (!(sessionIdObj instanceof String sessionId)) return;
+        CompletableFuture<String> future = pendingResumes.get(sessionId);
+        if (future == null) return;
+        Object contentObj = event.metadata().get("content");
+        String content = (contentObj instanceof String s) ? s : "";
+        future.complete(content);
+    }
+
     private void advanceWorkflow(WorkflowRecord record) {
         transition(record, WorkflowStatus.RUNNING);
 
@@ -151,6 +184,56 @@ final class WorkflowRuntime implements AutoCloseable {
                 publishStepEvent(EventType.WORKFLOW_STEP_FAILED, record, i, step, result.failureReason());
                 fail(record, reason);
                 return;
+            }
+
+            if (result.isAwaitingInput()) {
+                if (questionDeliveryService == null) {
+                    fail(record, "no question delivery surface configured");
+                    return;
+                }
+                String workflowId = record.workflowId();
+                String prompt = result.inputPrompt();
+                String questionId = UUID.randomUUID().toString();
+                Question question = new Question(
+                        questionId,
+                        workflowId,
+                        prompt,
+                        "Workflow '" + record.workflowName() + "' is paused pending human input.",
+                        "Provide a response to resume the workflow.",
+                        QuestionStatus.WAITING_FOR_ANSWER,
+                        QuestionCategory.PERMISSION_CONFIRMATION,
+                        DeliveryMode.PAUSE_WAIT_HUMAN);
+                CompletableFuture<String> resumeFuture = new CompletableFuture<>();
+                pendingResumes.put(workflowId, resumeFuture);
+                questionDeliveryService.deliver(question);
+                eventBus.publish(new Event(
+                        EventType.WORKFLOW_PAUSED_FOR_INPUT,
+                        System.currentTimeMillis(),
+                        workflowId,
+                        Map.of("workflowId", workflowId, "questionId", questionId, "prompt", prompt)));
+                transition(record, WorkflowStatus.WAITING_FOR_INPUT);
+                String answerContent;
+                try {
+                    answerContent = resumeFuture.get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    pendingResumes.remove(workflowId);
+                    fail(record, "Workflow interrupted while waiting for human input");
+                    return;
+                } catch (ExecutionException e) {
+                    pendingResumes.remove(workflowId);
+                    fail(record, "Error while waiting for human input: " + e.getCause().getMessage());
+                    return;
+                }
+                pendingResumes.remove(workflowId);
+                transition(record, WorkflowStatus.RUNNING);
+                eventBus.publish(new Event(
+                        EventType.WORKFLOW_RESUMED,
+                        System.currentTimeMillis(),
+                        workflowId,
+                        Map.of("workflowId", workflowId, "questionId", questionId)));
+                stepInput.put("humanInput", answerContent);
+                continue;
             }
 
             publishStepEvent(EventType.WORKFLOW_STEP_COMPLETED, record, i, step, null);
@@ -265,6 +348,11 @@ final class WorkflowRuntime implements AutoCloseable {
 
     @Override
     public void close() {
+        if (questionAnsweredListener != null) {
+            eventBus.unsubscribe(EventType.QUESTION_ANSWERED, questionAnsweredListener);
+        }
+        pendingResumes.values().forEach(f -> f.cancel(true));
+        pendingResumes.clear();
         executor.shutdownNow();
     }
 
