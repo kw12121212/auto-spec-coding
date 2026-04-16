@@ -32,6 +32,7 @@
 
 - [http-api.md](api/http-api.md) - HttpApiServlet, AuthFilter, RateLimitFilter — HTTP REST API
 - [http-e2e-tests.md](api/http-e2e-tests.md) - HTTP REST API E2E integration tests
+- [service-http-exposure.md](api/service-http-exposure.md) - Application service HTTP exposure for Lealone Service invocation
 - [jsonrpc-protocol.md](api/jsonrpc-protocol.md) - JsonRpcRequest, JsonRpcResponse, JsonRpcNotification, JsonRpcError, JsonRpcCodec
 - [jsonrpc-handlers.md](api/jsonrpc-handlers.md) - JsonRpcDispatcher — request routing and SDK operation mapping
 - [jsonrpc-transport.md](api/jsonrpc-transport.md) - JsonRpcMessageHandler, JsonRpcTransport, StdioTransport

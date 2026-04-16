@@ -19,8 +19,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * REST API servlet that maps HTTP requests under {@code /api/v1/*} to SDK operations.
- * Registered on Lealone's TomcatRouter with wildcard pattern.
+ * HTTP servlet that maps {@code /api/v1/*} requests to SDK operations and
+ * {@code /services/*} requests to application service invocations.
  */
 public class HttpApiServlet extends HttpServlet {
 
@@ -32,6 +32,7 @@ public class HttpApiServlet extends HttpServlet {
     private SpecDriven sdk;
     private ReplyCallbackRouter callbackRouter;
     private DeliveryLogStore deliveryLogStore;
+    private ServiceInvoker serviceInvoker;
     private final Map<String, TrackedAgent> agents = new ConcurrentHashMap<>();
     private final HttpEventBuffer eventBuffer = new HttpEventBuffer(EVENT_BUFFER_CAPACITY);
     private volatile boolean eventBufferSubscribed;
@@ -57,10 +58,18 @@ public class HttpApiServlet extends HttpServlet {
         this.deliveryLogStore = deliveryLogStore;
     }
 
+    HttpApiServlet(SpecDriven sdk, ServiceInvoker serviceInvoker) {
+        this.sdk = sdk;
+        this.serviceInvoker = serviceInvoker;
+    }
+
     @Override
     public void init() {
         if (sdk == null) {
             sdk = SpecDriven.builder().build();
+        }
+        if (serviceInvoker == null && sdk.platform() != null) {
+            serviceInvoker = new LealoneServiceInvoker(sdk.platform().database().jdbcUrl());
         }
         ensureEventBufferSubscribed();
     }
@@ -84,6 +93,9 @@ public class HttpApiServlet extends HttpServlet {
 
     private Route parseRoute(HttpServletRequest req) {
         String pathInfo = req.getPathInfo();
+        if ("/services".equals(req.getServletPath()) && pathInfo != null && !pathInfo.startsWith("/services/")) {
+            pathInfo = "/services" + pathInfo;
+        }
         if (pathInfo == null || "/".equals(pathInfo)) {
             throw new HttpApiException(404, "not_found", "No route specified");
         }
@@ -121,6 +133,9 @@ public class HttpApiServlet extends HttpServlet {
             requireGet(route.method(), "/delivery/status/" + route.segment(3));
             return handleDeliveryStatus(route.segment(3));
         }
+        if ("services".equals(group) && route.length() >= 2) {
+            return dispatchService(route.method(), route, req);
+        }
         throw new HttpApiException(404, "not_found", "Unknown route");
     }
 
@@ -152,6 +167,15 @@ public class HttpApiServlet extends HttpServlet {
             return handleToolRegister(req);
         }
         throw new HttpApiException(404, "not_found", "Unknown tools action: " + action);
+    }
+
+    private String dispatchService(String method, Route route, HttpServletRequest req) {
+        if (route.length() != 4 || route.segment(2) == null || route.segment(2).isBlank()
+                || route.segment(3) == null || route.segment(3).isBlank()) {
+            throw new HttpApiException(404, "not_found", "Unknown service route");
+        }
+        requirePost(method, "/services/" + route.segment(2) + "/" + route.segment(3));
+        return handleServiceInvocation(route.segment(2), route.segment(3), req);
     }
 
     // --- Handlers ---
@@ -212,6 +236,28 @@ public class HttpApiServlet extends HttpServlet {
             toolInfos.add(toolInfo(tool));
         }
         return HttpJsonCodec.encode(new ToolsListResponse(toolInfos));
+    }
+
+    private String handleServiceInvocation(String serviceName, String methodName, HttpServletRequest req) {
+        if (serviceInvoker == null) {
+            throw new HttpApiException(404, "not_found", "Service HTTP exposure is not configured");
+        }
+        String body = readBody(req);
+        if (body == null || body.isBlank()) {
+            throw new HttpApiException(400, "invalid_params", "Request body required");
+        }
+        ServiceInvocationRequest request = HttpJsonCodec.decodeServiceInvocationRequest(body);
+        try {
+            Object result = serviceInvoker.invoke(serviceName, methodName, request.args());
+            return HttpJsonCodec.encode(new ServiceInvocationResponse(result));
+        } catch (ServiceInvocationException e) {
+            throw new HttpApiException(e.status(), e.error(), e.getMessage());
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", e.getMessage());
+        } catch (RuntimeException e) {
+            throw new HttpApiException(500, "service_error",
+                    e.getMessage() != null ? e.getMessage() : "Service invocation failed");
+        }
     }
 
     private String handleToolRegister(HttpServletRequest req) {

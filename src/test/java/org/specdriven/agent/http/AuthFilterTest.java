@@ -80,6 +80,31 @@ class AuthFilterTest {
             assertEquals(401, resp.status());
             assertTrue(resp.body().contains("\"status\":401"));
         }
+
+        @Test
+        void serviceInvocationWithoutAuth_returns401() throws Exception {
+            StubRequest req = new StubRequest("POST", "/services/invoice/create", Map.of());
+            req.requestUri = "/services/invoice/create";
+            StubResponse resp = new StubResponse();
+            filter.doFilter(req, resp, chain);
+            assertFalse(chain.wasCalled());
+            assertEquals(401, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"unauthorized\""));
+        }
+    }
+
+    @Nested
+    class ServiceInvocationAuth {
+
+        @Test
+        void serviceInvocationWithValidAuth_passes() throws Exception {
+            StubRequest req = new StubRequest("POST", "/services/invoice/create",
+                    Map.of("Authorization", "Bearer " + VALID_KEY));
+            req.requestUri = "/services/invoice/create";
+            StubResponse resp = new StubResponse();
+            filter.doFilter(req, resp, chain);
+            assertTrue(chain.wasCalled());
+        }
     }
 
     @Nested

@@ -31,7 +31,7 @@
 
 ## Planned Changes
 - `service-app-bootstrap` - Declared: complete - 定义从 `services.sql` 或等价声明式入口加载 schema、service 与运行配置的应用启动流程，并保证重复执行可幂等收敛
-- `service-http-exposure` - Declared: planned - 为受支持的 Lealone Service 提供稳定的应用级 HTTP 暴露契约，明确方法映射、参数传递和错误返回边界
+- `service-http-exposure` - Declared: complete - 为受支持的 Lealone Service 提供稳定的应用级 HTTP 暴露契约，明确方法映射、参数传递和错误返回边界
 - `service-runtime-packaging` - Declared: planned - 定义应用运行时的最小打包与启动约定，减少部署时对底层 Lealone 初始化细节的手工拼装
 - `service-schema-bootstrap-governance` - Declared: planned - 为启动期建表、建服务和运行配置装配增加最小治理规则，限制不安全或不兼容的声明式变更进入自动启动链路
 
@@ -58,4 +58,3 @@
 - 本里程碑直接对应 Lealone README 中“零代码零需求文档渐进式开发企业级 AI 应用”和“通过需求文档直接运行企业级 AI 应用”的增强方向
 - 这里的“应用服务运行时”强调面向业务能力的 service 暴露，不替代现有 agent SDK、JSON-RPC 或 `/api/v1/*` 管理面 API
 - 若后续要支持 `services.sql` 之外的其他声明式入口，应先证明其能复用同一套治理与幂等边界，而不是平行增加多种启动模型
-

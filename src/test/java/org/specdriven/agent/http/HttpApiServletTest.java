@@ -271,6 +271,102 @@ class HttpApiServletTest {
         }
     }
 
+    // --- POST /services/{serviceName}/{methodName} ---
+
+    @Nested
+    class ServiceHttpExposureTests {
+
+        @BeforeEach
+        void setUpServiceServlet() {
+            servlet = new HttpApiServlet(sdk, (serviceName, methodName, args) -> {
+                if ("missing".equals(serviceName)) {
+                    throw ServiceInvocationException.notFound("Service or method not found: missing.run", null);
+                }
+                if ("broken".equals(serviceName)) {
+                    throw ServiceInvocationException.failed("Service invocation failed: broken.run", null);
+                }
+                assertEquals("invoice", serviceName);
+                assertEquals("create", methodName);
+                assertEquals(List.of(1L, "x"), args);
+                return Map.of("id", "inv-1", "status", "created");
+            });
+            servlet.init();
+        }
+
+        @Test
+        void serviceInvocationSuccess_returnsResult() {
+            StubResponse resp = service("POST", "/services/invoice/create", "{\"args\":[1,\"x\"]}");
+
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"result\":"));
+            assertTrue(resp.body().contains("\"id\":\"inv-1\""));
+            assertTrue(resp.body().contains("\"status\":\"created\""));
+        }
+
+        @Test
+        void serviceInvocationMissingArgs_returns400() {
+            StubResponse resp = service("POST", "/services/invoice/create", "{}");
+
+            assertEquals(400, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void serviceInvocationNonArrayArgs_returns400() {
+            StubResponse resp = service("POST", "/services/invoice/create", "{\"args\":\"x\"}");
+
+            assertEquals(400, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"invalid_params\""));
+        }
+
+        @Test
+        void unknownServiceOrMethod_returns404() {
+            StubResponse resp = service("POST", "/services/missing/run", "{\"args\":[]}");
+
+            assertEquals(404, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"not_found\""));
+        }
+
+        @Test
+        void serviceExecutionFailure_returnsServiceError() {
+            StubResponse resp = service("POST", "/services/broken/run", "{\"args\":[]}");
+
+            assertEquals(500, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"service_error\""));
+        }
+
+        @Test
+        void serviceInvocationWrongMethod_returns405() {
+            StubResponse resp = service("GET", "/services/invoice/create");
+
+            assertEquals(405, resp.status());
+            assertTrue(resp.body().contains("\"error\":\"method_not_allowed\""));
+        }
+
+        @Test
+        void servicesServletMappingPath_routesServiceInvocation() {
+            StubRequest req = new StubRequest("POST", "/invoice/create", "{\"args\":[1,\"x\"]}");
+            req.servletPath = "/services";
+            StubResponse resp = new StubResponse();
+
+            servlet.service(req, resp);
+
+            assertEquals(200, resp.status());
+            assertTrue(resp.body().contains("\"id\":\"inv-1\""));
+        }
+
+        @Test
+        void serviceNamespaceDoesNotAlterApiV1Routes() {
+            StubResponse health = service("GET", "/health");
+            StubResponse tools = service("GET", "/tools");
+
+            assertEquals(200, health.status());
+            assertTrue(health.body().contains("\"status\":\"ok\""));
+            assertEquals(200, tools.status());
+            assertTrue(tools.body().contains("\"name\":\"bash\""));
+        }
+    }
+
     // --- GET /health ---
 
     @Nested
@@ -628,6 +724,7 @@ class HttpApiServletTest {
         private final String method;
         private final String pathInfo;
         private final String body;
+        String servletPath = "";
         final Map<String, String> queryParams = new HashMap<>();
 
         StubRequest(String method, String pathInfo) {
@@ -644,6 +741,7 @@ class HttpApiServletTest {
         @Override public String getMethod() { return method; }
         @Override public String getPathInfo() { return pathInfo; }
         @Override public String getParameter(String name) { return queryParams.get(name); }
+        @Override public String getServletPath() { return servletPath; }
 
         @Override
         public BufferedReader getReader() {

@@ -92,6 +92,12 @@ public final class HttpJsonCodec {
                 .build();
     }
 
+    public static String encode(ServiceInvocationResponse r) {
+        return JsonWriter.object()
+                .rawField("result", encodeJsonValue(r.result()))
+                .build();
+    }
+
     public static String encode(RemoteToolInvocationRequest r) {
         return JsonWriter.object()
                 .field("toolName", r.toolName())
@@ -127,6 +133,21 @@ public final class HttpJsonCodec {
         }
     }
 
+    public static ServiceInvocationRequest decodeServiceInvocationRequest(String json) {
+        try {
+            Map<String, Object> root = JsonReader.parseObject(json);
+            Object rawArgs = root.get("args");
+            if (!(rawArgs instanceof List<?> args)) {
+                throw new HttpApiException(400, "invalid_params", "Missing or invalid required field: args");
+            }
+            return new ServiceInvocationRequest(new ArrayList<>(args));
+        } catch (HttpApiException e) {
+            throw e;
+        } catch (IllegalArgumentException e) {
+            throw new HttpApiException(400, "invalid_params", e.getMessage());
+        }
+    }
+
     public static RemoteToolInvocationResponse decodeRemoteToolInvocationResponse(String json) {
         Map<String, Object> root = JsonReader.parseObject(json);
         Object successRaw = root.get("success");
@@ -135,6 +156,27 @@ public final class HttpJsonCodec {
                 success,
                 stringValue(root.get("output")),
                 stringValue(root.get("error")));
+    }
+
+    static String encodeJsonArray(List<?> values) {
+        if (values == null || values.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) {
+                out.append(',');
+            }
+            appendJsonValue(out, values.get(i));
+        }
+        out.append(']');
+        return out.toString();
+    }
+
+    static String encodeJsonValue(Object value) {
+        StringBuilder out = new StringBuilder();
+        appendJsonValue(out, value);
+        return out.toString();
     }
 
     private static String stringValue(Object value) {
@@ -153,5 +195,44 @@ public final class HttpJsonCodec {
             }
         }
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void appendJsonValue(StringBuilder out, Object value) {
+        if (value == null) {
+            out.append("null");
+        } else if (value instanceof String s) {
+            appendJsonString(out, s);
+        } else if (value instanceof Number || value instanceof Boolean) {
+            out.append(value);
+        } else if (value instanceof Map<?, ?> map) {
+            out.append(JsonWriter.fromMap((Map<String, Object>) map));
+        } else if (value instanceof List<?> list) {
+            out.append(encodeJsonArray(list));
+        } else {
+            appendJsonString(out, value.toString());
+        }
+    }
+
+    private static void appendJsonString(StringBuilder out, String value) {
+        out.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        out.append('"');
     }
 }

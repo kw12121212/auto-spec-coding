@@ -120,6 +120,22 @@ class HttpModelsTest {
     }
 
     @Nested
+    class ServiceInvocationModelTests {
+
+        @Test
+        void invocationRequestPreservesArgs() {
+            ServiceInvocationRequest req = new ServiceInvocationRequest(List.of(1L, "x"));
+            assertEquals(List.of(1L, "x"), req.args());
+        }
+
+        @Test
+        void invocationResponseStoresResult() {
+            ServiceInvocationResponse resp = new ServiceInvocationResponse(Map.of("id", "inv-1"));
+            assertEquals(Map.of("id", "inv-1"), resp.result());
+        }
+    }
+
+    @Nested
     class ErrorResponseTests {
 
         @Test
@@ -221,6 +237,14 @@ class HttpModelsTest {
             assertTrue(json.contains("\"name\":\"bash\""));
             assertTrue(json.contains("\"name\":\"grep\""));
         }
+
+        @Test
+        void encodeServiceInvocationResponse() {
+            ServiceInvocationResponse resp = new ServiceInvocationResponse(Map.of("id", "inv-1"));
+            String json = HttpJsonCodec.encode(resp);
+            assertTrue(json.contains("\"result\":"));
+            assertTrue(json.contains("\"id\":\"inv-1\""));
+        }
     }
 
     // --- Codec decode tests ---
@@ -253,6 +277,23 @@ class HttpModelsTest {
             String json = "{\"systemPrompt\":\"You are a reviewer\"}";
             HttpApiException ex = assertThrows(HttpApiException.class,
                     () -> HttpJsonCodec.decodeRequest(json));
+            assertEquals(400, ex.httpStatus());
+            assertEquals("invalid_params", ex.errorCode());
+        }
+
+        @Test
+        void decodeServiceInvocationRequest() {
+            ServiceInvocationRequest req = HttpJsonCodec.decodeServiceInvocationRequest("{\"args\":[1,\"x\",null]}");
+            assertEquals(3, req.args().size());
+            assertEquals(1L, req.args().get(0));
+            assertEquals("x", req.args().get(1));
+            assertNull(req.args().get(2));
+        }
+
+        @Test
+        void rejectServiceInvocationRequestWithoutArgsArray() {
+            HttpApiException ex = assertThrows(HttpApiException.class,
+                    () -> HttpJsonCodec.decodeServiceInvocationRequest("{\"args\":\"x\"}"));
             assertEquals(400, ex.httpStatus());
             assertEquals("invalid_params", ex.errorCode());
         }
