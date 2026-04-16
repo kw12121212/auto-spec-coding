@@ -83,6 +83,7 @@
 ## Platform (平台基础设施)
 
 - [lealone-platform.md](platform/lealone-platform.md) - LealonePlatform and typed platform capability access for DB, runtime LLM, compiler/hot-load, and interactive session
+- [sandlock-runner.md](platform/sandlock-runner.md) - Sandlock-backed profile command execution and explicit launch diagnostics
 
 ## SDK (SDK 公共 API)
 

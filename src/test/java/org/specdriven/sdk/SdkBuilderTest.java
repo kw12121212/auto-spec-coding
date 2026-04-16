@@ -226,6 +226,37 @@ class SdkBuilderTest {
     }
 
     @Test
+    void sdkPlatformSandlockUsesExistingAssemblyProfileSelection() throws Exception {
+        Path configPath = tempDir.resolve("profiles.yaml");
+        Files.writeString(configPath, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                    ci:
+                      python:
+                        pythonHome: /opt/python-3.12
+                """);
+
+        try (SpecDriven sdk = SpecDriven.builder()
+                .config(configPath)
+                .environmentProfile("ci")
+                .sandlockRuntime(new BuilderSandlockRuntime())
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .build()) {
+            LealonePlatform.SandlockExecutionResult result = sdk.platform().sandlock().execute(List.of("python", "-V"));
+
+            assertEquals("ci", result.resolvedProfile());
+            assertEquals(List.of("python", "-V"), result.command());
+            assertEquals(3, result.exitCode());
+            assertEquals("python 3.12", result.stdout());
+            assertEquals("", result.stderr());
+        }
+    }
+
+    @Test
     void unknownExplicitEnvironmentProfileFailsBuild() throws Exception {
         Path configPath = tempDir.resolve("profiles.yaml");
         Files.writeString(configPath, """
@@ -262,6 +293,19 @@ class SdkBuilderTest {
         @Override public List<ToolParameter> getParameters() { return List.of(); }
         @Override public ToolResult execute(ToolInput input, ToolContext context) {
             return new ToolResult.Success("dummy result");
+        }
+    }
+
+    private static final class BuilderSandlockRuntime implements LealonePlatform.SandlockRuntime {
+
+        @Override
+        public LealonePlatform.SandlockLaunchCheck check() {
+            return LealonePlatform.SandlockLaunchCheck.ready();
+        }
+
+        @Override
+        public LealonePlatform.SandlockProcessOutput execute(String resolvedProfile, List<String> command) {
+            return new LealonePlatform.SandlockProcessOutput(3, "python 3.12", "");
         }
     }
 }

@@ -37,6 +37,8 @@ import java.util.*;
 public class SdkBuilder {
 
     private static final String ENVIRONMENT_PROFILES_PREFIX = "environmentProfiles";
+    private static final String SELECTED_ENVIRONMENT_PROFILE_KEY = ENVIRONMENT_PROFILES_PREFIX + ".selected";
+    private static final String DECLARED_ENVIRONMENT_PROFILE_PREFIX = ENVIRONMENT_PROFILES_PREFIX + ".profiles.";
 
     private Path configPath;
     private LlmProviderRegistry providerRegistry;
@@ -52,6 +54,7 @@ public class SdkBuilder {
     private List<MobileChannelConfig> channelConfigs = Collections.emptyList();
     private PlatformConfig platformConfig;
     private String environmentProfile;
+    private LealonePlatform.SandlockRuntime sandlockRuntime;
 
     SdkBuilder() {}
 
@@ -154,6 +157,11 @@ public class SdkBuilder {
         return this;
     }
 
+    SdkBuilder sandlockRuntime(LealonePlatform.SandlockRuntime sandlockRuntime) {
+        this.sandlockRuntime = sandlockRuntime;
+        return this;
+    }
+
     public SpecDriven build() {
         try {
             AssembledComponents assembled = assembleComponents();
@@ -243,6 +251,10 @@ public class SdkBuilder {
                 new LealonePlatform.CompilerCapability(sourceCompiler, classCacheManager, hotLoader,
                         effectivePlatform.compileCachePath()),
                 new LealonePlatform.InteractiveCapability(sessionFactory),
+                new LealonePlatform.SandlockCapability(
+                        sandlockRuntime != null ? sandlockRuntime : new LealonePlatform.SystemSandlockRuntime(),
+                        extractDeclaredEnvironmentProfiles(configMap),
+                        configMap.get(SELECTED_ENVIRONMENT_PROFILE_KEY)),
                 eventBus);
 
         return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
@@ -289,6 +301,21 @@ public class SdkBuilder {
             }
         }
         return PlatformConfig.defaults();
+    }
+
+    private Set<String> extractDeclaredEnvironmentProfiles(Map<String, String> configMap) {
+        Set<String> profileNames = new LinkedHashSet<>();
+        for (String key : configMap.keySet()) {
+            if (!key.startsWith(DECLARED_ENVIRONMENT_PROFILE_PREFIX)) {
+                continue;
+            }
+            String remainder = key.substring(DECLARED_ENVIRONMENT_PROFILE_PREFIX.length());
+            int separator = remainder.indexOf('.');
+            if (separator > 0) {
+                profileNames.add(remainder.substring(0, separator));
+            }
+        }
+        return Set.copyOf(profileNames);
     }
 
     private void wireGlobalListeners(EventBus eventBus) {

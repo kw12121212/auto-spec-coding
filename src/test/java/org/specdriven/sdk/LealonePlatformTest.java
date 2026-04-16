@@ -2,6 +2,7 @@ package org.specdriven.sdk;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.specdriven.agent.agent.DefaultLlmProviderRegistry;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -41,6 +43,7 @@ class LealonePlatformTest {
         assertNotNull(platform.llm());
         assertNotNull(platform.compiler());
         assertNotNull(platform.interactive());
+        assertNotNull(platform.sandlock());
         assertNotNull(platform.llm().providerRegistry());
         assertNotNull(platform.compiler().sourceCompiler());
         assertNotNull(platform.compiler().classCacheManager());
@@ -83,7 +86,140 @@ class LealonePlatformTest {
         assertTrue(Arrays.stream(methods).anyMatch(method -> method.getName().equals("llm")));
         assertTrue(Arrays.stream(methods).anyMatch(method -> method.getName().equals("compiler")));
         assertTrue(Arrays.stream(methods).anyMatch(method -> method.getName().equals("interactive")));
+        assertTrue(Arrays.stream(methods).anyMatch(method -> method.getName().equals("sandlock")));
         assertTrue(Arrays.stream(methods).noneMatch(method -> method.getName().equals("capability")));
+    }
+
+    @Test
+    void sandlockUsesSelectedProfileWhenNoExplicitProfileIsRequested() throws Exception {
+        Path configPath = writeProfilesConfig();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new FakeSandlockRuntime(LealonePlatform.SandlockLaunchCheck.ready(),
+                        new LealonePlatform.SandlockProcessOutput(0, "ok", "")))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionResult result = platform.sandlock().execute(List.of("echo", "hello"));
+
+            assertEquals("dev", result.resolvedProfile());
+            assertEquals(List.of("echo", "hello"), result.command());
+            assertEquals(0, result.exitCode());
+            assertEquals("ok", result.stdout());
+            assertEquals("", result.stderr());
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockUsesExplicitDeclaredProfileForLaunch() throws Exception {
+        Path configPath = writeProfilesConfig();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new FakeSandlockRuntime(LealonePlatform.SandlockLaunchCheck.ready(),
+                        new LealonePlatform.SandlockProcessOutput(17, "stdout", "stderr")))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionResult result = platform.sandlock()
+                    .execute("ci", List.of("python", "-V"));
+
+            assertEquals("ci", result.resolvedProfile());
+            assertEquals(List.of("python", "-V"), result.command());
+            assertEquals(17, result.exitCode());
+            assertEquals("stdout", result.stdout());
+            assertEquals("stderr", result.stderr());
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsExplicitlyWhenSandlockIsUnavailable() throws Exception {
+        Path configPath = writeProfilesConfig();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new FakeSandlockRuntime(
+                        LealonePlatform.SandlockLaunchCheck.unavailable("Sandlock is unavailable"), null))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNAVAILABLE, error.failureCode());
+            assertTrue(error.getMessage().contains("Sandlock is unavailable"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsExplicitlyWhenHostIsUnsupported() throws Exception {
+        Path configPath = writeProfilesConfig();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new FakeSandlockRuntime(
+                        LealonePlatform.SandlockLaunchCheck.unsupportedHost("unsupported host"), null))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNSUPPORTED_HOST, error.failureCode());
+            assertTrue(error.getMessage().contains("unsupported host"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsExplicitlyForUnknownRequestedProfile() throws Exception {
+        Path configPath = writeProfilesConfig();
+        LealonePlatform platform = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .sandlockRuntime(new FakeSandlockRuntime(LealonePlatform.SandlockLaunchCheck.ready(),
+                        new LealonePlatform.SandlockProcessOutput(0, "", "")))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute("prod", List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNKNOWN_PROFILE, error.failureCode());
+            assertTrue(error.getMessage().contains("Unknown requested environment profile 'prod'"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockFailsWhenNoEffectiveProfileIsAvailable() {
+        LealonePlatform platform = SpecDriven.builder()
+                .sandlockRuntime(new FakeSandlockRuntime(LealonePlatform.SandlockLaunchCheck.ready(),
+                        new LealonePlatform.SandlockProcessOutput(0, "", "")))
+                .buildPlatform();
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.NO_EFFECTIVE_PROFILE, error.failureCode());
+            assertTrue(error.getMessage().contains("No effective environment profile"));
+        } finally {
+            platform.close();
+        }
     }
 
     @Test
@@ -230,6 +366,35 @@ class LealonePlatformTest {
         try (Connection conn = DriverManager.getConnection(jdbcUrl, "root", "");
              ResultSet rs = conn.getMetaData().getTables(null, null, tableName, null)) {
             return rs.next();
+        }
+    }
+
+    private Path writeProfilesConfig() throws Exception {
+        Path configPath = tempDir.resolve("profiles.yaml");
+        Files.writeString(configPath, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                    ci:
+                      python:
+                        pythonHome: /opt/python-3.12
+                """);
+        return configPath;
+    }
+
+    private record FakeSandlockRuntime(
+            LealonePlatform.SandlockLaunchCheck check,
+            LealonePlatform.SandlockProcessOutput output) implements LealonePlatform.SandlockRuntime {
+
+        @Override
+        public LealonePlatform.SandlockProcessOutput execute(String resolvedProfile, List<String> command) {
+            if (output == null) {
+                throw new IllegalStateException("output must not be null when execution is requested");
+            }
+            return output;
         }
     }
 
