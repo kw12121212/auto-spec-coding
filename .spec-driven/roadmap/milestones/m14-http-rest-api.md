@@ -32,7 +32,7 @@
 
 ## Dependencies
 
-- M11 Native Java SDK 层
+- M12 Native Java SDK 层
 - M04 Agent 生命周期（长运行任务的状态查询）
 - M06 权限系统（认证集成）
 - Lealone HTTP server 模块（lealone-server, lealone-net）
@@ -51,6 +51,5 @@
 - REST API 设计参考 spec-coding-sdk 现有的 HTTP 接口模式
 - 使用 Lealone 内置 HTTP server，不引入 Spring / Javalin 等外部 Web 框架
 - 与 M12 可并行开发
-
 
 

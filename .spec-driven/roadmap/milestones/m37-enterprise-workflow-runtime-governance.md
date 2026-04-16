@@ -52,13 +52,12 @@
 - 工作流运行时若过早追求通用编排平台，会超出当前仓库的 Lealone-centered 范围
 
 ## Status
-- Declared: proposed
+- Declared: active
 
 ## Notes
 
 - 本里程碑对应 Lealone README 里 `create workflow` 所代表的增强方向，但会优先落在本项目现有能力已经证明可行的范围内：service、agent、人机协作、审计、恢复
 - 这里的 workflow 是业务应用运行时，不是 spec-driven change 生命周期本身；两者可共享基础设施，但不应共享同一套语义边界
 - 若后续需要多节点调度、租户隔离或复杂流程建模，应另开专门 milestone，而不是继续扩张本里程碑
-
 
 

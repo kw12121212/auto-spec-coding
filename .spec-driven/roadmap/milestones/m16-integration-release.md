@@ -29,9 +29,9 @@
 
 ## Dependencies
 
-- M11 Native Java SDK 层
-- M12 JSON-RPC 接口
-- M13 HTTP REST API
+- M12 Native Java SDK 层
+- M13 JSON-RPC 接口
+- M14 HTTP REST API
 
 ## Risks
 
@@ -45,6 +45,5 @@
 
 - 此里程碑是整个项目的收尾阶段
 - 发布为 Maven artifact，支持通过 pom.xml / build.gradle 引入
-
 
 

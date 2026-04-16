@@ -14,7 +14,7 @@
 ## Out of Scope
 
 - 非 Java 语言 SDK
-- 具体传输层实现（M12-M13）
+- 具体传输层实现（M13-M14）
 - 底层接口的重新定义（SDK 是 M01 接口的 facade，不替代它们）
 
 ## Done Criteria
@@ -49,6 +49,5 @@
 - 参考 spec-coding-sdk 的 Go SDK 使用模式提炼常用操作为简洁的 Java SDK 调用
 - M07-M08（注册表）为可选依赖，SDK 可延迟初始化注册表功能
 - 发布为 Maven artifact，用户通过 pom.xml / build.gradle 引入
-
 
 

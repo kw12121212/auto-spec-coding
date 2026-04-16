@@ -13,7 +13,7 @@
 
 ## Out of Scope
 
-- HTTP 传输（M13）
+- HTTP 传输（M14）
 - 批量请求（JSON-RPC 2.0 规范要求但复杂度高，纳入后续迭代）
 
 ## Done Criteria
@@ -31,7 +31,7 @@
 
 ## Dependencies
 
-- M11 Native Java SDK 层
+- M12 Native Java SDK 层
 
 ## Risks
 
@@ -47,5 +47,4 @@
 - JSON-RPC 接口是 CLI 嵌入场景的首选方式，需与 spec-coding-sdk 的 stdin 协议保持兼容
 - 批量请求暂不实现，但协议层需预留批量消息的解析能力
 - JSON 处理使用 Lealone 内置的 JSON 能力或 JDK 内置 API，不引入 Jackson/Gson
-
 
