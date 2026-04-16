@@ -52,7 +52,11 @@ public class SpecDriven implements AutoCloseable {
         this.deliveryModeOverride = deliveryModeOverride;
         this.channelRegistry = channelRegistry;
         this.channelConfigs = channelConfigs;
-        this.workflowRuntime = new WorkflowRuntime(eventBus, List.of());
+        this.workflowRuntime = new WorkflowRuntime(
+                eventBus,
+                List.of(),
+                this::deliveryService,
+                createWorkflowStateStore(platform.database().jdbcUrl()));
     }
 
     /**
@@ -171,6 +175,10 @@ public class SpecDriven implements AutoCloseable {
         List<Tool> combined = new ArrayList<>(tools);
         combined.addAll(remoteTools.values());
         return List.copyOf(combined);
+    }
+
+    private WorkflowRuntime.WorkflowStateStore createWorkflowStateStore(String jdbcUrl) {
+        return new WorkflowRuntime.JdbcStateStore(jdbcUrl);
     }
 
     /**

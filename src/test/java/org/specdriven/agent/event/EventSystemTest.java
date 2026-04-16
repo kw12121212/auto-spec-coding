@@ -23,7 +23,7 @@ class EventSystemTest {
     @Test
     void eventTypeCoversAllValues() {
         EventType[] types = EventType.values();
-        assertEquals(54, types.length);
+        assertEquals(57, types.length);
         assertNotNull(EventType.valueOf("TOOL_EXECUTED"));
         assertNotNull(EventType.valueOf("AGENT_STATE_CHANGED"));
         assertNotNull(EventType.valueOf("TASK_CREATED"));
@@ -71,6 +71,9 @@ class EventSystemTest {
         assertNotNull(EventType.valueOf("WORKFLOW_STATE_CHANGED"));
         assertNotNull(EventType.valueOf("WORKFLOW_COMPLETED"));
         assertNotNull(EventType.valueOf("WORKFLOW_FAILED"));
+        assertNotNull(EventType.valueOf("WORKFLOW_CHECKPOINT_SAVED"));
+        assertNotNull(EventType.valueOf("WORKFLOW_RECOVERED"));
+        assertNotNull(EventType.valueOf("WORKFLOW_STEP_RETRY_SCHEDULED"));
         assertNotNull(EventType.valueOf("WORKFLOW_STEP_STARTED"));
         assertNotNull(EventType.valueOf("WORKFLOW_STEP_COMPLETED"));
         assertNotNull(EventType.valueOf("WORKFLOW_STEP_FAILED"));

@@ -37,7 +37,7 @@ mapping:
 - MUST additionally define: LOOP_INTERACTIVE_ENTERED, LOOP_INTERACTIVE_EXITED
 - MUST additionally define: SKILL_HOT_LOAD_OPERATION
 - MUST additionally define: INTERACTIVE_COMMAND_HANDLED
-- MUST additionally define: WORKFLOW_DECLARED, WORKFLOW_STARTED, WORKFLOW_STATE_CHANGED, WORKFLOW_COMPLETED, WORKFLOW_FAILED
+- MUST additionally define: WORKFLOW_DECLARED, WORKFLOW_STARTED, WORKFLOW_STATE_CHANGED, WORKFLOW_COMPLETED, WORKFLOW_FAILED, WORKFLOW_CHECKPOINT_SAVED, WORKFLOW_RECOVERED, WORKFLOW_STEP_RETRY_SCHEDULED
 - MUST additionally define: PLATFORM_HEALTH_CHECKED, PLATFORM_METRICS_SNAPSHOT
 - MAY be extended in future milestones
 
@@ -147,7 +147,8 @@ mapping:
 
 ### Requirement: Workflow runtime audit event metadata
 
-Workflow runtime audit events MUST remain compatible with the existing event JSON serialization constraints.
+Workflow runtime audit events MUST remain compatible with the existing event JSON serialization
+constraints, including runtime-driven retry exhaustion diagnostics when a workflow ultimately fails.
 
 #### Scenario: Workflow declaration event is auditable
 - GIVEN a workflow declaration is accepted through a supported declaration path
@@ -168,3 +169,35 @@ Workflow runtime audit events MUST remain compatible with the existing event JSO
 - THEN the event metadata MUST include `workflowId`
 - AND it MUST include `workflowName`
 - AND it MUST include a stable `failureReason`
+
+#### Scenario: Checkpoint saved event is auditable
+- GIVEN the runtime emits `WORKFLOW_CHECKPOINT_SAVED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND it MUST include `status`
+- AND it MUST include `resumeFromStepIndex`
+
+#### Scenario: Workflow recovered event is auditable
+- GIVEN the runtime emits `WORKFLOW_RECOVERED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND it MUST include `status`
+- AND it MUST include `resumeFromStepIndex`
+
+#### Scenario: Retry scheduled event is auditable
+- GIVEN the runtime emits `WORKFLOW_STEP_RETRY_SCHEDULED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND it MUST include `stepIndex`
+- AND it MUST include `stepName`
+- AND it MUST include `attemptNumber`
+- AND it MUST include `failureReason`
+
+#### Scenario: Workflow failure after retry exhaustion is auditable
+- GIVEN a workflow reaches `FAILED` after the supported retry policy for a step is exhausted
+- WHEN the runtime emits `WORKFLOW_FAILED`
+- THEN the event metadata MUST include `workflowId`
+- AND it MUST include `workflowName`
+- AND it MUST include a stable `failureReason`
+- AND it MUST include `retryExhausted` with value `true`
+- AND it MUST include `failedStepName`

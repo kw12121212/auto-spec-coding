@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -338,6 +339,133 @@ class WorkflowStepCompositionTest {
             assertEquals("SERVICE", failedEvent.metadata().get("stepType"));
             assertEquals("remote-svc", failedEvent.metadata().get("stepName"));
             assertEquals("timeout", failedEvent.metadata().get("failureReason"));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void retryableFailureIsDistinguishableFromTerminalFailure() {
+        WorkflowStepResult retryable = WorkflowStepResult.retryableFailure("timeout");
+        WorkflowStepResult terminal = WorkflowStepResult.failure("timeout");
+
+        assertTrue(retryable.isFailure());
+        assertTrue(retryable.isRetryableFailure());
+        assertEquals("timeout", retryable.failureReason());
+
+        assertTrue(terminal.isFailure());
+        assertFalse(terminal.isRetryableFailure());
+    }
+
+    @Test
+    void retryableFailureRetriesSameStepBeforeLaterStepsExecute() {
+        EventBus eventBus = newEventBus();
+        List<Event> retryEvents = new CopyOnWriteArrayList<>();
+        List<String> callOrder = new CopyOnWriteArrayList<>();
+        List<Map<String, Object>> stepBInputs = new CopyOnWriteArrayList<>();
+        AtomicInteger attempts = new AtomicInteger();
+        eventBus.subscribe(EventType.WORKFLOW_STEP_RETRY_SCHEDULED, retryEvents::add);
+
+        WorkflowStepExecutor stepA = new WorkflowStepExecutor() {
+            @Override
+            public WorkflowStep.StepType stepType() {
+                return WorkflowStep.StepType.TOOL;
+            }
+
+            @Override
+            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                int attempt = attempts.incrementAndGet();
+                callOrder.add("A" + attempt);
+                if (attempt == 1) {
+                    return WorkflowStepResult.retryableFailure("timeout");
+                }
+                return WorkflowStepResult.success(Map.of("approved", true));
+            }
+        };
+
+        WorkflowStepExecutor stepB = new WorkflowStepExecutor() {
+            @Override
+            public WorkflowStep.StepType stepType() {
+                return WorkflowStep.StepType.SERVICE;
+            }
+
+            @Override
+            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                callOrder.add("B");
+                stepBInputs.add(input);
+                return WorkflowStepResult.success(Map.of("done", true));
+            }
+        };
+
+        WorkflowRuntime runtime = runtimeWith(eventBus, stepA, stepB);
+        try {
+            runtime.declareWorkflow("retrying-workflow", List.of(
+                    new WorkflowStep(WorkflowStep.StepType.TOOL, "step-a"),
+                    new WorkflowStep(WorkflowStep.StepType.SERVICE, "step-b")));
+
+            WorkflowInstanceView started = runtime.startWorkflow("retrying-workflow", Map.of());
+            WorkflowResultView result = awaitResult(runtime, started.workflowId(), Duration.ofSeconds(5));
+
+            assertEquals(WorkflowStatus.SUCCEEDED, result.status());
+            assertEquals(List.of("A1", "A2", "B"), callOrder);
+            assertEquals(Boolean.TRUE, stepBInputs.get(0).get("approved"));
+            assertEquals(1, retryEvents.size());
+            assertEquals(started.workflowId(), retryEvents.get(0).metadata().get("workflowId"));
+            assertEquals("retrying-workflow", retryEvents.get(0).metadata().get("workflowName"));
+            assertEquals("step-a", retryEvents.get(0).metadata().get("stepName"));
+            assertEquals(2, retryEvents.get(0).metadata().get("attemptNumber"));
+            assertEquals("timeout", retryEvents.get(0).metadata().get("failureReason"));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void retryableFailureExhaustionStopsLaterStepsAndFailsWorkflow() {
+        EventBus eventBus = newEventBus();
+        List<String> callOrder = new CopyOnWriteArrayList<>();
+
+        WorkflowStepExecutor stepA = new WorkflowStepExecutor() {
+            @Override
+            public WorkflowStep.StepType stepType() {
+                return WorkflowStep.StepType.TOOL;
+            }
+
+            @Override
+            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                callOrder.add("A");
+                return WorkflowStepResult.retryableFailure("connection refused");
+            }
+        };
+
+        WorkflowStepExecutor stepB = new WorkflowStepExecutor() {
+            @Override
+            public WorkflowStep.StepType stepType() {
+                return WorkflowStep.StepType.SERVICE;
+            }
+
+            @Override
+            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                callOrder.add("B");
+                return WorkflowStepResult.success(Map.of());
+            }
+        };
+
+        WorkflowRuntime runtime = runtimeWith(eventBus, stepA, stepB);
+        try {
+            runtime.declareWorkflow("retry-exhausted-workflow", List.of(
+                    new WorkflowStep(WorkflowStep.StepType.TOOL, "step-a"),
+                    new WorkflowStep(WorkflowStep.StepType.SERVICE, "step-b")));
+
+            WorkflowInstanceView started = runtime.startWorkflow("retry-exhausted-workflow", Map.of());
+            WorkflowResultView result = awaitResult(runtime, started.workflowId(), Duration.ofSeconds(5));
+
+            assertEquals(WorkflowStatus.FAILED, result.status());
+            assertEquals(List.of("A", "A"), callOrder);
+            assertNotNull(result.failureSummary());
+            assertTrue(result.failureSummary().contains("step-a"));
+            assertTrue(result.failureSummary().contains("connection refused"));
+            assertTrue(result.failureSummary().contains("retry exhaustion"));
         } finally {
             runtime.close();
         }
