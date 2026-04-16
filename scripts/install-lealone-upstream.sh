@@ -15,4 +15,4 @@ if [ "$LEALONE_SKIP_FETCH" != "true" ]; then
 fi
 git -C "$LEALONE_DIR" checkout "$LEALONE_COMMIT"
 
-mvn -DskipTests -pl lealone-common,lealone-net,lealone-orm,lealone-http,lealone-db -am install -f "$LEALONE_DIR/pom.xml"
+mvnd -DskipTests -pl lealone-common,lealone-net,lealone-orm,lealone-http,lealone-db -am install -f "$LEALONE_DIR/pom.xml"

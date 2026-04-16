@@ -21,7 +21,7 @@
 
 ## Done Criteria
 
-- `mvn compile` 和 `mvn test` 通过
+- `mvnd compile` 和 `mvnd test` 通过
 - 核心接口类型可在其他包中被引用
 - 配置文件可被正确解析为 Java 对象
 - 事件类型可被实例化并序列化为 JSON

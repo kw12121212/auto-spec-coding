@@ -17,8 +17,8 @@
 
 ```bash
 LEALONE_SRC_DIR="$PWD/lealone" LEALONE_SKIP_FETCH=true ./scripts/install-lealone-upstream.sh
-mvn -q -DskipTests compile
-mvn -q -Dtest=SkillSourceCompilerTest,SkillServiceExecutorFactoryTest,LealoneSessionStoreTest,LealoneRuntimeLlmConfigStoreTest,LealoneToolCacheTest,LealoneQuestionStoreTest,LealoneVaultTest,LealoneTaskStoreTest,LealoneTeamStoreTest,LealoneCronStoreTest test
+mvnd -q -DskipTests compile
+mvnd -q -Dtest=SkillSourceCompilerTest,SkillServiceExecutorFactoryTest,LealoneSessionStoreTest,LealoneRuntimeLlmConfigStoreTest,LealoneToolCacheTest,LealoneQuestionStoreTest,LealoneVaultTest,LealoneTaskStoreTest,LealoneTeamStoreTest,LealoneCronStoreTest test
 ```
 
 ## Future-Useful Upstream Capabilities

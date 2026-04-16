@@ -24,8 +24,8 @@ The project root is at ${projectRoot}.
 3. For each completed task: verify the code change actually exists in the repository
 4. Read delta specs and verify implementation matches proposed behavior
 5. Verify Unchanged Behavior from proposal.md is not violated
-6. Run lint/compile validation (e.g., mvn compile -q)
-7. Run unit tests (e.g., mvn test)
+6. Run lint/compile validation (e.g., mvnd compile -q)
+7. Run unit tests (e.g., mvnd test)
 8. Output a tiered report:
    CRITICAL (blocks archive): [list or "none"]
    WARNING (should address): [list or "none"]

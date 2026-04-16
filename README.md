@@ -43,8 +43,8 @@ LEALONE_SRC_DIR="$PWD/lealone" LEALONE_SKIP_FETCH=true ./scripts/install-lealone
 
 ```bash
 ./scripts/install-lealone-upstream.sh
-mvn compile -q
-mvn test -q -Dsurefire.useFile=false
+mvnd compile -q
+mvnd test -q -Dsurefire.useFile=false
 ```
 
 ## Native Java SDK Quickstart
@@ -105,6 +105,39 @@ curl http://localhost:8080/api/v1/tools \
   -H "X-API-Key: test-api-key"
 ```
 
+## Service Application Runtime
+
+Lealone service applications can be started from a supported `services.sql` file through the Java runtime entrypoint. The runtime assembles the SDK platform, applies the supported `services.sql` bootstrap, and exposes application service calls under `/services/{serviceName}/{methodName}`.
+
+Repository-local startup:
+
+```bash
+mvnd -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain \
+  -Dexec.args="service-runtime --services-sql ./services.sql --host 127.0.0.1 --port 8080 --api-key test-api-key" \
+  exec:java
+```
+
+Packaged-runtime startup:
+
+```bash
+mvnd -q package dependency:copy-dependencies
+
+java -cp "target/auto-spec-coding-0.1.0-SNAPSHOT.jar:target/dependency/*" \
+  org.specdriven.cli.SpecDrivenCliMain \
+  service-runtime --services-sql ./services.sql --host 127.0.0.1 --port 8080 --api-key test-api-key
+```
+
+Startup returns structured JSON. A successful start includes the resolved `services.sql` path, HTTP host and port, `serviceBaseUrl`, `healthUrl`, and applied bootstrap statement count. Startup failures return `status=failed` with an error code such as `missing_input`, `invalid_config`, `bootstrap_error`, or `http_startup_error`.
+
+Example service invocation after startup:
+
+```bash
+curl -X POST http://127.0.0.1:8080/services/invoice/create \
+  -H "Authorization: Bearer test-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"args":[1,"x"]}'
+```
+
 ## Architecture
 
 - Native Java SDK: direct library integration via `org.specdriven.sdk.SpecDriven`
@@ -131,9 +164,9 @@ Specs and roadmap live under:
 Use the shared Java spec-driven CLI to propose, apply, verify, review, and archive changes without Node.js:
 
 ```bash
-mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="list" exec:java
-mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="propose my-change" exec:java
-mvn -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="verify my-change" exec:java
+mvnd -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="list" exec:java
+mvnd -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="propose my-change" exec:java
+mvnd -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain -Dexec.args="verify my-change" exec:java
 ```
 
 ## License

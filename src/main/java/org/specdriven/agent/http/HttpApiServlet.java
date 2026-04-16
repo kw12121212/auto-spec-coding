@@ -239,25 +239,8 @@ public class HttpApiServlet extends HttpServlet {
     }
 
     private String handleServiceInvocation(String serviceName, String methodName, HttpServletRequest req) {
-        if (serviceInvoker == null) {
-            throw new HttpApiException(404, "not_found", "Service HTTP exposure is not configured");
-        }
         String body = readBody(req);
-        if (body == null || body.isBlank()) {
-            throw new HttpApiException(400, "invalid_params", "Request body required");
-        }
-        ServiceInvocationRequest request = HttpJsonCodec.decodeServiceInvocationRequest(body);
-        try {
-            Object result = serviceInvoker.invoke(serviceName, methodName, request.args());
-            return HttpJsonCodec.encode(new ServiceInvocationResponse(result));
-        } catch (ServiceInvocationException e) {
-            throw new HttpApiException(e.status(), e.error(), e.getMessage());
-        } catch (IllegalArgumentException e) {
-            throw new HttpApiException(400, "invalid_params", e.getMessage());
-        } catch (RuntimeException e) {
-            throw new HttpApiException(500, "service_error",
-                    e.getMessage() != null ? e.getMessage() : "Service invocation failed");
-        }
+        return ServiceHttpInvocationHandler.invoke(serviceInvoker, serviceName, methodName, body);
     }
 
     private String handleToolRegister(HttpServletRequest req) {

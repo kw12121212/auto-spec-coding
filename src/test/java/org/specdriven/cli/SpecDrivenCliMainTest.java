@@ -23,7 +23,7 @@ class SpecDrivenCliMainTest {
 
         assertEquals(1, result.exitCode());
         assertTrue(result.stderr().contains("Usage: spec-driven <command> [args]"));
-        assertTrue(result.stderr().contains("Commands: propose, modify, apply, verify, verify-roadmap, roadmap-status, archive, cancel, init, run-maintenance, migrate, list"));
+        assertTrue(result.stderr().contains("Commands: propose, modify, apply, verify, verify-roadmap, roadmap-status, archive, cancel, init, run-maintenance, migrate, service-runtime, list"));
     }
 
     @Test
@@ -101,6 +101,77 @@ class SpecDrivenCliMainTest {
         assertEquals(Boolean.FALSE, json.get("valid"));
         List<Object> errors = JsonReader.getList(json, "errors");
         assertFalse(errors.isEmpty());
+    }
+
+    @Test
+    void serviceRuntimeRequiresServicesSqlArgument() {
+        SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir, "service-runtime", "--exit-after-start");
+
+        assertEquals(1, result.exitCode());
+        Map<String, Object> json = JsonReader.parseObject(result.stdout());
+        assertEquals("failed", JsonReader.getString(json, "status"));
+        assertEquals("invalid_config", JsonReader.getString(json, "error"));
+        assertTrue(JsonReader.getString(json, "message").contains("--services-sql"));
+    }
+
+    @Test
+    void serviceRuntimeMissingServicesSqlReturnsStructuredFailure() {
+        Path missing = tempDir.resolve("services.sql");
+
+        SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir,
+                "service-runtime",
+                "--services-sql", missing.toString(),
+                "--port", "0",
+                "--jdbc-url", isolatedJdbcUrl(),
+                "--exit-after-start");
+
+        assertEquals(1, result.exitCode());
+        Map<String, Object> json = JsonReader.parseObject(result.stdout());
+        assertEquals("failed", JsonReader.getString(json, "status"));
+        assertEquals("missing_input", JsonReader.getString(json, "error"));
+        assertTrue(JsonReader.getString(json, "message").contains("services.sql"));
+    }
+
+    @Test
+    void serviceRuntimeUnsupportedBootstrapInputReturnsStructuredFailure() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, "DROP TABLE unsupported;\n", StandardCharsets.UTF_8);
+
+        SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir,
+                "service-runtime",
+                "--services-sql", servicesSql.toString(),
+                "--port", "0",
+                "--jdbc-url", isolatedJdbcUrl(),
+                "--exit-after-start");
+
+        assertEquals(1, result.exitCode());
+        Map<String, Object> json = JsonReader.parseObject(result.stdout());
+        assertEquals("failed", JsonReader.getString(json, "status"));
+        assertEquals("bootstrap_error", JsonReader.getString(json, "error"));
+        assertTrue(JsonReader.getString(json, "message").contains("Unsupported services.sql statement"));
+    }
+
+    @Test
+    void serviceRuntimeExitAfterStartReturnsStructuredSuccess() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, "\n", StandardCharsets.UTF_8);
+
+        SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir,
+                "service-runtime",
+                "--services-sql", servicesSql.toString(),
+                "--host", "127.0.0.1",
+                "--port", "0",
+                "--jdbc-url", isolatedJdbcUrl(),
+                "--exit-after-start");
+
+        assertEquals(0, result.exitCode(), result.stdout());
+        Map<String, Object> json = JsonReader.parseObject(result.stdout());
+        assertEquals("started", JsonReader.getString(json, "status"));
+        assertEquals(servicesSql.toAbsolutePath().normalize().toString(), JsonReader.getString(json, "servicesSql"));
+        assertEquals("127.0.0.1", JsonReader.getString(json, "host"));
+        assertTrue(JsonReader.getLong(json, "port") > 0);
+        assertTrue(JsonReader.getString(json, "serviceBaseUrl").contains("/services"));
+        assertTrue(JsonReader.getString(json, "healthUrl").contains("/api/v1/health"));
     }
 
     @Test
@@ -196,5 +267,9 @@ class SpecDrivenCliMainTest {
                 - [m99-test.md](milestones/m99-test.md) - M99 - Test Milestone - proposed
                 """;
         Files.writeString(root.resolve(".spec-driven/roadmap/INDEX.md"), index, StandardCharsets.UTF_8);
+    }
+
+    private String isolatedJdbcUrl() {
+        return "jdbc:lealone:embed:runtime_" + Long.toHexString(System.nanoTime());
     }
 }

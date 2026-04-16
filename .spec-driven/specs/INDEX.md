@@ -97,3 +97,4 @@
 ## Release (发布准备)
 
 - [release-preparation.md](release/release-preparation.md) - Repository release overview and Maven release metadata
+- [service-runtime-packaging.md](release/service-runtime-packaging.md) - Java service application runtime packaging and startup entrypoint

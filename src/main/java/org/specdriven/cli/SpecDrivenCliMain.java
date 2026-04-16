@@ -1,6 +1,9 @@
 package org.specdriven.cli;
 
 import org.specdriven.agent.json.JsonWriter;
+import org.specdriven.agent.http.ServiceRuntimeLauncher;
+import org.specdriven.agent.http.ServiceRuntimeLauncher.ServiceRuntimeException;
+import org.specdriven.sdk.PlatformConfig;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -147,6 +150,7 @@ public final class SpecDrivenCliMain {
             case "init" -> init(args);
             case "run-maintenance" -> runMaintenance(args);
             case "migrate" -> migrate(args);
+            case "service-runtime" -> serviceRuntime(args);
             case "list" -> list();
             default -> {
                 printUsage();
@@ -157,7 +161,87 @@ public final class SpecDrivenCliMain {
 
     private void printUsage() {
         err.println("Usage: spec-driven <command> [args]");
-        err.println("Commands: propose, modify, apply, verify, verify-roadmap, roadmap-status, archive, cancel, init, run-maintenance, migrate, list");
+        err.println("Commands: propose, modify, apply, verify, verify-roadmap, roadmap-status, archive, cancel, init, run-maintenance, migrate, service-runtime, list");
+    }
+
+    private int serviceRuntime(List<String> args) {
+        ServiceRuntimeArgs parsed;
+        try {
+            parsed = parseServiceRuntimeArgs(args);
+        } catch (IllegalArgumentException e) {
+            out.println(ServiceRuntimeLauncher.failureJson("invalid_config", e.getMessage()));
+            return 1;
+        }
+
+        ServiceRuntimeLauncher launcher = new ServiceRuntimeLauncher();
+        try (ServiceRuntimeLauncher.RuntimeHandle handle = launcher.start(parsed.toOptions())) {
+            out.println(handle.startupResult().toJson());
+            if (!parsed.exitAfterStart()) {
+                handle.await();
+            }
+            return 0;
+        } catch (ServiceRuntimeException e) {
+            out.println(ServiceRuntimeLauncher.failureJson(e.errorCode(), safeMessage(e)));
+            return 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            out.println(ServiceRuntimeLauncher.failureJson("interrupted", "Service runtime interrupted"));
+            return 1;
+        }
+    }
+
+    private ServiceRuntimeArgs parseServiceRuntimeArgs(List<String> args) {
+        Path servicesSql = null;
+        String host = "127.0.0.1";
+        int port = 8080;
+        PlatformConfig defaults = PlatformConfig.defaults();
+        String jdbcUrl = defaults.jdbcUrl();
+        Path compileCachePath = defaults.compileCachePath();
+        Set<String> apiKeys = new LinkedHashSet<>();
+        boolean exitAfterStart = false;
+
+        for (int i = 0; i < args.size(); i++) {
+            String arg = args.get(i);
+            switch (arg) {
+                case "--services-sql" -> servicesSql = Path.of(requireOptionValue(args, ++i, arg));
+                case "--host" -> host = requireOptionValue(args, ++i, arg);
+                case "--port" -> port = parsePort(requireOptionValue(args, ++i, arg));
+                case "--jdbc-url" -> jdbcUrl = requireOptionValue(args, ++i, arg);
+                case "--compile-cache-path" -> compileCachePath = Path.of(requireOptionValue(args, ++i, arg));
+                case "--api-key" -> apiKeys.add(requireOptionValue(args, ++i, arg));
+                case "--exit-after-start" -> exitAfterStart = true;
+                default -> throw new IllegalArgumentException("Unknown service-runtime option: " + arg);
+            }
+        }
+
+        if (servicesSql == null) {
+            throw new IllegalArgumentException("Missing required option: --services-sql");
+        }
+        return new ServiceRuntimeArgs(servicesSql, host, port, jdbcUrl, compileCachePath,
+                Set.copyOf(apiKeys), exitAfterStart);
+    }
+
+    private String requireOptionValue(List<String> args, int index, String option) {
+        if (index >= args.size()) {
+            throw new IllegalArgumentException("Missing value for " + option);
+        }
+        String value = args.get(index);
+        if (value == null || value.isBlank() || value.startsWith("--")) {
+            throw new IllegalArgumentException("Missing value for " + option);
+        }
+        return value;
+    }
+
+    private int parsePort(String raw) {
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid --port: " + raw);
+        }
+    }
+
+    private String safeMessage(Exception e) {
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 
     private int propose(List<String> args) {
@@ -1027,7 +1111,7 @@ public final class SpecDrivenCliMain {
         if (Pattern.compile("`[^`]+`").matcher(task).find()) {
             return true;
         }
-        return Pattern.compile("\\b(?:npm|pnpm|yarn|bun|node|bash|sh|pytest|jest|vitest|go|cargo|make|uv|poetry|mvn|java)\\b",
+        return Pattern.compile("\\b(?:npm|pnpm|yarn|bun|node|bash|sh|pytest|jest|vitest|go|cargo|make|uv|poetry|mvnd|java)\\b",
                 Pattern.CASE_INSENSITIVE).matcher(task).find();
     }
 
@@ -1984,6 +2068,26 @@ public final class SpecDrivenCliMain {
     }
 
     private record ShellCommandResult(int status, String stdout, String stderr) {
+    }
+
+    private record ServiceRuntimeArgs(
+            Path servicesSql,
+            String host,
+            int port,
+            String jdbcUrl,
+            Path compileCachePath,
+            Set<String> apiKeys,
+            boolean exitAfterStart) {
+
+        ServiceRuntimeLauncher.Options toOptions() {
+            return new ServiceRuntimeLauncher.Options(
+                    servicesSql,
+                    host,
+                    port,
+                    jdbcUrl,
+                    compileCachePath,
+                    apiKeys);
+        }
     }
 
     private record CheckResult(MaintenanceCheck check, ShellCommandResult result) {
