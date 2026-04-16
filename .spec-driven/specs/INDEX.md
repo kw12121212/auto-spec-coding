@@ -93,6 +93,7 @@
 ## Workflow (工作流)
 
 - [workflow-runtime.md](workflow/workflow-runtime.md) - Workflow declaration, lifecycle state, result, and audit visibility contract
+- [workflow-step-composition.md](workflow/workflow-step-composition.md) - WorkflowStep, WorkflowStepExecutor, WorkflowStepResult — ordered step composition and step audit events
 
 ## ORM (ORM 采用准则)
 

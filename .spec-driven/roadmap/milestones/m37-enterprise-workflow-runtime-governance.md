@@ -31,7 +31,7 @@
 
 ## Planned Changes
 - `workflow-runtime-contract` - Declared: complete - 定义工作流的声明、启动、状态查询、结果回传与状态流转契约，建立面向业务流程的最小运行面
-- `workflow-service-composition` - Declared: planned - 支持在单个工作流中组合执行 service、tool 与 agent 步骤，明确步骤间输入输出和失败传播语义
+- `workflow-service-composition` - Declared: complete - 支持在单个工作流中组合执行 service、tool 与 agent 步骤，明确步骤间输入输出和失败传播语义
 - `workflow-agent-human-bridge` - Declared: planned - 将现有 question resolution、mobile reply 和 interactive session 能力接入工作流暂停、提问、恢复链路
 - `workflow-recovery-audit` - Declared: planned - 提供工作流级审计、失败诊断、检查点恢复与受支持错误重试能力
 
@@ -59,4 +59,5 @@
 - 本里程碑对应 Lealone README 里 `create workflow` 所代表的增强方向，但会优先落在本项目现有能力已经证明可行的范围内：service、agent、人机协作、审计、恢复
 - 这里的 workflow 是业务应用运行时，不是 spec-driven change 生命周期本身；两者可共享基础设施，但不应共享同一套语义边界
 - 若后续需要多节点调度、租户隔离或复杂流程建模，应另开专门 milestone，而不是继续扩张本里程碑
+
 

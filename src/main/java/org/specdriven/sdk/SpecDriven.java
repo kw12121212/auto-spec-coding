@@ -52,7 +52,7 @@ public class SpecDriven implements AutoCloseable {
         this.deliveryModeOverride = deliveryModeOverride;
         this.channelRegistry = channelRegistry;
         this.channelConfigs = channelConfigs;
-        this.workflowRuntime = new WorkflowRuntime(eventBus);
+        this.workflowRuntime = new WorkflowRuntime(eventBus, List.of());
     }
 
     /**
@@ -96,10 +96,24 @@ public class SpecDriven implements AutoCloseable {
     }
 
     /**
+     * Registers a workflow with an ordered step list through the supported domain declaration path.
+     */
+    public void declareWorkflow(String workflowName, List<WorkflowStep> steps) {
+        workflowRuntime.declareWorkflow(workflowName, steps);
+    }
+
+    /**
      * Registers a workflow through the supported SQL declaration path.
      */
     public void declareWorkflowSql(String sql) {
         workflowRuntime.declareWorkflowSql(sql);
+    }
+
+    /**
+     * Registers a workflow with an ordered step list through the supported SQL declaration path.
+     */
+    public void declareWorkflowSql(String sql, List<WorkflowStep> steps) {
+        workflowRuntime.declareWorkflowSql(sql, steps);
     }
 
     /**

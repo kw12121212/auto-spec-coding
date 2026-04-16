@@ -40,7 +40,7 @@
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <lealone.version>8.0.0-SNAPSHOT</lealone.version>
-        <lealone.upstream.commit>16259183819d97b42210df9be6763f5a387fe79e</lealone.upstream.commit>
+        <lealone.upstream.commit>53a3f65f581373c5609d3d1837c300177657555b</lealone.upstream.commit>
         <junit.version>5.11.4</junit.version>
     </properties>
 
