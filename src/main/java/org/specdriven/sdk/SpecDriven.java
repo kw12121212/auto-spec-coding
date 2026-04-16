@@ -5,6 +5,7 @@ import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -64,6 +65,13 @@ public class SpecDriven implements AutoCloseable {
      */
     public LealonePlatform platform() {
         return platform;
+    }
+
+    /**
+     * Applies a supported {@code services.sql} bootstrap entry through the assembled platform.
+     */
+    public LealonePlatform.ServiceApplicationBootstrapResult bootstrapServices(Path servicesSqlPath) {
+        return platform.bootstrapServices(servicesSqlPath);
     }
 
     /**

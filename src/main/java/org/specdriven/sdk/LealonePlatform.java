@@ -12,6 +12,7 @@ import org.specdriven.skill.hotload.SkillHotLoader;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -85,6 +86,43 @@ public final class LealonePlatform implements AutoCloseable {
 
     public InteractiveCapability interactive() {
         return interactive;
+    }
+
+    /**
+     * Applies a supported declarative service application entry from a readable {@code services.sql}
+     * file using this platform's assembled JDBC runtime.
+     */
+    public ServiceApplicationBootstrapResult bootstrapServices(Path servicesSqlPath) {
+        Objects.requireNonNull(servicesSqlPath, "servicesSqlPath must not be null");
+        Path normalizedPath = servicesSqlPath.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(normalizedPath)) {
+            throw new IllegalArgumentException("services.sql must reference an existing file: " + normalizedPath);
+        }
+        if (!"services.sql".equals(normalizedPath.getFileName().toString())) {
+            throw new IllegalArgumentException("bootstrap currently supports only files named services.sql: " + normalizedPath);
+        }
+
+        List<String> statements;
+        try {
+            String content = Files.readString(normalizedPath, StandardCharsets.UTF_8);
+            statements = parseSupportedBootstrapStatements(content);
+        } catch (BootstrapValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to read services.sql: " + normalizedPath, e);
+        }
+
+        int appliedStatements = 0;
+        try (Connection conn = DriverManager.getConnection(database.jdbcUrl(), "root", "");
+             Statement stmt = conn.createStatement()) {
+            for (String sql : statements) {
+                stmt.execute(sql);
+                appliedStatements++;
+            }
+            return new ServiceApplicationBootstrapResult(normalizedPath, appliedStatements, List.copyOf(statements));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to bootstrap services.sql against platform JDBC runtime", e);
+        }
     }
 
     /**
@@ -242,7 +280,68 @@ public final class LealonePlatform implements AutoCloseable {
         return SubsystemHealth.up("agent");
     }
 
+    private static List<String> parseSupportedBootstrapStatements(String content) {
+        List<String> statements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        for (String rawLine : content.replace("\r", "").split("\n")) {
+            String line = stripComment(rawLine).trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            if (current.length() > 0) {
+                current.append('\n');
+            }
+            current.append(line);
+            if (line.endsWith(";")) {
+                String statement = current.toString().trim();
+                statement = statement.substring(0, statement.length() - 1).trim();
+                validateSupportedBootstrapStatement(statement);
+                statements.add(statement);
+                current.setLength(0);
+            }
+        }
+        if (current.length() > 0) {
+            throw new BootstrapValidationException("services.sql contains an unterminated statement");
+        }
+        return List.copyOf(statements);
+    }
+
+    private static String stripComment(String line) {
+        int commentStart = line.indexOf("--");
+        if (commentStart >= 0) {
+            return line.substring(0, commentStart);
+        }
+        return line;
+    }
+
+    private static void validateSupportedBootstrapStatement(String statement) {
+        String normalized = statement.replaceAll("\\s+", " ").trim().toUpperCase();
+        if (normalized.startsWith("CREATE TABLE IF NOT EXISTS ")) {
+            return;
+        }
+        if (normalized.startsWith("CREATE SERVICE IF NOT EXISTS ")) {
+            return;
+        }
+        throw new BootstrapValidationException(
+                "Unsupported services.sql statement for first bootstrap contract: " + statement);
+    }
+
     // --- Inner types ---
+
+    public record ServiceApplicationBootstrapResult(Path sourcePath, int appliedStatements, List<String> statements) {
+
+        public ServiceApplicationBootstrapResult {
+            Objects.requireNonNull(sourcePath, "sourcePath must not be null");
+            Objects.requireNonNull(statements, "statements must not be null");
+        }
+    }
+
+    public static final class BootstrapValidationException extends IllegalArgumentException {
+
+        public BootstrapValidationException(String message) {
+            super(message);
+        }
+    }
 
     public record DatabaseCapability(String jdbcUrl) {
 

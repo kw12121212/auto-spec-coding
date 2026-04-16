@@ -1,6 +1,7 @@
 package org.specdriven.sdk;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.question.DeliveryMode;
 import org.specdriven.agent.question.LealoneQuestionStore;
 import org.specdriven.agent.question.Question;
@@ -8,11 +9,18 @@ import org.specdriven.agent.question.QuestionCategory;
 import org.specdriven.agent.question.QuestionDeliveryService;
 import org.specdriven.agent.question.QuestionStatus;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.nio.file.Path;
+import java.nio.file.Files;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class SpecDrivenTest {
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void builderReturnsNewBuilder() {
@@ -148,6 +156,36 @@ class SpecDrivenTest {
             }
         } finally {
             sdk.close();
+        }
+    }
+
+    @Test
+    void bootstrapServicesUsesAssembledPlatformJdbcRuntime() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, """
+                CREATE TABLE IF NOT EXISTS sdk_bootstrap_state (
+                    id varchar primary key
+                );
+                """);
+
+        SpecDriven sdk = SpecDriven.builder().build();
+        try {
+            LealonePlatform.ServiceApplicationBootstrapResult result = sdk.bootstrapServices(servicesSql);
+            assertEquals(1, result.appliedStatements());
+            assertEquals(servicesSql.toAbsolutePath().normalize(), result.sourcePath());
+            assertTrue(tableExists(sdk.platform().database().jdbcUrl(), "SDK_BOOTSTRAP_STATE"));
+
+            QuestionDeliveryService service = sdk.deliveryService();
+            assertNotNull(service);
+        } finally {
+            sdk.close();
+        }
+    }
+
+    private boolean tableExists(String jdbcUrl, String tableName) throws Exception {
+        try (Connection conn = DriverManager.getConnection(jdbcUrl, "root", "");
+             ResultSet rs = conn.getMetaData().getTables(null, null, tableName, null)) {
+            return rs.next();
         }
     }
 }
