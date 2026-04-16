@@ -36,6 +36,8 @@ import java.util.*;
  */
 public class SdkBuilder {
 
+    private static final String ENVIRONMENT_PROFILES_PREFIX = "environmentProfiles";
+
     private Path configPath;
     private LlmProviderRegistry providerRegistry;
     private final List<Tool> tools = new ArrayList<>();
@@ -49,6 +51,7 @@ public class SdkBuilder {
     private final MobileChannelRegistry channelRegistry = new MobileChannelRegistry();
     private List<MobileChannelConfig> channelConfigs = Collections.emptyList();
     private PlatformConfig platformConfig;
+    private String environmentProfile;
 
     SdkBuilder() {}
 
@@ -143,6 +146,14 @@ public class SdkBuilder {
         return this;
     }
 
+    /**
+     * Selects an explicit environment profile name from the project YAML profile set.
+     */
+    public SdkBuilder environmentProfile(String profileName) {
+        this.environmentProfile = profileName;
+        return this;
+    }
+
     public SpecDriven build() {
         try {
             AssembledComponents assembled = assembleComponents();
@@ -190,16 +201,20 @@ public class SdkBuilder {
         LlmProviderRegistry sdkProviderRegistry = this.providerRegistry;
         SimpleEventBus eventBus = new SimpleEventBus();
         Optional<RuntimeLlmConfigStore> runtimeConfigStore = tryCreateRuntimeConfigStore(effectivePlatform.jdbcUrl());
+        Config config = null;
 
-        if (configPath != null && registry == null) {
-            Config config = ConfigLoader.load(configPath, true);
+        if (configPath != null) {
+            config = ConfigLoader.load(configPath, true);
             configMap = config.asMap();
+            configMap = applyEnvironmentProfileSelection(config, configMap);
 
             Map<String, String> resolvedMap = tryResolveVault(configMap);
             if (resolvedMap != null) {
                 configMap = resolvedMap;
             }
+        }
 
+        if (config != null && registry == null) {
             Map<String, LlmProviderFactory> factories = new HashMap<>();
             factories.put("openai", new OpenAiProviderFactory());
             factories.put("claude", new ClaudeProviderFactory());
@@ -232,6 +247,31 @@ public class SdkBuilder {
 
         return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
                 effectiveSystemPrompt);
+    }
+
+    private Map<String, String> applyEnvironmentProfileSelection(Config config, Map<String, String> configMap) {
+        String defaultProfile = config.getString(ENVIRONMENT_PROFILES_PREFIX + ".default", null);
+        if (defaultProfile == null) {
+            return configMap;
+        }
+        String selectedProfile = environmentProfile != null ? environmentProfile : defaultProfile;
+        String selectedPrefix = ENVIRONMENT_PROFILES_PREFIX + ".profiles." + selectedProfile;
+        Config selectedConfig;
+        try {
+            selectedConfig = config.getSection(selectedPrefix);
+        } catch (ConfigException e) {
+            String reason = environmentProfile != null
+                    ? "Unknown requested environment profile '" + selectedProfile + "'"
+                    : "Default environment profile '" + selectedProfile + "' does not match any declared profile";
+            throw new ConfigException(reason + " in " + config, e);
+        }
+        Map<String, String> selectedValues = selectedConfig.asMap();
+        Map<String, String> enriched = new LinkedHashMap<>(configMap);
+        enriched.put(ENVIRONMENT_PROFILES_PREFIX + ".selected", selectedProfile);
+        for (Map.Entry<String, String> entry : selectedValues.entrySet()) {
+            enriched.put(ENVIRONMENT_PROFILES_PREFIX + ".selected." + entry.getKey(), entry.getValue());
+        }
+        return Map.copyOf(enriched);
     }
 
     private PlatformConfig deriveEffectivePlatformConfig() {

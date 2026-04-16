@@ -174,6 +174,79 @@ class SdkBuilderTest {
         platform.close();
     }
 
+    @Test
+    void buildUsesDefaultEnvironmentProfileWhenNoneRequested() throws Exception {
+        Path configPath = tempDir.resolve("profiles.yaml");
+        Files.writeString(configPath, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                    ci:
+                      python:
+                        pythonHome: /opt/python-3.12
+                """);
+
+        try (SpecDriven sdk = SpecDriven.builder()
+                .config(configPath)
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .build()) {
+            assertEquals("dev", sdk.configMap().get("environmentProfiles.selected"));
+            assertEquals("/opt/jdk-25", sdk.configMap().get("environmentProfiles.selected.jdk.javaHome"));
+            assertNull(sdk.configMap().get("environmentProfiles.selected.python.pythonHome"));
+        }
+    }
+
+    @Test
+    void explicitEnvironmentProfileOverridesDefault() throws Exception {
+        Path configPath = tempDir.resolve("profiles.yaml");
+        Files.writeString(configPath, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                    ci:
+                      python:
+                        pythonHome: /opt/python-3.12
+                """);
+
+        try (SpecDriven sdk = SpecDriven.builder()
+                .config(configPath)
+                .environmentProfile("ci")
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .build()) {
+            assertEquals("ci", sdk.configMap().get("environmentProfiles.selected"));
+            assertEquals("/opt/python-3.12", sdk.configMap().get("environmentProfiles.selected.python.pythonHome"));
+            assertNull(sdk.configMap().get("environmentProfiles.selected.jdk.javaHome"));
+        }
+    }
+
+    @Test
+    void unknownExplicitEnvironmentProfileFailsBuild() throws Exception {
+        Path configPath = tempDir.resolve("profiles.yaml");
+        Files.writeString(configPath, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                """);
+
+        SdkException ex = assertThrows(SdkException.class, () -> SpecDriven.builder()
+                .config(configPath)
+                .environmentProfile("ci")
+                .providerRegistry(new DefaultLlmProviderRegistry())
+                .build());
+
+        assertInstanceOf(SdkConfigException.class, ex);
+        assertTrue(ex.getMessage().contains("Failed to load config"));
+    }
+
     /** Minimal Tool implementation for testing. */
     static class DummyTool implements Tool {
         private final String name;

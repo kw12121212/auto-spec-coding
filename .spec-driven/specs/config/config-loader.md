@@ -4,10 +4,13 @@ mapping:
     - src/main/java/org/specdriven/agent/config/Config.java
     - src/main/java/org/specdriven/agent/config/ConfigException.java
     - src/main/java/org/specdriven/agent/config/ConfigLoader.java
+    - src/main/java/org/specdriven/sdk/SdkBuilder.java
+    - src/main/java/org/specdriven/sdk/SpecDriven.java
     - src/main/java/org/specdriven/agent/vault/VaultFactory.java
     - src/main/java/org/specdriven/agent/vault/VaultResolver.java
   tests:
     - src/test/java/org/specdriven/agent/config/ConfigLoaderTest.java
+    - src/test/java/org/specdriven/sdk/SdkBuilderTest.java
     - src/test/java/org/specdriven/agent/config/ConfigLoaderVaultIntegrationTest.java
     - src/test/java/org/specdriven/agent/vault/VaultFactoryTest.java
 ---
@@ -23,6 +26,18 @@ mapping:
 - MUST throw `ConfigException` if the source file does not exist or cannot be read
 - MUST throw `ConfigException` if the YAML content is malformed
 
+#### Scenario: project YAML profile section loads through existing config path
+- GIVEN a readable project YAML file that declares a supported `environmentProfiles` section
+- WHEN `ConfigLoader.load(Path)` or `ConfigLoader.loadClasspath(String)` loads that file
+- THEN loading MUST preserve the declared profile configuration for later supported selection
+- AND loading MUST continue to expose the rest of the YAML configuration through the existing config facade
+
+#### Scenario: malformed profile declaration fails as config error
+- GIVEN a readable project YAML file whose `environmentProfiles` section is structurally invalid for the supported profile contract
+- WHEN `ConfigLoader.load(Path)` or `ConfigLoader.loadClasspath(String)` loads that file through a supported repository configuration path
+- THEN loading or the immediately dependent config assembly path MUST fail explicitly
+- AND the failure MUST be surfaced as a configuration error
+
 ### Requirement: Config typed access
 
 - MUST provide `getString(String key)` returning `String` or throwing `ConfigException` for missing keys
@@ -31,6 +46,12 @@ mapping:
 - MUST provide `getBoolean(String key, boolean defaultValue)` parsing string values to boolean
 - MUST support dot-notation keys for nested access (e.g., `"llm.provider"` resolves `{llm: {provider: x}}`)
 - MUST be immutable — no setter methods
+
+#### Scenario: nested environment profile keys remain addressable
+- GIVEN a loaded project YAML config that declares a named environment profile under the supported profile section
+- WHEN a supported repository configuration path reads nested profile values through the config facade
+- THEN nested profile values MUST remain addressable through the repository's supported nested config access model
+- AND this change MUST NOT require callers to bypass the config facade to inspect declared profile data
 
 ### Requirement: Config section access
 
@@ -41,6 +62,12 @@ mapping:
 
 - MUST provide `asMap()` returning `Map<String, String>` with all nested keys flattened to dot-notation
 - The returned map MUST be compatible with `Agent.init(Map<String, String>)`
+
+#### Scenario: environment profile keys participate in flattening
+- GIVEN a loaded project YAML config that declares a supported `environmentProfiles` section
+- WHEN `asMap()` is called on the loaded config
+- THEN the flattened output MUST include the declared profile keys using the same dot-notation strategy as other nested configuration keys
+- AND existing non-profile flattening behavior MUST remain unchanged
 
 ### Requirement: Environment variable substitution
 

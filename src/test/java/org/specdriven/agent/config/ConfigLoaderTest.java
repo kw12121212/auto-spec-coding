@@ -155,6 +155,66 @@ class ConfigLoaderTest {
         assertEquals("${PATH}", config.getString("key"));
     }
 
+    @Test
+    void environmentProfiles_preserveNestedSelections(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("profiles.yaml");
+        Files.writeString(file, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                      node:
+                        nodeHome: /opt/node-22
+                    ci:
+                      go:
+                        goRoot: /opt/go-1.23
+                """);
+
+        Config config = ConfigLoader.load(file);
+
+        assertEquals("dev", config.getString("environmentProfiles.default"));
+        assertEquals("/opt/jdk-25", config.getString("environmentProfiles.profiles.dev.jdk.javaHome"));
+        assertEquals("/opt/node-22", config.getString("environmentProfiles.profiles.dev.node.nodeHome"));
+        assertEquals("/opt/go-1.23", config.getString("environmentProfiles.profiles.ci.go.goRoot"));
+    }
+
+    @Test
+    void environmentProfiles_missingDefaultReference_throwsConfigException(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("profiles.yaml");
+        Files.writeString(file, """
+                environmentProfiles:
+                  default: prod
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome: /opt/jdk-25
+                """);
+
+        ConfigException ex = assertThrows(ConfigException.class, () -> ConfigLoader.load(file));
+
+        assertTrue(ex.getMessage().contains("Default environment profile 'prod'"));
+    }
+
+    @Test
+    void environmentProfiles_invalidFieldValue_throwsConfigException(@TempDir Path tmp) throws IOException {
+        Path file = tmp.resolve("profiles.yaml");
+        Files.writeString(file, """
+                environmentProfiles:
+                  default: dev
+                  profiles:
+                    dev:
+                      jdk:
+                        javaHome:
+                          nested: invalid
+                """);
+
+        ConfigException ex = assertThrows(ConfigException.class, () -> ConfigLoader.load(file));
+
+        assertTrue(ex.getMessage().contains("environmentProfiles.profiles.dev.jdk.javaHome"));
+    }
+
     // --- Immutability ---
 
     @Test

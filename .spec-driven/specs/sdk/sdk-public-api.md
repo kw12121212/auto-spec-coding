@@ -53,6 +53,12 @@ The system MUST provide `SpecDriven` as the primary public agent facade in `org.
 - WHEN `SpecDriven.builder().config(Path.of("config/agent.yaml")).build()` is called
 - THEN it MUST load the config and auto-assemble all components (LLM providers, vault, permissions)
 
+#### Scenario: assembled SDK exposes effective selected environment profile
+- GIVEN a `SpecDriven` instance built from project YAML that declares supported environment profiles
+- WHEN the SDK resolves an effective environment profile during assembly
+- THEN supported callers MUST be able to inspect the assembled flattened configuration
+- AND that configuration MUST identify the selected environment profile name
+
 ### Requirement: Public LealonePlatform entry point
 
 The SDK public surface MUST additionally expose `LealonePlatform` as a public platform-level entry point for callers that need direct access to assembled Lealone-centered capabilities beyond the agent facade.
@@ -92,6 +98,30 @@ The system MUST provide a `SdkBuilder` in `org.specdriven.sdk` for configuring S
 - GIVEN a builder with both `.config(Path)` and `.providerRegistry(registry)` set
 - WHEN `.build()` is invoked
 - THEN the manually provided registry MUST take precedence over auto-assembled providers
+
+#### Scenario: environment profile default is resolved from project config
+- GIVEN a builder with `.config(Path)` referencing a project YAML file that declares supported environment profiles
+- AND no explicit environment profile is requested
+- WHEN `.build()` is invoked
+- THEN the SDK assembly MUST resolve the declared default profile as the effective profile
+
+#### Scenario: explicit environment profile overrides project default
+- GIVEN a builder with `.config(Path)` referencing a project YAML file that declares supported environment profiles
+- AND a supported caller explicitly requests a declared environment profile name
+- WHEN `.build()` is invoked
+- THEN SDK assembly MUST use the explicitly requested environment profile instead of the project default
+
+#### Scenario: manual provider registry does not bypass profile config resolution
+- GIVEN a builder with both `.config(Path)` and `.providerRegistry(registry)` set
+- AND the referenced project YAML file declares supported environment profiles
+- WHEN `.build()` is invoked
+- THEN the manually provided registry MUST still take precedence over auto-assembled providers
+- AND the project YAML environment profile contract MUST still be loaded and validated
+
+#### Scenario: unknown explicit environment profile fails build
+- GIVEN a builder with `.config(Path)` referencing a project YAML file that declares supported environment profiles
+- WHEN a supported caller explicitly requests an undeclared environment profile name and `.build()` is invoked
+- THEN the build MUST fail explicitly with a configuration error
 
 #### Scenario: Register tools
 - GIVEN a builder

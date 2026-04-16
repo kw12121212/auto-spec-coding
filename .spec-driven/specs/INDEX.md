@@ -67,6 +67,7 @@
 ## Config (配置管理)
 
 - [config-loader.md](config/config-loader.md) - ConfigLoader, Config, ConfigException
+- [environment-profile.md](config/environment-profile.md) - Project YAML environment profiles and effective profile selection
 
 ## Skill (Skill 系统)
 

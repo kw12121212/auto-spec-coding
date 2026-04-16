@@ -189,6 +189,13 @@ public class SpecDriven implements AutoCloseable {
     }
 
     /**
+     * Returns the flattened assembled configuration visible to this SDK instance.
+     */
+    public Map<String, String> configMap() {
+        return Map.copyOf(configMap);
+    }
+
+    /**
      * Returns the question delivery service, initializing lazily on first access.
      * Returns null if initialization fails (e.g., Lealone not available).
      */
