@@ -48,6 +48,7 @@ public class SdkBuilder {
     private DeliveryMode deliveryModeOverride;
     private final MobileChannelRegistry channelRegistry = new MobileChannelRegistry();
     private List<MobileChannelConfig> channelConfigs = Collections.emptyList();
+    private PlatformConfig platformConfig;
 
     SdkBuilder() {}
 
@@ -132,6 +133,16 @@ public class SdkBuilder {
         return this;
     }
 
+    /**
+     * Sets the platform configuration (JDBC URL, compile cache path).
+     * When not set, {@link PlatformConfig#defaults()} is used, or values are derived
+     * from {@code platform.*} keys in the YAML config file if one is loaded.
+     */
+    public SdkBuilder platformConfig(PlatformConfig config) {
+        this.platformConfig = config;
+        return this;
+    }
+
     public SpecDriven build() {
         try {
             AssembledComponents assembled = assembleComponents();
@@ -172,11 +183,13 @@ public class SdkBuilder {
     }
 
     private AssembledComponents assembleComponents() {
+        PlatformConfig effectivePlatform = deriveEffectivePlatformConfig();
+
         Map<String, String> configMap = Collections.emptyMap();
         LlmProviderRegistry registry = this.providerRegistry;
         LlmProviderRegistry sdkProviderRegistry = this.providerRegistry;
         SimpleEventBus eventBus = new SimpleEventBus();
-        Optional<RuntimeLlmConfigStore> runtimeConfigStore = tryCreateRuntimeConfigStore();
+        Optional<RuntimeLlmConfigStore> runtimeConfigStore = tryCreateRuntimeConfigStore(effectivePlatform.jdbcUrl());
 
         if (configPath != null && registry == null) {
             Config config = ConfigLoader.load(configPath, true);
@@ -203,20 +216,37 @@ public class SdkBuilder {
 
         String effectiveSystemPrompt = systemPrompt != null ? systemPrompt : sdkConfig.systemPrompt();
         SkillSourceCompiler sourceCompiler = new LealoneSkillSourceCompiler();
-        ClassCacheManager classCacheManager = new LealoneClassCacheManager(
-                Path.of(System.getProperty("java.io.tmpdir"), "specdriven-skill-cache"));
+        ClassCacheManager classCacheManager = new LealoneClassCacheManager(effectivePlatform.compileCachePath());
         SkillHotLoader hotLoader = new LealoneSkillHotLoader(sourceCompiler, classCacheManager, false);
+        String jdbcUrl = effectivePlatform.jdbcUrl();
         InteractiveSessionFactory sessionFactory = sessionId -> new org.specdriven.agent.interactive.LealoneAgentAdapter(
-                LealonePlatform.DEFAULT_JDBC_URL);
+                jdbcUrl);
 
         LealonePlatform platform = new LealonePlatform(
-                new LealonePlatform.DatabaseCapability(LealonePlatform.DEFAULT_JDBC_URL),
+                new LealonePlatform.DatabaseCapability(jdbcUrl),
                 new LealonePlatform.LlmCapability(registry, runtimeConfigStore),
                 new LealonePlatform.CompilerCapability(sourceCompiler, classCacheManager, hotLoader),
                 new LealonePlatform.InteractiveCapability(sessionFactory));
 
         return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
                 effectiveSystemPrompt);
+    }
+
+    private PlatformConfig deriveEffectivePlatformConfig() {
+        if (platformConfig != null) return platformConfig;
+        if (configPath != null) {
+            try {
+                Config config = ConfigLoader.load(configPath, false);
+                PlatformConfig defaults = PlatformConfig.defaults();
+                String jdbcUrl = config.getString("platform.jdbcUrl", defaults.jdbcUrl());
+                String cachePathStr = config.getString("platform.compileCachePath",
+                        defaults.compileCachePath().toString());
+                return new PlatformConfig(jdbcUrl, Path.of(cachePathStr));
+            } catch (Exception ignored) {
+                // Config file may not exist yet or may not contain platform keys — fall through
+            }
+        }
+        return PlatformConfig.defaults();
     }
 
     private void wireGlobalListeners(EventBus eventBus) {
@@ -232,9 +262,9 @@ public class SdkBuilder {
         }
     }
 
-    private Optional<RuntimeLlmConfigStore> tryCreateRuntimeConfigStore() {
+    private Optional<RuntimeLlmConfigStore> tryCreateRuntimeConfigStore(String jdbcUrl) {
         try {
-            return Optional.of(new LealoneRuntimeLlmConfigStore(LealonePlatform.DEFAULT_JDBC_URL));
+            return Optional.of(new LealoneRuntimeLlmConfigStore(jdbcUrl));
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }

@@ -81,4 +81,36 @@ class LealonePlatformTest {
             platform.close();
         });
     }
+
+    @Test
+    void startCompletesWithoutErrorAndIsIdempotent() {
+        LealonePlatform platform = LealonePlatform.builder().buildPlatform();
+
+        assertDoesNotThrow(() -> {
+            platform.start();
+            platform.start();
+        });
+        platform.close();
+    }
+
+    @Test
+    void stopCompletesWithoutErrorAndIsSafeAfterClose() {
+        LealonePlatform platform = LealonePlatform.builder().buildPlatform();
+
+        assertDoesNotThrow(() -> {
+            platform.close();
+            platform.stop();
+        });
+    }
+
+    @Test
+    void closeDelegatesToStopSoSubsequentStopIsIdempotent() {
+        LealonePlatform platform = LealonePlatform.builder().buildPlatform();
+
+        assertDoesNotThrow(() -> {
+            platform.close();
+            platform.stop();
+            platform.stop();
+        });
+    }
 }

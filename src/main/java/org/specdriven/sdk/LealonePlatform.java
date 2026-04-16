@@ -9,6 +9,7 @@ import org.specdriven.skill.hotload.SkillHotLoader;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Public platform-level entry point for assembled Lealone-centered capabilities.
@@ -21,6 +22,8 @@ public final class LealonePlatform implements AutoCloseable {
     private final LlmCapability llm;
     private final CompilerCapability compiler;
     private final InteractiveCapability interactive;
+    private final AtomicBoolean started = new AtomicBoolean(false);
+    private final AtomicBoolean stopped = new AtomicBoolean(false);
 
     LealonePlatform(
             DatabaseCapability database,
@@ -56,8 +59,22 @@ public final class LealonePlatform implements AutoCloseable {
         return interactive;
     }
 
-    @Override
-    public void close() {
+    /**
+     * Records the platform as running. Safe to call multiple times (idempotent).
+     */
+    public void start() {
+        started.compareAndSet(false, true);
+    }
+
+    /**
+     * Tears down all capability domains in reverse dependency order with per-subsystem
+     * exception suppression. Safe to call multiple times (idempotent).
+     */
+    public void stop() {
+        if (!stopped.compareAndSet(false, true)) return;
+        // Interactive (no explicit teardown needed beyond session GC)
+        // Compiler (no explicit teardown needed)
+        // LLM
         try {
             llm.providerRegistry().close();
         } catch (Exception ignored) {
@@ -68,6 +85,12 @@ public final class LealonePlatform implements AutoCloseable {
             } catch (Exception ignored) {
             }
         });
+        // DB (no explicit teardown needed for embedded Lealone)
+    }
+
+    @Override
+    public void close() {
+        stop();
     }
 
     public record DatabaseCapability(String jdbcUrl) {

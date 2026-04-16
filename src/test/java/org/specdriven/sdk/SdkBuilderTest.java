@@ -139,6 +139,41 @@ class SdkBuilderTest {
         sdk.close();
     }
 
+    @Test
+    void platformConfigCustomJdbcUrlIsReflectedInDatabaseCapability() {
+        PlatformConfig config = new PlatformConfig("jdbc:lealone:embed:custom_db",
+                PlatformConfig.defaults().compileCachePath());
+
+        LealonePlatform platform = SpecDriven.builder()
+                .platformConfig(config)
+                .buildPlatform();
+
+        assertEquals("jdbc:lealone:embed:custom_db", platform.database().jdbcUrl());
+        platform.close();
+    }
+
+    @Test
+    void platformWithoutExplicitConfigUsesDefaultJdbcUrl() {
+        LealonePlatform platform = SpecDriven.builder().buildPlatform();
+
+        assertEquals(PlatformConfig.defaults().jdbcUrl(), platform.database().jdbcUrl());
+        platform.close();
+    }
+
+    @Test
+    void platformConfigCustomCompileCachePathIsUsedByClassCacheManager() throws Exception {
+        Path customCacheDir = tempDir.resolve("custom-cache");
+        PlatformConfig config = new PlatformConfig(PlatformConfig.defaults().jdbcUrl(), customCacheDir);
+
+        LealonePlatform platform = SpecDriven.builder()
+                .platformConfig(config)
+                .buildPlatform();
+
+        platform.compiler().classCacheManager().resolveClassDir("test-skill", "abc123");
+        assertTrue(Files.exists(customCacheDir.resolve("test-skill").resolve("abc123")));
+        platform.close();
+    }
+
     /** Minimal Tool implementation for testing. */
     static class DummyTool implements Tool {
         private final String name;
