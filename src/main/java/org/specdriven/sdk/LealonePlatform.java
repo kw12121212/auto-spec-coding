@@ -87,7 +87,7 @@ public final class LealonePlatform implements AutoCloseable {
             InteractiveCapability interactive,
             EventBus eventBus) {
         this(database, llm, compiler, interactive, new SandlockCapability(
-                new SystemSandlockRuntime(), Map.of(), null), eventBus);
+                new SystemSandlockRuntime(), Map.of(), null, eventBus), eventBus);
     }
 
     /**
@@ -215,11 +215,12 @@ public final class LealonePlatform implements AutoCloseable {
      */
     public PlatformHealth checkHealth() {
         long start = System.currentTimeMillis();
-        List<SubsystemHealth> subsystems = new ArrayList<>(4);
+        List<SubsystemHealth> subsystems = new ArrayList<>(5);
         subsystems.add(probeDb());
         subsystems.add(probeLlm());
         subsystems.add(probeCompiler());
         subsystems.add(probeAgent());
+        subsystems.add(probeSandlock());
         long probedAt = System.currentTimeMillis();
         PlatformHealth health = PlatformHealth.of(subsystems, probedAt);
 
@@ -307,6 +308,19 @@ public final class LealonePlatform implements AutoCloseable {
     private SubsystemHealth probeAgent() {
         // InteractiveSessionFactory is assembled at build time; if we got here it's non-null
         return SubsystemHealth.up("agent");
+    }
+
+    private SubsystemHealth probeSandlock() {
+        SandlockLaunchCheck launchCheck = sandlock.launchCheck();
+        if (!launchCheck.isAvailable()) {
+            return SubsystemHealth.degraded("sandlock", launchCheck.message());
+        }
+        try {
+            sandlock.resolveForHealthCheck();
+            return SubsystemHealth.up("sandlock");
+        } catch (SandlockExecutionException e) {
+            return SubsystemHealth.degraded("sandlock", e.getMessage());
+        }
     }
 
     private static List<String> parseSupportedBootstrapStatements(String content) {
@@ -417,11 +431,17 @@ public final class LealonePlatform implements AutoCloseable {
         private final SandlockRuntime runtime;
         private final Map<String, SandlockProfile> declaredProfiles;
         private final String selectedProfile;
+        private final EventBus eventBus;
 
-        SandlockCapability(SandlockRuntime runtime, Map<String, SandlockProfile> declaredProfiles, String selectedProfile) {
+        SandlockCapability(
+                SandlockRuntime runtime,
+                Map<String, SandlockProfile> declaredProfiles,
+                String selectedProfile,
+                EventBus eventBus) {
             this.runtime = Objects.requireNonNull(runtime, "runtime must not be null");
             this.declaredProfiles = Map.copyOf(declaredProfiles == null ? Map.of() : new LinkedHashMap<>(declaredProfiles));
             this.selectedProfile = selectedProfile;
+            this.eventBus = Objects.requireNonNull(eventBus, "eventBus must not be null");
         }
 
         public SandlockExecutionResult execute(List<String> command) {
@@ -430,33 +450,53 @@ public final class LealonePlatform implements AutoCloseable {
 
         public SandlockExecutionResult execute(String requestedProfile, List<String> command) {
             List<String> normalizedCommand = normalizeCommand(command);
-            SandlockProfile resolvedProfile = resolveProfile(requestedProfile);
-            SandlockLaunchCheck check = runtime.check();
-            if (!check.isAvailable()) {
-                throw new SandlockExecutionException(check.failureCode(), check.message());
-            }
+            SandlockProfile resolvedProfile = null;
             try {
+                resolvedProfile = resolveProfile(requestedProfile);
+                SandlockLaunchCheck check = runtime.check();
+                if (!check.isAvailable()) {
+                    throw new SandlockExecutionException(check.failureCode(), check.message());
+                }
                 SandlockProcessOutput output = runtime.execute(resolvedProfile, normalizedCommand);
-                return new SandlockExecutionResult(
+                SandlockExecutionResult result = new SandlockExecutionResult(
                         resolvedProfile.name(),
                         normalizedCommand,
                         output.exitCode(),
                         output.stdout(),
                         output.stderr());
+                publishExecutionAudit("completed", requestedProfile, resolvedProfile.name(), normalizedCommand,
+                        output.exitCode(), null);
+                return result;
             } catch (SandlockExecutionException e) {
+                publishExecutionAudit("failed", requestedProfile, resolvedProfile == null ? null : resolvedProfile.name(),
+                        normalizedCommand, null, e.failureCode());
                 throw e;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new SandlockExecutionException(
+                SandlockExecutionException wrapped = new SandlockExecutionException(
                         SandlockFailureCode.LAUNCH_FAILED,
                         "Sandlock-backed execution was interrupted before completion",
                         e);
+                publishExecutionAudit("failed", requestedProfile, resolvedProfile == null ? null : resolvedProfile.name(),
+                        normalizedCommand, null, wrapped.failureCode());
+                throw wrapped;
             } catch (Exception e) {
-                throw new SandlockExecutionException(
+                SandlockExecutionException wrapped = new SandlockExecutionException(
                         SandlockFailureCode.LAUNCH_FAILED,
                         "Failed to start Sandlock-backed execution: " + e.getMessage(),
                         e);
+                publishExecutionAudit("failed", requestedProfile, resolvedProfile == null ? null : resolvedProfile.name(),
+                        normalizedCommand, null, wrapped.failureCode());
+                throw wrapped;
             }
+        }
+
+        SandlockLaunchCheck launchCheck() {
+            return runtime.check();
+        }
+
+        SandlockProfile resolveForHealthCheck() {
+            return resolveProfile(null);
         }
 
         private SandlockProfile resolveProfile(String requestedProfile) {
@@ -502,6 +542,39 @@ public final class LealonePlatform implements AutoCloseable {
                 normalized.add(part);
             }
             return List.copyOf(normalized);
+        }
+
+        private void publishExecutionAudit(
+                String outcome,
+                String requestedProfile,
+                String resolvedProfile,
+                List<String> command,
+                Integer exitCode,
+                SandlockFailureCode failureCode) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("outcome", outcome);
+            metadata.put("command", renderCommand(command));
+            if (requestedProfile != null && !requestedProfile.isBlank()) {
+                metadata.put("requestedProfile", requestedProfile);
+            }
+            if (resolvedProfile != null && !resolvedProfile.isBlank()) {
+                metadata.put("resolvedProfile", resolvedProfile);
+            }
+            if (exitCode != null) {
+                metadata.put("exitCode", exitCode);
+            }
+            if (failureCode != null) {
+                metadata.put("failureCode", failureCode.name());
+            }
+            eventBus.publish(new Event(
+                    EventType.PROFILE_EXECUTION_RECORDED,
+                    System.currentTimeMillis(),
+                    "sandlock",
+                    metadata));
+        }
+
+        private static String renderCommand(List<String> command) {
+            return String.join(" ", command);
         }
     }
 

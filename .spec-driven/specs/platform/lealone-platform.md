@@ -9,6 +9,7 @@ mapping:
     - src/main/java/org/specdriven/sdk/SubsystemStatus.java
     - src/main/java/org/specdriven/sdk/SdkBuilder.java
     - src/main/java/org/specdriven/sdk/SpecDriven.java
+    - src/main/java/org/specdriven/agent/event/EventType.java
     - src/main/java/org/specdriven/agent/loop/InteractiveSessionFactory.java
     - src/main/java/org/specdriven/agent/agent/LlmProviderRegistry.java
     - src/main/java/org/specdriven/agent/llm/RuntimeLlmConfigStore.java
@@ -303,12 +304,12 @@ The system MUST provide an immutable `PlatformMetrics` record in `org.specdriven
 
 ### Requirement: LealonePlatform health check
 
-`LealonePlatform` MUST provide a `checkHealth()` method that probes each capability domain and returns a `PlatformHealth`.
+`LealonePlatform` MUST provide a `checkHealth()` method that probes each capability domain, including Sandlock-backed profile execution readiness, and returns a `PlatformHealth`.
 
 #### Scenario: Probe succeeds for all subsystems
 - GIVEN a `LealonePlatform` with all capability domains accessible
 - WHEN `checkHealth()` is called
-- THEN it MUST return a `PlatformHealth` with four `SubsystemHealth` entries (DB, LLM, Compiler, Agent)
+- THEN it MUST return a `PlatformHealth` with five `SubsystemHealth` entries (`db`, `llm`, `compiler`, `agent`, and `sandlock`)
 - AND `overallStatus()` MUST reflect the aggregated result
 - AND `probedAt()` MUST be within a reasonable window of the current time
 
@@ -322,6 +323,20 @@ The system MUST provide an immutable `PlatformMetrics` record in `org.specdriven
 - GIVEN a `LealonePlatform` assembled with an empty LLM provider registry
 - WHEN `checkHealth()` is called
 - THEN the LLM `SubsystemHealth` MUST have status `DEGRADED`
+
+#### Scenario: unsupported Sandlock host is visible in platform health
+- GIVEN a `LealonePlatform` whose Sandlock capability cannot run on the current host
+- WHEN `checkHealth()` is called
+- THEN the returned health result MUST include subsystem `sandlock`
+- AND the `sandlock` subsystem MUST have status `DEGRADED`
+- AND its message MUST identify why Sandlock-backed execution is unavailable
+
+#### Scenario: missing or invalid selected profile is visible in platform health
+- GIVEN a `LealonePlatform` whose selected or default environment profile is missing or invalid for isolated execution
+- WHEN `checkHealth()` is called
+- THEN the returned health result MUST include subsystem `sandlock`
+- AND the `sandlock` subsystem MUST have status `DEGRADED`
+- AND its message MUST identify the invalid profile condition
 
 #### Scenario: checkHealth publishes PLATFORM_HEALTH_CHECKED event
 - GIVEN a `LealonePlatform` with an EventBus accessible

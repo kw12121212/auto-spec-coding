@@ -3,6 +3,9 @@ package org.specdriven.sdk;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.agent.DefaultLlmProviderRegistry;
+import org.specdriven.agent.event.Event;
+import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.event.SimpleEventBus;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +15,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -158,6 +162,74 @@ class LealonePlatformTest {
             assertEquals(17, result.exitCode());
             assertEquals("stdout", result.stdout());
             assertEquals("stderr", result.stderr());
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockPublishesAuditEventForSuccessfulExecution() throws Exception {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> captured = new ArrayList<>();
+        eventBus.subscribe(EventType.PROFILE_EXECUTION_RECORDED, captured::add);
+        LealonePlatform platform = new LealonePlatform(
+                new LealonePlatform.DatabaseCapability("jdbc:lealone:embed:profile_audit_success"),
+                new LealonePlatform.LlmCapability(new DefaultLlmProviderRegistry(), java.util.Optional.empty()),
+                makeMinimalCompilerCapability(),
+                makeMinimalInteractiveCapability(),
+                new LealonePlatform.SandlockCapability(
+                        new FakeSandlockRuntime(LealonePlatform.SandlockLaunchCheck.ready(),
+                                new LealonePlatform.SandlockProcessOutput(0, "ok", "")),
+                        readProfiles(),
+                        "dev",
+                        eventBus),
+                eventBus);
+
+        try {
+            platform.sandlock().execute(List.of("echo", "hello"));
+
+            assertEquals(1, captured.size());
+            Event event = captured.get(0);
+            assertEquals(EventType.PROFILE_EXECUTION_RECORDED, event.type());
+            assertEquals("completed", event.metadata().get("outcome"));
+            assertEquals("dev", event.metadata().get("resolvedProfile"));
+            assertEquals(0, event.metadata().get("exitCode"));
+            assertEquals("echo hello", event.metadata().get("command"));
+        } finally {
+            platform.close();
+        }
+    }
+
+    @Test
+    void sandlockPublishesAuditEventForFailedLaunch() throws Exception {
+        SimpleEventBus eventBus = new SimpleEventBus();
+        List<Event> captured = new ArrayList<>();
+        eventBus.subscribe(EventType.PROFILE_EXECUTION_RECORDED, captured::add);
+        LealonePlatform platform = new LealonePlatform(
+                new LealonePlatform.DatabaseCapability("jdbc:lealone:embed:profile_audit_failure"),
+                new LealonePlatform.LlmCapability(new DefaultLlmProviderRegistry(), java.util.Optional.empty()),
+                makeMinimalCompilerCapability(),
+                makeMinimalInteractiveCapability(),
+                new LealonePlatform.SandlockCapability(
+                        new FakeSandlockRuntime(
+                                LealonePlatform.SandlockLaunchCheck.unsupportedHost("unsupported host"), null),
+                        readProfiles(),
+                        "dev",
+                        eventBus),
+                eventBus);
+
+        try {
+            LealonePlatform.SandlockExecutionException error = assertThrows(
+                    LealonePlatform.SandlockExecutionException.class,
+                    () -> platform.sandlock().execute("ci", List.of("echo", "hello")));
+
+            assertEquals(LealonePlatform.SandlockFailureCode.UNSUPPORTED_HOST, error.failureCode());
+            assertEquals(1, captured.size());
+            Event event = captured.get(0);
+            assertEquals("failed", event.metadata().get("outcome"));
+            assertEquals("ci", event.metadata().get("requestedProfile"));
+            assertEquals("ci", event.metadata().get("resolvedProfile"));
+            assertEquals("UNSUPPORTED_HOST", event.metadata().get("failureCode"));
         } finally {
             platform.close();
         }
@@ -607,6 +679,52 @@ class LealonePlatformTest {
     private Path bundledEntryPath() {
         return tempDir.resolve("depends").resolve("sandlock").resolve("v0.6.0")
                 .resolve("linux-x86_64").resolve("sandlock");
+    }
+
+    private Map<String, LealonePlatform.SandlockProfile> readProfiles() {
+        return Map.of(
+                "dev", new LealonePlatform.SandlockProfile(
+                        "dev",
+                        "/work/dev-home",
+                        List.of("/opt/jdk-25/bin", "/opt/node-22/bin"),
+                        Map.of(),
+                        Map.of(
+                                "maven", "/work/dev-cache/maven",
+                                "npm", "/work/dev-cache/npm",
+                                "go", "/work/dev-cache/go",
+                                "pip", "/work/dev-cache/pip"),
+                        Map.of(
+                                "jdk", Map.of("javaHome", "/opt/jdk-25"),
+                                "node", Map.of("nodeHome", "/opt/node-22"))),
+                "ci", new LealonePlatform.SandlockProfile(
+                        "ci",
+                        "/work/ci-home",
+                        List.of("/opt/python-3.12/bin"),
+                        Map.of(),
+                        Map.of(
+                                "maven", "/work/ci-cache/maven",
+                                "npm", "/work/ci-cache/npm",
+                                "go", "/work/ci-cache/go",
+                                "pip", "/work/ci-cache/pip"),
+                        Map.of(
+                                "python", Map.of("pythonHome", "/opt/python-3.12"))));
+    }
+
+    private LealonePlatform.CompilerCapability makeMinimalCompilerCapability() {
+        Path cachePath = tempDir.resolve("audit-cache");
+        return new LealonePlatform.CompilerCapability(
+                new org.specdriven.skill.compiler.LealoneSkillSourceCompiler(),
+                new org.specdriven.skill.compiler.LealoneClassCacheManager(cachePath),
+                new org.specdriven.skill.hotload.LealoneSkillHotLoader(
+                        new org.specdriven.skill.compiler.LealoneSkillSourceCompiler(),
+                        new org.specdriven.skill.compiler.LealoneClassCacheManager(cachePath),
+                        false),
+                cachePath);
+    }
+
+    private LealonePlatform.InteractiveCapability makeMinimalInteractiveCapability() {
+        return new LealonePlatform.InteractiveCapability(
+                sessionId -> new org.specdriven.agent.interactive.LealoneAgentAdapter("jdbc:lealone:embed:agent_db"));
     }
 
     private record FakeSandlockRuntime(

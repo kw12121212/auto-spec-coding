@@ -88,6 +88,38 @@ class BashToolTest {
         assertEquals("hello", ((ToolResult.Success) result).output());
     }
 
+    @Test
+    void deniedProfiledExecutionIsRejectedBeforeLaunch() {
+        BashTool profiledTool = new BashTool((projectRoot, executionConfig, requestedProfile, command) -> {
+            fail("profile executor should not run when permission is denied");
+            return java.util.Optional.empty();
+        });
+
+        ToolResult result = profiledTool.execute(new ToolInput(Map.of(
+                "command", "echo hello",
+                "profile", "ci"
+        )), contextWithDecision("/tmp", PermissionDecision.DENY));
+
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Permission denied for bash"));
+    }
+
+    @Test
+    void confirmationRequiredProfiledExecutionIsRejectedBeforeLaunch() {
+        BashTool profiledTool = new BashTool((projectRoot, executionConfig, requestedProfile, command) -> {
+            fail("profile executor should not run when confirmation is required");
+            return java.util.Optional.empty();
+        });
+
+        ToolResult result = profiledTool.execute(new ToolInput(Map.of(
+                "command", "echo hello",
+                "profile", "ci"
+        )), contextWithDecision("/tmp", PermissionDecision.CONFIRM));
+
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("explicit confirmation"));
+    }
+
     // --- Happy path ---
 
     @Test
@@ -156,8 +188,12 @@ class BashToolTest {
     // --- Helpers ---
 
     private static ToolContext allowAllContext(String workDir) {
+        return contextWithDecision(workDir, PermissionDecision.ALLOW);
+    }
+
+    private static ToolContext contextWithDecision(String workDir, PermissionDecision decision) {
         PermissionProvider allowAll = new PermissionProvider() {
-            @Override public PermissionDecision check(Permission p, PermissionContext c) { return PermissionDecision.ALLOW; }
+            @Override public PermissionDecision check(Permission p, PermissionContext c) { return decision; }
             @Override public void grant(Permission p, PermissionContext c) {}
             @Override public void revoke(Permission p, PermissionContext c) {}
         };

@@ -10,13 +10,13 @@ import org.specdriven.agent.event.SimpleEventBus;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlatformHealthTest {
 
     private LealonePlatform platform;
-    private final List<Event> publishedEvents = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -32,17 +32,18 @@ class PlatformHealthTest {
     // --- checkHealth() ---
 
     @Test
-    void checkHealth_returnsFourSubsystems() {
+    void checkHealth_returnsFiveSubsystemsIncludingSandlock() {
         PlatformHealth health = platform.checkHealth();
 
         assertNotNull(health);
-        assertEquals(4, health.subsystems().size());
+        assertEquals(5, health.subsystems().size());
         List<String> names = health.subsystems().stream()
                 .map(SubsystemHealth::name).toList();
         assertTrue(names.contains("db"));
         assertTrue(names.contains("llm"));
         assertTrue(names.contains("compiler"));
         assertTrue(names.contains("agent"));
+        assertTrue(names.contains("sandlock"));
     }
 
     @Test
@@ -74,6 +75,56 @@ class PlatformHealthTest {
                 .filter(s -> "agent".equals(s.name()))
                 .findFirst().orElseThrow();
         assertEquals(SubsystemStatus.UP, agent.status());
+    }
+
+    @Test
+    void checkHealth_sandlockSubsystemIsDegradedWhenNoEffectiveProfileExists() {
+        PlatformHealth health = platform.checkHealth();
+
+        SubsystemHealth sandlock = health.subsystems().stream()
+                .filter(s -> "sandlock".equals(s.name()))
+                .findFirst().orElseThrow();
+        assertEquals(SubsystemStatus.DEGRADED, sandlock.status());
+        assertNotNull(sandlock.message());
+        assertTrue(sandlock.message().contains("No effective environment profile"));
+    }
+
+    @Test
+    void checkHealth_sandlockSubsystemIsUpWhenProfileAndRuntimeAreReady() {
+        SimpleEventBus bus = new SimpleEventBus();
+        LealonePlatform readyPlatform = new LealonePlatform(
+                new LealonePlatform.DatabaseCapability("jdbc:lealone:embed:health_test_ready_db"),
+                makeMinimalLlmCapability(),
+                makeMinimalCompilerCapability(),
+                makeMinimalInteractiveCapability(),
+                new LealonePlatform.SandlockCapability(
+                        new ReadySandlockRuntime(),
+                        Map.of("dev", new LealonePlatform.SandlockProfile(
+                                "dev",
+                                "/work/dev-home",
+                                java.util.List.of("/opt/jdk-25/bin"),
+                                Map.of(),
+                                Map.of(
+                                        "maven", "/work/dev-cache/maven",
+                                        "npm", "/work/dev-cache/npm",
+                                        "go", "/work/dev-cache/go",
+                                        "pip", "/work/dev-cache/pip"),
+                                Map.of())),
+                        "dev",
+                        bus),
+                bus);
+        readyPlatform.start();
+
+        try {
+            PlatformHealth health = readyPlatform.checkHealth();
+            SubsystemHealth sandlock = health.subsystems().stream()
+                    .filter(s -> "sandlock".equals(s.name()))
+                    .findFirst().orElseThrow();
+            assertEquals(SubsystemStatus.UP, sandlock.status());
+            assertNull(sandlock.message());
+        } finally {
+            readyPlatform.close();
+        }
     }
 
     @Test
@@ -198,5 +249,18 @@ class PlatformHealthTest {
 
     private SimpleEventBus eventBus() {
         return new SimpleEventBus();
+    }
+
+    private static final class ReadySandlockRuntime implements LealonePlatform.SandlockRuntime {
+        @Override
+        public LealonePlatform.SandlockLaunchCheck check() {
+            return LealonePlatform.SandlockLaunchCheck.ready();
+        }
+
+        @Override
+        public LealonePlatform.SandlockProcessOutput execute(LealonePlatform.SandlockProfile resolvedProfile,
+                                                             java.util.List<String> command) {
+            return new LealonePlatform.SandlockProcessOutput(0, "", "");
+        }
     }
 }

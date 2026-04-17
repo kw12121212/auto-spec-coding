@@ -255,7 +255,8 @@ public class SdkBuilder {
                 new LealonePlatform.SandlockCapability(
                         sandlockRuntime != null ? sandlockRuntime : new LealonePlatform.SystemSandlockRuntime(),
                         extractEnvironmentProfiles(configMap),
-                        configMap.get(SELECTED_ENVIRONMENT_PROFILE_KEY)),
+                        configMap.get(SELECTED_ENVIRONMENT_PROFILE_KEY),
+                        eventBus),
                 eventBus);
 
         return new AssembledComponents(platform, sdkProviderRegistry, configMap, configPath, eventBus,

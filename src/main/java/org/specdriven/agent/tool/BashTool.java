@@ -12,6 +12,8 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.specdriven.agent.permission.Permission;
+import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.permission.PermissionDecision;
 
 /**
  * Tool that executes shell commands via the system shell.
@@ -61,6 +63,16 @@ public class BashTool implements Tool {
 
     @Override
     public ToolResult execute(ToolInput input, ToolContext context) {
+        PermissionDecision permissionDecision = context.permissionProvider().check(
+                permissionFor(input, context),
+                new PermissionContext(getName(), "execute", "agent"));
+        if (permissionDecision == PermissionDecision.DENY) {
+            return new ToolResult.Error("Permission denied for bash");
+        }
+        if (permissionDecision == PermissionDecision.CONFIRM) {
+            return new ToolResult.Error("Permission requires explicit confirmation for bash");
+        }
+
         // Extract and validate command parameter
         Object commandObj = input.parameters().get("command");
         if (commandObj == null || commandObj.toString().isBlank()) {

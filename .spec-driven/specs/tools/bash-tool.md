@@ -72,6 +72,20 @@ mapping:
 - MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.DENY`
 - MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.CONFIRM`, and the error message MUST indicate that explicit confirmation is required
 
+#### Scenario: denied profile-backed bash request is rejected before launch
+- GIVEN the current repository configuration would otherwise resolve a supported environment profile for the command
+- AND the permission provider returns `DENY`
+- WHEN the caller executes `BashTool`
+- THEN `BashTool` MUST return a permission-denied error
+- AND it MUST NOT start either a direct-host or Sandlock-backed command process
+
+#### Scenario: confirmation-required profile-backed bash request is rejected before launch
+- GIVEN the current repository configuration would otherwise resolve a supported environment profile for the command
+- AND the permission provider returns `CONFIRM`
+- WHEN the caller executes `BashTool`
+- THEN `BashTool` MUST return an error indicating explicit confirmation is required
+- AND it MUST NOT start either a direct-host or Sandlock-backed command process
+
 ### Requirement: BashTool error handling
 
 - MUST return `ToolResult.Error` if `command` parameter is missing or empty

@@ -9,6 +9,7 @@ mapping:
     - src/main/java/org/specdriven/agent/event/LealoneAuditLogStore.java
     - src/main/java/org/specdriven/agent/interactive/InteractiveCommandHandler.java
     - src/main/java/org/specdriven/agent/event/SimpleEventBus.java
+    - src/main/java/org/specdriven/sdk/LealonePlatform.java
     - src/main/java/org/specdriven/sdk/WorkflowRuntime.java
   tests:
     - src/test/java/org/specdriven/agent/event/EventJsonTest.java
@@ -16,6 +17,8 @@ mapping:
     - src/test/java/org/specdriven/agent/event/LealoneAuditLogStoreTest.java
     - src/test/java/org/specdriven/agent/interactive/InteractiveCommandHandlerTest.java
     - src/test/java/org/specdriven/agent/event/SimpleEventBusTest.java
+    - src/test/java/org/specdriven/sdk/LealonePlatformTest.java
+    - src/test/java/org/specdriven/sdk/PlatformHealthTest.java
     - src/test/java/org/specdriven/sdk/WorkflowRuntimeTest.java
 ---
 
@@ -39,6 +42,7 @@ mapping:
 - MUST additionally define: INTERACTIVE_COMMAND_HANDLED
 - MUST additionally define: WORKFLOW_DECLARED, WORKFLOW_STARTED, WORKFLOW_STATE_CHANGED, WORKFLOW_COMPLETED, WORKFLOW_FAILED, WORKFLOW_CHECKPOINT_SAVED, WORKFLOW_RECOVERED, WORKFLOW_STEP_RETRY_SCHEDULED
 - MUST additionally define: PLATFORM_HEALTH_CHECKED, PLATFORM_METRICS_SNAPSHOT
+- MUST additionally define: PROFILE_EXECUTION_RECORDED
 - MAY be extended in future milestones
 
 ### Requirement: EventBus pub/sub
@@ -144,6 +148,30 @@ mapping:
 - WHEN the guidance message is enqueued to the session output
 - THEN an interactive-command audit event MUST be published
 - AND the audit event metadata MUST identify the command as unrecognized
+
+### Requirement: Profile execution audit event metadata
+
+- `PROFILE_EXECUTION_RECORDED` events MUST remain compatible with the existing event JSON serialization constraints
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include a stable `outcome`
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include the executed command in a stable rendered form
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include `resolvedProfile` when execution resolved a profile successfully
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include `requestedProfile` when the caller supplied an explicit profile name
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include `exitCode` when a command launched and completed
+- `PROFILE_EXECUTION_RECORDED` metadata MUST include `failureCode` when execution failed before command completion
+
+#### Scenario: successful profile execution is auditable
+- GIVEN a Sandlock-backed command completes under a resolved profile
+- WHEN the system emits `PROFILE_EXECUTION_RECORDED`
+- THEN the event metadata MUST include `outcome`
+- AND it MUST include `resolvedProfile`
+- AND it MUST include `exitCode`
+
+#### Scenario: failed profile launch is auditable
+- GIVEN a Sandlock-backed execution attempt fails before completion
+- WHEN the system emits `PROFILE_EXECUTION_RECORDED`
+- THEN the event metadata MUST include `outcome`
+- AND it MUST include `failureCode`
+- AND it MUST include `requestedProfile` when the caller supplied one
 
 ### Requirement: Workflow runtime audit event metadata
 
