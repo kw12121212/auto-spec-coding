@@ -10,7 +10,7 @@
 ## Testing
 
 - [x] Run validation command `mvn -q -DskipBuiltinToolsDownload=true -Dtest=LealonePlatformTest test`
-- [ ] Run unit test command `mvn -q -DskipBuiltinToolsDownload=true test`
+- [x] Run unit test command `mvn -q -DskipBuiltinToolsDownload=true test`
 
 ## Verification
 
