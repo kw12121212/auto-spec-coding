@@ -1,5 +1,7 @@
 package org.specdriven.agent.loop;
 
+import org.specdriven.agent.tool.ProfileBoundCommandExecutor;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -27,6 +29,7 @@ public final class CommandSpecDrivenPhaseRunner implements SpecDrivenPhaseRunner
     );
 
     private final Map<PipelinePhase, List<String>> commandTemplates;
+    private final ProfileBoundCommandExecutor profileExecutor;
 
     /**
      * Creates a command runner using `spec-driven <subcommand> <change-name>`.
@@ -48,7 +51,13 @@ public final class CommandSpecDrivenPhaseRunner implements SpecDrivenPhaseRunner
      * Empty templates are treated as no-op success, which is useful for RECOMMEND.
      */
     public CommandSpecDrivenPhaseRunner(Map<PipelinePhase, List<String>> commandTemplates) {
+        this(commandTemplates, ProfileBoundCommandExecutor.DEFAULT);
+    }
+
+    CommandSpecDrivenPhaseRunner(Map<PipelinePhase, List<String>> commandTemplates,
+                                 ProfileBoundCommandExecutor profileExecutor) {
         Objects.requireNonNull(commandTemplates, "commandTemplates must not be null");
+        this.profileExecutor = Objects.requireNonNull(profileExecutor, "profileExecutor must not be null");
         EnumMap<PipelinePhase, List<String>> copy = new EnumMap<>(PipelinePhase.class);
         for (Map.Entry<PipelinePhase, List<String>> entry : commandTemplates.entrySet()) {
             PipelinePhase phase = Objects.requireNonNull(entry.getKey(), "phase must not be null");
@@ -79,6 +88,11 @@ public final class CommandSpecDrivenPhaseRunner implements SpecDrivenPhaseRunner
         builder.directory(config.projectRoot().toFile());
 
         try {
+            PhaseExecutionResult profiledResult = runProfileBoundCommand(phase, candidate, config, command);
+            if (profiledResult != null) {
+                return profiledResult;
+            }
+
             Process process = builder.start();
             StringBuilder stdout = new StringBuilder();
             StringBuilder stderr = new StringBuilder();
@@ -111,6 +125,52 @@ public final class CommandSpecDrivenPhaseRunner implements SpecDrivenPhaseRunner
             Thread.currentThread().interrupt();
             return PhaseExecutionResult.timedOut("Phase " + phase.name() + " command interrupted");
         }
+    }
+
+    private PhaseExecutionResult runProfileBoundCommand(PipelinePhase phase,
+                                                        LoopCandidate candidate,
+                                                        LoopConfig config,
+                                                        List<String> command) throws IOException, InterruptedException {
+        final class Holder {
+            private java.util.Optional<ProfileBoundCommandExecutor.ExecutionResult> result = java.util.Optional.empty();
+            private Exception failure;
+        }
+        Holder holder = new Holder();
+        Thread executionThread = Thread.startVirtualThread(() -> {
+            try {
+                holder.result = profileExecutor.execute(config.projectRoot(), Map.of(), null, command);
+            } catch (Exception e) {
+                holder.failure = e;
+            }
+        });
+
+        executionThread.join(TimeUnit.SECONDS.toMillis(config.iterationTimeoutSeconds()));
+        if (executionThread.isAlive()) {
+            executionThread.interrupt();
+            executionThread.join(2000);
+            return PhaseExecutionResult.timedOut("Phase " + phase.name()
+                    + " command timed out after " + config.iterationTimeoutSeconds() + "s");
+        }
+        if (holder.failure != null) {
+            if (holder.failure instanceof IOException ioException) {
+                throw ioException;
+            }
+            if (holder.failure instanceof InterruptedException interruptedException) {
+                throw interruptedException;
+            }
+            return PhaseExecutionResult.failed("Phase " + phase.name()
+                    + " command failed to start: " + holder.failure.getMessage());
+        }
+        if (holder.result.isEmpty()) {
+            return null;
+        }
+        ProfileBoundCommandExecutor.ExecutionResult result = holder.result.get();
+        if (result.exitCode() != 0) {
+            return PhaseExecutionResult.failed("Phase " + phase.name()
+                    + " command exited with code " + result.exitCode() + commandOutput(
+                            new StringBuilder(result.stdout()), new StringBuilder(result.stderr())));
+        }
+        return PhaseExecutionResult.success();
     }
 
     private static Map<PipelinePhase, List<String>> defaultCommandTemplates(List<String> commandPrefix) {

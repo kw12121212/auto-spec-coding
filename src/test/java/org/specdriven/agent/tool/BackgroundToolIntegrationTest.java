@@ -129,7 +129,18 @@ class BackgroundToolIntegrationTest {
             }
 
             @Override
+            public BackgroundProcessHandle register(Process process, String toolName, String command, String resolvedProfile) {
+                return null;
+            }
+
+            @Override
             public BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command, ReadyProbe probe) {
+                return null;
+            }
+
+            @Override
+            public BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command,
+                                                             ReadyProbe probe, String resolvedProfile) {
                 return null;
             }
 

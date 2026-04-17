@@ -24,6 +24,13 @@ public interface ProcessManager {
     BackgroundProcessHandle register(Process process, String toolName, String command);
 
     /**
+     * Registers an already-launched process and preserves the resolved repository profile when known.
+     */
+    default BackgroundProcessHandle register(Process process, String toolName, String command, String resolvedProfile) {
+        return register(process, toolName, command);
+    }
+
+    /**
      * Registers an already-launched process with an associated readiness probe.
      * Behaves identically to {@link #register(Process, String, String)} but stores
      * the probe for later use by {@link #waitForReady(String, Duration)}.
@@ -35,6 +42,18 @@ public interface ProcessManager {
      * @return a handle containing the process metadata
      */
     BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command, ReadyProbe probe);
+
+    /**
+     * Behaves identically to {@link #registerWithProbe(Process, String, String, ReadyProbe)} but additionally
+     * preserves the resolved repository profile when known.
+     */
+    default BackgroundProcessHandle registerWithProbe(Process process,
+                                                      String toolName,
+                                                      String command,
+                                                      ReadyProbe probe,
+                                                      String resolvedProfile) {
+        return registerWithProbe(process, toolName, command, probe);
+    }
 
     /**
      * Waits for a server tool to become ready by running its readiness probe.

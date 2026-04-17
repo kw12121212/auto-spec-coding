@@ -41,9 +41,19 @@ mapping:
 
 ### Requirement: BackgroundProcessHandle record
 
-- MUST be a Java record in `org.specdriven.agent.tool` with fields: `id` (String, UUID), `pid` (long, OS process ID, -1 if unavailable), `command` (String), `toolName` (String), `startTime` (long, epoch millis), `state` (ProcessState)
+- MUST be a Java record in `org.specdriven.agent.tool` with fields: `id` (String, UUID), `pid` (long, OS process ID, -1 if unavailable), `command` (String), `toolName` (String), `startTime` (long, epoch millis), `state` (ProcessState), and `resolvedProfile` (String, nullable)
 - `id` MUST be a randomly generated UUID on construction when null or blank
 - MUST be immutable
+
+#### Scenario: handle preserves resolved profile name
+- GIVEN a background process was launched under a resolved repository environment profile
+- WHEN the launch returns a `BackgroundProcessHandle`
+- THEN `resolvedProfile` MUST equal the declared profile name used for that launch
+
+#### Scenario: handle preserves absence of profile binding
+- GIVEN a background process was launched without any resolved repository environment profile
+- WHEN the launch returns a `BackgroundProcessHandle`
+- THEN `resolvedProfile` MUST be null
 
 ### Requirement: ProcessState enum
 
@@ -70,6 +80,7 @@ mapping:
 
 - MUST be a public interface in `org.specdriven.agent.tool`
 - MUST define `register(Process process, String toolName, String command)` returning `BackgroundProcessHandle` — registers an already-launched process for lifecycle management
+- MUST define a supported registration path that preserves a resolved repository profile name when the launch surface already knows the process was started under profile-bound execution
 - MUST define `getState(String processId)` returning `Optional<ProcessState>` — returns empty if process ID is unknown
 - MUST define `getOutput(String processId)` returning `Optional<ProcessOutput>` — returns a point-in-time snapshot of accumulated stdout, stderr, exit code, and timestamp; returns empty if process ID is unknown
 - MUST define `listActive()` returning `List<BackgroundProcessHandle>` — all processes in `STARTING` or `RUNNING` state
@@ -95,6 +106,21 @@ mapping:
 - `register()` MUST emit a `BACKGROUND_TOOL_STARTED` event via the provided `EventBus` with metadata: `processId`, `toolName`, `command`
 - `register()` MUST update the process state from `STARTING` to `RUNNING` once output readers are active
 - `register()` MUST return the `BackgroundProcessHandle` immediately without blocking
+
+#### Scenario: registration preserves resolved profile name
+- GIVEN a background-process launch surface has already resolved an effective repository environment profile
+- WHEN it registers the started process with `ProcessManager`
+- THEN the returned `BackgroundProcessHandle` MUST expose the same resolved profile name
+
+#### Scenario: lifecycle updates preserve resolved profile name
+- GIVEN a background process is registered with a resolved repository environment profile name
+- WHEN the process later appears through process-manager lifecycle updates
+- THEN the updated `BackgroundProcessHandle` MUST preserve the same resolved profile name
+
+#### Scenario: registration without profile keeps null metadata
+- GIVEN a background process is registered without any resolved repository environment profile
+- WHEN the launch returns or later lists a `BackgroundProcessHandle`
+- THEN `resolvedProfile` MUST be null
 
 ### Requirement: Output ring buffer
 

@@ -3,9 +3,11 @@ mapping:
   implementation:
     - src/main/java/org/specdriven/sdk/LealonePlatform.java
     - src/main/java/org/specdriven/sdk/SdkBuilder.java
+    - src/main/java/org/specdriven/agent/tool/ProfileBoundCommandExecutor.java
   tests:
     - src/test/java/org/specdriven/sdk/LealonePlatformTest.java
     - src/test/java/org/specdriven/sdk/SdkBuilderTest.java
+    - src/test/java/org/specdriven/sdk/SdkAgentTest.java
 ---
 
 # Sandlock Runner

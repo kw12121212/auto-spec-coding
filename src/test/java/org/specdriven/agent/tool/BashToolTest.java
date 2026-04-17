@@ -32,13 +32,60 @@ class BashToolTest {
     @Test
     void getParameters_declaresCommandTimeoutWorkDir() {
         List<ToolParameter> params = tool.getParameters();
-        assertEquals(3, params.size());
+        assertEquals(4, params.size());
         assertEquals("command", params.get(0).name());
         assertTrue(params.get(0).required());
         assertEquals("timeout", params.get(1).name());
         assertFalse(params.get(1).required());
         assertEquals("workDir", params.get(2).name());
         assertFalse(params.get(2).required());
+        assertEquals("profile", params.get(3).name());
+        assertFalse(params.get(3).required());
+    }
+
+    @Test
+    void explicitProfileUsesProfileBoundExecutor() {
+        BashTool profiledTool = new BashTool((projectRoot, executionConfig, requestedProfile, command) ->
+                java.util.Optional.of(new ProfileBoundCommandExecutor.ExecutionResult(
+                        requestedProfile,
+                        command,
+                        0,
+                        "profile:" + requestedProfile,
+                        "")));
+
+        ToolResult result = profiledTool.execute(new ToolInput(Map.of(
+                "command", "echo hello",
+                "profile", "ci"
+        )), allowAllContext("/tmp"));
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        assertEquals("profile:ci", ((ToolResult.Success) result).output());
+    }
+
+    @Test
+    void requestedProfileFailureDoesNotFallBackToHostExecution() {
+        BashTool profiledTool = new BashTool((projectRoot, executionConfig, requestedProfile, command) -> {
+            throw new IllegalStateException("Unknown requested environment profile 'prod'");
+        });
+
+        ToolResult result = profiledTool.execute(new ToolInput(Map.of(
+                "command", "echo hello",
+                "profile", "prod"
+        )), allowAllContext("/tmp"));
+
+        assertInstanceOf(ToolResult.Error.class, result);
+        assertTrue(((ToolResult.Error) result).message().contains("Unknown requested environment profile 'prod'"));
+    }
+
+    @Test
+    void profileExecutorFallsBackToHostExecutionWhenNoProfileResolves() {
+        BashTool profiledTool = new BashTool((projectRoot, executionConfig, requestedProfile, command) ->
+                java.util.Optional.empty());
+
+        ToolResult result = profiledTool.execute(new ToolInput(Map.of("command", "echo hello")), allowAllContext("/tmp"));
+
+        assertInstanceOf(ToolResult.Success.class, result);
+        assertEquals("hello", ((ToolResult.Success) result).output());
     }
 
     // --- Happy path ---

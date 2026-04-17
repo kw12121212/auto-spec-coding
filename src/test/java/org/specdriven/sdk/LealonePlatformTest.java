@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -353,6 +354,70 @@ class LealonePlatformTest {
         } finally {
             platform.close();
         }
+    }
+
+    @Test
+    void systemSandlockRuntimeDestroysProcessWhenInterrupted() throws Exception {
+        Path entry = bundledEntryPath();
+        Files.createDirectories(entry.getParent());
+        Files.writeString(entry, "#!/bin/sh\nshift 4\nexec \"$@\"\n");
+        entry.toFile().setExecutable(true);
+
+        LealonePlatform.SystemSandlockRuntime runtime = new LealonePlatform.SystemSandlockRuntime(Map.of(), tempDir);
+        LealonePlatform.SandlockProfile profile = new LealonePlatform.SandlockProfile(
+                "dev",
+                tempDir.resolve("home").toString(),
+                List.of("/usr/bin", "/bin"),
+                Map.of(),
+                Map.of(
+                        "maven", tempDir.resolve("cache/maven").toString(),
+                        "npm", tempDir.resolve("cache/npm").toString(),
+                        "go", tempDir.resolve("cache/go").toString(),
+                        "pip", tempDir.resolve("cache/pip").toString()),
+                Map.of());
+        Path pidFile = tempDir.resolve("child.pid").toAbsolutePath().normalize();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<Long> childPid = new AtomicReference<>();
+
+        Thread worker = Thread.ofVirtual().start(() -> {
+            try {
+                runtime.execute(profile, List.of(
+                        "/bin/sh",
+                        "-c",
+                        "echo $$ > '" + pidFile + "'; while :; do sleep 0.1; done"));
+                failure.set(new AssertionError("expected execution to be interrupted"));
+            } catch (InterruptedException expected) {
+                // expected
+            } catch (Throwable t) {
+                failure.set(t);
+            }
+        });
+
+        for (int i = 0; i < 50; i++) {
+            if (Files.isRegularFile(pidFile)) {
+                childPid.set(Long.parseLong(Files.readString(pidFile).trim()));
+                break;
+            }
+            Thread.sleep(100);
+        }
+
+        assertNotNull(childPid.get(), "expected child process to start");
+        worker.interrupt();
+        worker.join(5000);
+
+        assertFalse(worker.isAlive(), "interrupted execution should finish promptly");
+        assertNotNull(childPid.get(), "expected child process pid to be captured");
+        assertTrue(failure.get() == null, failure.get() == null ? "" : failure.get().toString());
+
+        boolean exited = false;
+        for (int i = 0; i < 20; i++) {
+            if (ProcessHandle.of(childPid.get()).isEmpty() || !ProcessHandle.of(childPid.get()).orElseThrow().isAlive()) {
+                exited = true;
+                break;
+            }
+            Thread.sleep(100);
+        }
+        assertTrue(exited, "interrupted Sandlock execution should destroy the launched process");
     }
 
     @Test

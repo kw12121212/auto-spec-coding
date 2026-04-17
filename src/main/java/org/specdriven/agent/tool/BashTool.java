@@ -7,6 +7,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.specdriven.agent.permission.Permission;
@@ -18,12 +20,22 @@ public class BashTool implements Tool {
 
     private static final int DEFAULT_TIMEOUT_SECONDS = 120;
     private static final String NAME = "bash";
+    private final ProfileBoundCommandExecutor profileExecutor;
 
     private static final List<ToolParameter> PARAMETERS = List.of(
             new ToolParameter("command", "string", "The shell command to execute", true),
             new ToolParameter("timeout", "integer", "Timeout in seconds (default: 120)", false),
-            new ToolParameter("workDir", "string", "Working directory for the command (default: context workDir)", false)
+            new ToolParameter("workDir", "string", "Working directory for the command (default: context workDir)", false),
+            new ToolParameter("profile", "string", "Optional environment profile name", false)
     );
+
+    public BashTool() {
+        this(ProfileBoundCommandExecutor.DEFAULT);
+    }
+
+    BashTool(ProfileBoundCommandExecutor profileExecutor) {
+        this.profileExecutor = Objects.requireNonNull(profileExecutor, "profileExecutor must not be null");
+    }
 
     @Override
     public String getName() {
@@ -65,12 +77,20 @@ public class BashTool implements Tool {
 
         // Resolve working directory
         String workDir = resolveStringParam(input, "workDir", context.workDir());
+        String requestedProfile = trimToNull(resolveStringParam(input, "profile", null));
 
         // Determine shell
         String shell = detectShell();
+        List<String> shellCommand = List.of(shell, "-c", command);
 
         // Execute
         try {
+            Optional<ProfileBoundCommandExecutor.ExecutionResult> profiledResult = executeProfileBound(
+                    Path.of(workDir), context.env(), requestedProfile, shellCommand, timeoutSeconds);
+            if (profiledResult.isPresent()) {
+                return toToolResult(command, profiledResult.get());
+            }
+
             ProcessBuilder pb = new ProcessBuilder(shell, "-c", command);
             pb.directory(Path.of(workDir).toFile());
             pb.redirectErrorStream(true);
@@ -117,6 +137,51 @@ public class BashTool implements Tool {
         }
     }
 
+    private Optional<ProfileBoundCommandExecutor.ExecutionResult> executeProfileBound(Path workDir,
+                                                                                      Map<String, String> contextEnv,
+                                                                                      String requestedProfile,
+                                                                                      List<String> shellCommand,
+                                                                                      int timeoutSeconds)
+            throws IOException, InterruptedException {
+        final class Holder {
+            private Optional<ProfileBoundCommandExecutor.ExecutionResult> result = Optional.empty();
+            private Exception failure;
+        }
+        Holder holder = new Holder();
+        Thread executionThread = Thread.startVirtualThread(() -> {
+            try {
+                holder.result = profileExecutor.execute(workDir, contextEnv, requestedProfile, shellCommand);
+            } catch (Exception e) {
+                holder.failure = e;
+            }
+        });
+
+        executionThread.join(TimeUnit.SECONDS.toMillis(timeoutSeconds));
+        if (executionThread.isAlive()) {
+            executionThread.interrupt();
+            executionThread.join(2000);
+            throw new IOException("Command timed out after " + timeoutSeconds + "s");
+        }
+        if (holder.failure != null) {
+            if (holder.failure instanceof IOException ioException) {
+                throw ioException;
+            }
+            if (holder.failure instanceof InterruptedException interruptedException) {
+                throw interruptedException;
+            }
+            throw new IOException(holder.failure.getMessage(), holder.failure);
+        }
+        return holder.result;
+    }
+
+    private static ToolResult toToolResult(String command, ProfileBoundCommandExecutor.ExecutionResult result) {
+        String output = combineOutput(result.stdout(), result.stderr());
+        if (result.exitCode() != 0) {
+            return new ToolResult.Error("Command exited with code " + result.exitCode() + ": " + output);
+        }
+        return new ToolResult.Success(output);
+    }
+
     private static String detectShell() {
         if (Path.of("/bin/bash").toFile().exists()) {
             return "/bin/bash";
@@ -127,5 +192,25 @@ public class BashTool implements Tool {
     private static String resolveStringParam(ToolInput input, String paramName, String defaultValue) {
         Object value = input.parameters().get(paramName);
         return value != null ? value.toString() : defaultValue;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String combineOutput(String stdout, String stderr) {
+        String normalizedStdout = stdout == null ? "" : stdout;
+        String normalizedStderr = stderr == null ? "" : stderr;
+        if (normalizedStdout.isBlank()) {
+            return normalizedStderr;
+        }
+        if (normalizedStderr.isBlank()) {
+            return normalizedStdout;
+        }
+        return normalizedStdout + System.lineSeparator() + normalizedStderr;
     }
 }

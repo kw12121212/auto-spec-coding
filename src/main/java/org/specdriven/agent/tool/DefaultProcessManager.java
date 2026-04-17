@@ -40,17 +40,31 @@ public class DefaultProcessManager implements ProcessManager {
 
     @Override
     public BackgroundProcessHandle register(Process process, String toolName, String command) {
-        return registerWithProbe(process, toolName, command, null);
+        return register(process, toolName, command, null);
     }
 
     @Override
     public BackgroundProcessHandle registerWithProbe(Process process, String toolName, String command, ReadyProbe probe) {
+        return registerWithProbe(process, toolName, command, probe, null);
+    }
+
+    @Override
+    public BackgroundProcessHandle register(Process process, String toolName, String command, String resolvedProfile) {
+        return registerWithProbe(process, toolName, command, null, resolvedProfile);
+    }
+
+    @Override
+    public BackgroundProcessHandle registerWithProbe(Process process,
+                                                     String toolName,
+                                                     String command,
+                                                     ReadyProbe probe,
+                                                     String resolvedProfile) {
         long pid = process.pid();
         long startTime = System.currentTimeMillis();
         String id = java.util.UUID.randomUUID().toString();
 
         BackgroundProcessHandle handle = new BackgroundProcessHandle(
-                id, pid, command, toolName, startTime, ProcessState.STARTING
+                id, pid, command, toolName, startTime, ProcessState.STARTING, resolvedProfile
         );
 
         OutputRingBuffer stdoutBuffer = new OutputRingBuffer(maxOutputBytes);
@@ -72,7 +86,7 @@ public class DefaultProcessManager implements ProcessManager {
 
         // Transition to RUNNING now that readers are active
         stateHolder.set(ProcessState.RUNNING);
-        handle = new BackgroundProcessHandle(id, pid, command, toolName, startTime, ProcessState.RUNNING);
+        handle = new BackgroundProcessHandle(id, pid, command, toolName, startTime, ProcessState.RUNNING, resolvedProfile);
         managed.handle = handle;
 
         // Start exit monitor
@@ -81,7 +95,8 @@ public class DefaultProcessManager implements ProcessManager {
                 int exitCode = process.waitFor();
                 ProcessState terminalState = (exitCode == 0) ? ProcessState.COMPLETED : ProcessState.FAILED;
                 stateHolder.set(terminalState);
-                managed.handle = new BackgroundProcessHandle(id, pid, command, toolName, startTime, terminalState);
+                managed.handle = new BackgroundProcessHandle(
+                        id, pid, command, toolName, startTime, terminalState, resolvedProfile);
                 managed.exitCode = exitCode;
 
                 eventBus.publish(new Event(
@@ -206,7 +221,8 @@ public class DefaultProcessManager implements ProcessManager {
                 managed.handle.command(),
                 managed.handle.toolName(),
                 managed.handle.startTime(),
-                ProcessState.STOPPED
+                ProcessState.STOPPED,
+                managed.handle.resolvedProfile()
         );
         managed.exitCode = -1;
 

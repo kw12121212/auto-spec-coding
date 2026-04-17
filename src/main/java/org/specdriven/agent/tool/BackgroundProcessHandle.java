@@ -11,6 +11,7 @@ import java.util.UUID;
  * @param toolName  name of the tool that launched the process
  * @param startTime epoch millis when the process was started
  * @param state     current lifecycle state of the process
+ * @param resolvedProfile resolved repository environment profile, or null when unbound
  */
 public record BackgroundProcessHandle(
         String id,
@@ -18,7 +19,8 @@ public record BackgroundProcessHandle(
         String command,
         String toolName,
         long startTime,
-        ProcessState state
+        ProcessState state,
+        String resolvedProfile
 ) {
     public BackgroundProcessHandle {
         if (id == null || id.isBlank()) {
@@ -30,6 +32,15 @@ public record BackgroundProcessHandle(
      * Creates a BackgroundProcessHandle with a randomly generated ID.
      */
     public BackgroundProcessHandle(long pid, String command, String toolName, long startTime, ProcessState state) {
-        this(null, pid, command, toolName, startTime, state);
+        this(null, pid, command, toolName, startTime, state, null);
+    }
+
+    public BackgroundProcessHandle(long pid,
+                                   String command,
+                                   String toolName,
+                                   long startTime,
+                                   ProcessState state,
+                                   String resolvedProfile) {
+        this(null, pid, command, toolName, startTime, state, resolvedProfile);
     }
 }

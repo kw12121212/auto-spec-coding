@@ -80,6 +80,16 @@ public final class LealonePlatform implements AutoCloseable {
         this.eventBus = Objects.requireNonNull(eventBus, "eventBus must not be null");
     }
 
+    LealonePlatform(
+            DatabaseCapability database,
+            LlmCapability llm,
+            CompilerCapability compiler,
+            InteractiveCapability interactive,
+            EventBus eventBus) {
+        this(database, llm, compiler, interactive, new SandlockCapability(
+                new SystemSandlockRuntime(), Map.of(), null), eventBus);
+    }
+
     /**
      * Returns a builder that can assemble either the SDK agent facade or the platform surface.
      */
@@ -781,7 +791,15 @@ public final class LealonePlatform implements AutoCloseable {
             Thread stdoutReader = Thread.ofVirtual().start(() -> stdout.set(readStream(process.getInputStream(), readFailure)));
             Thread stderrReader = Thread.ofVirtual().start(() -> stderr.set(readStream(process.getErrorStream(), readFailure)));
 
-            int exitCode = process.waitFor();
+            int exitCode;
+            try {
+                exitCode = process.waitFor();
+            } catch (InterruptedException e) {
+                process.destroyForcibly();
+                joinQuietly(stdoutReader);
+                joinQuietly(stderrReader);
+                throw e;
+            }
             stdoutReader.join();
             stderrReader.join();
 
@@ -873,6 +891,14 @@ public final class LealonePlatform implements AutoCloseable {
                 RuntimeException wrapped = new UncheckedIOException("Failed to capture Sandlock process output", e);
                 readFailure.compareAndSet(null, wrapped);
                 return "";
+            }
+        }
+
+        private static void joinQuietly(Thread reader) {
+            try {
+                reader.join();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
             }
         }
 

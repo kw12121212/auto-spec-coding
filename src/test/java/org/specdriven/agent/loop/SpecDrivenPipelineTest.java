@@ -25,6 +25,7 @@ import org.specdriven.agent.agent.ToolCall;
 import org.specdriven.agent.agent.ToolMessage;
 import org.specdriven.agent.agent.UserMessage;
 import org.specdriven.agent.event.SimpleEventBus;
+import org.specdriven.agent.tool.ProfileBoundCommandExecutor;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
@@ -163,6 +164,37 @@ class SpecDrivenPipelineTest {
 
         assertEquals(IterationStatus.TIMED_OUT, result.status());
         assertTrue(result.failureReason().contains("REVIEW"));
+    }
+
+    @Test
+    void commandRunnerUsesProfileBoundExecutorWhenProfileResolves() {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.PROPOSE, List.of("spec-driven", "propose", "${changeName}"));
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner(
+                templates,
+                (projectRoot, executionConfig, requestedProfile, command) -> java.util.Optional.of(
+                        new ProfileBoundCommandExecutor.ExecutionResult("dev", command, 0, "ok", "")));
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.PROPOSE, TEST_CANDIDATE, testConfig(tempDir));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+    }
+
+    @Test
+    void commandRunnerFallsBackToHostExecutionWhenNoProfileResolves() throws Exception {
+        Map<PipelinePhase, List<String>> templates = new EnumMap<>(PipelinePhase.class);
+        templates.put(PipelinePhase.PROPOSE, List.of(
+                "/bin/sh",
+                "-c",
+                "printf 'host' > command.log"));
+        CommandSpecDrivenPhaseRunner runner = new CommandSpecDrivenPhaseRunner(
+                templates,
+                (projectRoot, executionConfig, requestedProfile, command) -> java.util.Optional.empty());
+
+        PhaseExecutionResult result = runner.run(PipelinePhase.PROPOSE, TEST_CANDIDATE, testConfig(tempDir));
+
+        assertEquals(IterationStatus.SUCCESS, result.status());
+        assertEquals("host", Files.readString(tempDir.resolve("command.log"), StandardCharsets.UTF_8));
     }
 
     @Test

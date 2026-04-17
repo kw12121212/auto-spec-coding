@@ -73,6 +73,20 @@ class ProcessManagerTest {
     }
 
     @Test
+    void registerPreservesResolvedProfileWhenProvided() throws Exception {
+        CapturingEventBus bus = new CapturingEventBus();
+        DefaultProcessManager pm = new DefaultProcessManager(bus);
+
+        Process process = launchSleepProcess(30);
+        BackgroundProcessHandle handle = pm.register(process, "test-tool", "sleep 30", "dev");
+        try {
+            assertEquals("dev", handle.resolvedProfile());
+        } finally {
+            pm.stop(handle.id());
+        }
+    }
+
+    @Test
     void registerEmitsBackgroundToolStartedEvent() throws Exception {
         CapturingEventBus bus = new CapturingEventBus();
         DefaultProcessManager pm = new DefaultProcessManager(bus);

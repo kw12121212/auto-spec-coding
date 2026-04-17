@@ -9,10 +9,18 @@ import org.specdriven.agent.http.RemoteToolRegistrationRequest;
 import org.specdriven.agent.permission.LealonePolicyStore;
 import org.specdriven.agent.permission.Permission;
 import org.specdriven.agent.permission.PermissionContext;
+import org.specdriven.agent.tool.ProfileBoundCommandExecutor;
+import org.specdriven.agent.tool.Tool;
+import org.specdriven.agent.tool.ToolContext;
+import org.specdriven.agent.tool.ToolInput;
+import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.agent.tool.ToolResult;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +136,31 @@ class SdkAgentTest {
         }
     }
 
+    @Test
+    void sdkAgentPropagatesConfigPathIntoToolContext() throws Exception {
+        Path configPath = Files.createTempFile("sdk-agent-config", ".yaml");
+        Files.writeString(configPath, "llm:\n  providers: {}\n");
+        InspectConfigTool inspectTool = new InspectConfigTool();
+
+        try (SpecDriven sdk = SpecDriven.builder()
+                .config(configPath)
+                .registerTool(inspectTool)
+                .providerRegistry(new StubRegistry(new StubClient(
+                        new LlmResponse.ToolCallResponse(List.of(new ToolCall(
+                                "inspect_config", Map.of(), "call-1"))),
+                        new LlmResponse.TextResponse("done"))))
+                .build()) {
+            grantExecute("inspect_config");
+
+            String result = sdk.createAgent().run("inspect config");
+
+            assertEquals("done", result);
+            assertEquals(configPath.toAbsolutePath().normalize().toString(), inspectTool.seenConfigPath());
+        } finally {
+            Files.deleteIfExists(configPath);
+        }
+    }
+
     private void grantExecute(String toolName) {
         new LealonePolicyStore("jdbc:lealone:embed:agent_db").grant(
                 new Permission("execute", toolName, Map.of()),
@@ -189,6 +222,35 @@ class SdkAgentTest {
         @Override
         public void close() {
             server.stop(0);
+        }
+    }
+
+    private static final class InspectConfigTool implements Tool {
+        private volatile String seenConfigPath;
+
+        @Override
+        public String getName() {
+            return "inspect_config";
+        }
+
+        @Override
+        public String getDescription() {
+            return "captures propagated config path";
+        }
+
+        @Override
+        public List<ToolParameter> getParameters() {
+            return List.of();
+        }
+
+        @Override
+        public ToolResult execute(ToolInput input, ToolContext context) {
+            seenConfigPath = context.env().get(ProfileBoundCommandExecutor.CONFIG_PATH_KEY);
+            return new ToolResult.Success(seenConfigPath == null ? "" : seenConfigPath);
+        }
+
+        private String seenConfigPath() {
+            return seenConfigPath;
         }
     }
 }

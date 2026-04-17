@@ -284,7 +284,7 @@ public class DefaultOrchestrator implements Orchestrator {
                 ToolContext toolCtx = new SimpleToolContext(
                         context.config().getOrDefault("workDir", "."),
                         new LazyPermissionProvider(context.config().getOrDefault("workDir", ".")),
-                        Collections.emptyMap());
+                        Map.copyOf(context.config()));
                 ToolInput input = new ToolInput(call.parameters());
 
                 // Run beforeExecute hooks

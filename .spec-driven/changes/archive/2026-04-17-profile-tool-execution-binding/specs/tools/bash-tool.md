@@ -15,24 +15,15 @@ mapping:
     - src/test/java/org/specdriven/sdk/LealonePlatformTest.java
 ---
 
-# Bash Tool Spec
-
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: BashTool identity
-
-- MUST return `"bash"` from `getName()`
-- MUST return a non-empty description from `getDescription()`
-- MUST declare parameters: `command` (string, required), `timeout` (integer, optional), `workDir` (string, optional), `profile` (string, optional)
+Previously: `BashTool` MUST declare parameters: `command` (string, required), `timeout` (integer, optional), `workDir` (string, optional).
+`BashTool` MUST declare parameters: `command` (string, required), `timeout` (integer, optional), `workDir` (string, optional), and `profile` (string, optional).
 
 ### Requirement: BashTool execution
-
-- MUST execute the `command` parameter via the system shell while honoring the resolved environment-profile selection rules for the current repository when a profile-backed execution path is available
-- MUST capture and return the combined stdout and stderr output in `ToolResult.Success`
-- MUST use the `workDir` parameter as working directory when provided; otherwise MUST use `ToolContext.workDir()`
-- MUST use the `timeout` parameter (in seconds) when provided; otherwise MUST default to 120 seconds
-- MUST terminate the process and return `ToolResult.Error` with a timeout message if the process exceeds the configured timeout
-- MUST use `ProcessHandle.destroyForcibly()` for timeout termination
+Previously: `BashTool` MUST execute the `command` parameter via the system shell (`/bin/bash -c` on Linux, `sh -c` as fallback).
+`BashTool` MUST execute the `command` parameter via the system shell while honoring the resolved environment-profile selection rules for the current repository when a profile-backed execution path is available.
 
 #### Scenario: explicit bash profile request is honored
 - GIVEN the current repository declares named environment profiles
@@ -64,16 +55,3 @@ mapping:
 - GIVEN the current repository configuration available to the tool does not resolve any environment profile for `BashTool` execution
 - WHEN the caller executes `BashTool` without the optional `profile` parameter
 - THEN `BashTool` MUST keep the existing direct host shell execution behavior
-
-### Requirement: BashTool permission integration
-
-- MUST call `ToolContext.permissionProvider().check()` before execution
-- MUST construct the Permission with `action="execute"`, `resource="bash"`, and `constraints` containing the command string
-- MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.DENY`
-- MUST return `ToolResult.Error` without executing when the permission decision is `PermissionDecision.CONFIRM`, and the error message MUST indicate that explicit confirmation is required
-
-### Requirement: BashTool error handling
-
-- MUST return `ToolResult.Error` if `command` parameter is missing or empty
-- MUST return `ToolResult.Error` if the process fails to start
-- MUST return `ToolResult.Error` with the process exit message if the process exits with a non-zero code

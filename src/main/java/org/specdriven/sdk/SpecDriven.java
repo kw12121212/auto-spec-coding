@@ -25,6 +25,7 @@ public class SpecDriven implements AutoCloseable {
     private final String systemPrompt;
     private final SdkConfig sdkConfig;
     private final Map<String, String> configMap;
+    private final Path configPath;
     private final EventBus eventBus;
     private final DeliveryMode deliveryModeOverride;
     private final MobileChannelRegistry channelRegistry;
@@ -38,6 +39,7 @@ public class SpecDriven implements AutoCloseable {
                String systemPrompt,
                SdkConfig sdkConfig,
                Map<String, String> configMap,
+               Path configPath,
                EventBus eventBus,
                DeliveryMode deliveryModeOverride,
                MobileChannelRegistry channelRegistry,
@@ -48,6 +50,7 @@ public class SpecDriven implements AutoCloseable {
         this.systemPrompt = systemPrompt;
         this.sdkConfig = sdkConfig;
         this.configMap = configMap;
+        this.configPath = configPath;
         this.eventBus = eventBus;
         this.deliveryModeOverride = deliveryModeOverride;
         this.channelRegistry = channelRegistry;
@@ -89,7 +92,7 @@ public class SpecDriven implements AutoCloseable {
             toolMap.put(tool.getName(), tool);
         }
         return new SdkAgent(providerRegistry, toolMap, sdkConfig, systemPrompt,
-                eventBus, deliveryModeOverride, deliveryService());
+                configMap, configPath, eventBus, deliveryModeOverride, deliveryService());
     }
 
     /**

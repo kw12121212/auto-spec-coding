@@ -7,11 +7,13 @@ import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
 import org.specdriven.agent.hook.ToolExecutionHook;
 import org.specdriven.agent.question.*;
+import org.specdriven.agent.tool.ProfileBoundCommandExecutor;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolContext;
 import org.specdriven.agent.tool.ToolInput;
 import org.specdriven.agent.tool.ToolResult;
 
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -24,6 +26,8 @@ public class SdkAgent {
     private final Map<String, Tool> toolRegistry;
     private final SdkConfig sdkConfig;
     private final String systemPrompt;
+    private final Map<String, String> baseConfig;
+    private final Path configPath;
     private final EventBus globalBus;
     private final SimpleEventBus agentBus;
     private final DeliveryMode deliveryModeOverride;
@@ -36,6 +40,19 @@ public class SdkAgent {
              EventBus globalBus,
              DeliveryMode deliveryModeOverride,
              QuestionDeliveryService deliveryService) {
+        this(providerRegistry, toolRegistry, sdkConfig, systemPrompt, Map.of(), null,
+                globalBus, deliveryModeOverride, deliveryService);
+    }
+
+    SdkAgent(LlmProviderRegistry providerRegistry,
+             Map<String, Tool> toolRegistry,
+             SdkConfig sdkConfig,
+             String systemPrompt,
+             Map<String, String> baseConfig,
+             Path configPath,
+             EventBus globalBus,
+             DeliveryMode deliveryModeOverride,
+             QuestionDeliveryService deliveryService) {
         this.globalBus = globalBus;
         this.agentBus = new SimpleEventBus();
         this.agent = new SdkInternalAgent(providerRegistry, globalBus, agentBus,
@@ -43,6 +60,8 @@ public class SdkAgent {
         this.toolRegistry = toolRegistry;
         this.sdkConfig = sdkConfig;
         this.systemPrompt = systemPrompt;
+        this.baseConfig = Map.copyOf(baseConfig == null ? Map.of() : baseConfig);
+        this.configPath = configPath;
         this.deliveryModeOverride = deliveryModeOverride;
         this.deliveryService = deliveryService;
     }
@@ -55,7 +74,7 @@ public class SdkAgent {
              SdkConfig sdkConfig,
              String systemPrompt,
              EventBus globalBus) {
-        this(providerRegistry, toolRegistry, sdkConfig, systemPrompt, globalBus, null, null);
+        this(providerRegistry, toolRegistry, sdkConfig, systemPrompt, Map.of(), null, globalBus, null, null);
     }
 
     /**
@@ -190,9 +209,12 @@ public class SdkAgent {
     }
 
     private Map<String, String> buildAgentConfig() {
-        Map<String, String> config = new HashMap<>();
+        Map<String, String> config = new HashMap<>(baseConfig);
         config.put("maxTurns", String.valueOf(sdkConfig.maxTurns()));
         config.put("toolTimeoutSeconds", String.valueOf(sdkConfig.toolTimeoutSeconds()));
+        if (configPath != null) {
+            config.put(ProfileBoundCommandExecutor.CONFIG_PATH_KEY, configPath.toAbsolutePath().normalize().toString());
+        }
         return config;
     }
 

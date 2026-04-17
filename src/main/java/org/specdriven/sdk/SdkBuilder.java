@@ -173,6 +173,7 @@ public class SdkBuilder {
                     assembled.effectiveSystemPrompt(),
                     sdkConfig,
                     assembled.configMap(),
+                    assembled.configPath(),
                     assembled.eventBus(),
                     deliveryModeOverride,
                     channelRegistry,
@@ -257,7 +258,7 @@ public class SdkBuilder {
                         configMap.get(SELECTED_ENVIRONMENT_PROFILE_KEY)),
                 eventBus);
 
-        return new AssembledComponents(platform, sdkProviderRegistry, configMap, eventBus,
+        return new AssembledComponents(platform, sdkProviderRegistry, configMap, configPath, eventBus,
                 effectiveSystemPrompt);
     }
 
@@ -353,6 +354,7 @@ public class SdkBuilder {
             LealonePlatform platform,
             LlmProviderRegistry sdkProviderRegistry,
             Map<String, String> configMap,
+            Path configPath,
             SimpleEventBus eventBus,
             String effectiveSystemPrompt) {
     }

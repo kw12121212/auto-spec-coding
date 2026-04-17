@@ -11,7 +11,7 @@ class BackgroundProcessHandleTest {
     @Test
     void constructorGeneratesUuidWhenNull() {
         BackgroundProcessHandle handle = new BackgroundProcessHandle(null, 1234, "ls -la", "bash",
-                System.currentTimeMillis(), ProcessState.RUNNING);
+                System.currentTimeMillis(), ProcessState.RUNNING, null);
         assertNotNull(handle.id());
         assertDoesNotThrow(() -> UUID.fromString(handle.id()));
     }
@@ -19,7 +19,7 @@ class BackgroundProcessHandleTest {
     @Test
     void constructorGeneratesUuidWhenBlank() {
         BackgroundProcessHandle handle = new BackgroundProcessHandle("  ", 1234, "ls", "bash",
-                System.currentTimeMillis(), ProcessState.RUNNING);
+                System.currentTimeMillis(), ProcessState.RUNNING, null);
         assertNotNull(handle.id());
         assertDoesNotThrow(() -> UUID.fromString(handle.id()));
     }
@@ -28,7 +28,7 @@ class BackgroundProcessHandleTest {
     void constructorPreservesValidId() {
         String explicitId = UUID.randomUUID().toString();
         BackgroundProcessHandle handle = new BackgroundProcessHandle(explicitId, 1234, "ls", "bash",
-                System.currentTimeMillis(), ProcessState.RUNNING);
+                System.currentTimeMillis(), ProcessState.RUNNING, null);
         assertEquals(explicitId, handle.id());
     }
 
@@ -46,12 +46,14 @@ class BackgroundProcessHandleTest {
     @Test
     void recordImmutability() {
         long ts = System.currentTimeMillis();
-        BackgroundProcessHandle handle = new BackgroundProcessHandle(99L, "cmd", "tool", ts, ProcessState.RUNNING);
+        BackgroundProcessHandle handle = new BackgroundProcessHandle(99L, "cmd", "tool", ts, ProcessState.RUNNING,
+                "dev");
         assertEquals(99L, handle.pid());
         assertEquals("cmd", handle.command());
         assertEquals("tool", handle.toolName());
         assertEquals(ts, handle.startTime());
         assertEquals(ProcessState.RUNNING, handle.state());
+        assertEquals("dev", handle.resolvedProfile());
     }
 
     @Test
@@ -59,5 +61,14 @@ class BackgroundProcessHandleTest {
         BackgroundProcessHandle handle = new BackgroundProcessHandle(-1, "cmd", "tool",
                 System.currentTimeMillis(), ProcessState.STARTING);
         assertEquals(-1, handle.pid());
+        assertNull(handle.resolvedProfile());
+    }
+
+    @Test
+    void constructorPreservesResolvedProfileWhenProvided() {
+        BackgroundProcessHandle handle = new BackgroundProcessHandle(
+                "id-1", 42L, "cmd", "tool", System.currentTimeMillis(), ProcessState.RUNNING, "ci");
+
+        assertEquals("ci", handle.resolvedProfile());
     }
 }
