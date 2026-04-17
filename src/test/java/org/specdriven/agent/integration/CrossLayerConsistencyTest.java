@@ -50,8 +50,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * observable outcomes for the same logical operations.
  *
  * <p>Note: The JSON-RPC layer creates its own internal SDK on {@code initialize},
- * so agent/run tests focus on SDK + HTTP parity. JSON-RPC tests cover
- * protocol-level correctness (initialize, tools/list, error handling).</p>
+ * so agent/run tests focus on SDK + HTTP parity. JSON-RPC parity checks focus on
+ * shared logical outcomes and explicit divergence boundaries rather than exact
+ * response-envelope equality with HTTP.</p>
  */
 @Isolated
 @Execution(ExecutionMode.SAME_THREAD)
@@ -135,10 +136,14 @@ class CrossLayerConsistencyTest {
         assertEquals(AgentState.STOPPED, sdkAgent.getState());
 
         // HTTP layer
+        stubProvider.resetResponses(
+                new LlmResponse.TextResponse("Hello from stub!")
+        );
         HttpResponse<String> resp = postWithAuth("/agent/run", "{\"prompt\":\"hello\"}");
         assertEquals(200, resp.statusCode());
-        assertTrue(resp.body().contains("\"state\":\"STOPPED\""));
-        assertTrue(resp.body().contains("\"output\":"));
+        Map<String, Object> httpResult = JsonReader.parseObject(resp.body());
+        assertEquals("STOPPED", httpResult.get("state"));
+        assertEquals(sdkOutput, httpResult.get("output"));
     }
 
     // ========================================================================
@@ -174,7 +179,9 @@ class CrossLayerConsistencyTest {
         );
         HttpResponse<String> resp = postWithAuth("/agent/run", "{\"prompt\":\"use the tool\"}");
         assertEquals(200, resp.statusCode());
-        assertTrue(resp.body().contains("\"state\":\"STOPPED\""));
+        Map<String, Object> httpResult = JsonReader.parseObject(resp.body());
+        assertEquals("STOPPED", httpResult.get("state"));
+        assertEquals(sdkOutput, httpResult.get("output"));
         int httpInvocations = toolInvocationCount.get();
         assertTrue(httpInvocations >= 1, "Stub tool should have been invoked via HTTP");
     }
@@ -215,17 +222,48 @@ class CrossLayerConsistencyTest {
     @Timeout(10)
     void toolsList_sdkAndHttp_sameToolNamesAndParameters() throws Exception {
         // SDK layer
-        List<String> sdkToolNames = sdk.tools().stream()
-                .map(Tool::getName)
-                .toList();
-        assertEquals(List.of(STUB_TOOL_NAME), sdkToolNames);
+        List<Tool> sdkTools = sdk.tools();
+        assertEquals(1, sdkTools.size());
+        Tool sdkTool = sdkTools.getFirst();
 
         // HTTP layer
         HttpResponse<String> resp = getWithAuth("/tools");
         assertEquals(200, resp.statusCode());
-        assertTrue(resp.body().contains("\"name\":\"" + STUB_TOOL_NAME + "\""));
-        assertTrue(resp.body().contains("\"description\":\"" + STUB_TOOL_DESC + "\""));
-        assertTrue(resp.body().contains("\"parameters\":["));
+        Map<String, Object> httpResult = JsonReader.parseObject(resp.body());
+        List<Map<String, Object>> httpTools = mapList(httpResult.get("tools"));
+        assertEquals(1, httpTools.size());
+        Map<String, Object> httpTool = httpTools.getFirst();
+        assertEquals(sdkTool.getName(), httpTool.get("name"));
+        assertEquals(sdkTool.getDescription(), httpTool.get("description"));
+
+        List<Map<String, Object>> httpParameters = mapList(httpTool.get("parameters"));
+        assertEquals(sdkTool.getParameters().size(), httpParameters.size());
+        Map<String, Object> httpParameter = httpParameters.getFirst();
+        ToolParameter sdkParameter = sdkTool.getParameters().getFirst();
+        assertEquals(sdkParameter.name(), httpParameter.get("name"));
+        assertEquals(sdkParameter.type(), httpParameter.get("type"));
+        assertEquals(sdkParameter.description(), httpParameter.get("description"));
+        assertEquals(sdkParameter.required(), httpParameter.get("required"));
+    }
+
+    @Test
+    @Timeout(10)
+    void releaseMetadata_httpHealthAndJsonRpcInitialize_shareVersion() throws Exception {
+        HttpRequest healthReq = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl() + "/health"))
+                .GET()
+                .build();
+        HttpResponse<String> healthResp = httpClient.send(healthReq, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, healthResp.statusCode());
+        Map<String, Object> healthResult = JsonReader.parseObject(healthResp.body());
+
+        String initReq = jsonRpcRequest(1, "initialize", Map.of("systemPrompt", "test"));
+        List<ParsedFrame> frames = executeJsonRpc(frame(initReq), 1, 3000);
+        assertEquals(1, frames.size());
+        Map<String, Object> initResult = resultField(frames.getFirst());
+
+        assertEquals(healthResult.get("version"), initResult.get("version"));
+        assertEquals("0.1.0", initResult.get("version"));
     }
 
     // ========================================================================
@@ -287,6 +325,22 @@ class CrossLayerConsistencyTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> error = (Map<String, Object>) fields.get("error");
         assertEquals(-32602, ((Number) error.get("code")).intValue());
+    }
+
+    @Test
+    @Timeout(10)
+    void missingPrompt_httpAndJsonRpc_bothRejectInvalidInputExplicitly() throws Exception {
+        HttpResponse<String> httpResp = postWithAuth("/agent/run", "{\"systemPrompt\":\"be helpful\"}");
+        assertEquals(400, httpResp.statusCode());
+        Map<String, Object> httpError = JsonReader.parseObject(httpResp.body());
+        assertEquals("invalid_params", httpError.get("error"));
+
+        String initReq = jsonRpcRequest(1, "initialize", Map.of("systemPrompt", "test"));
+        String runReq = jsonRpcRequest(2, "agent/run", Map.of("notPrompt", "value"));
+        List<ParsedFrame> frames = executeJsonRpc(joinFrames(frame(initReq), frame(runReq)), 2, 5000);
+        assertEquals(2, frames.size());
+        Map<String, Object> rpcError = errorField(frames.get(1));
+        assertEquals(-32602, ((Number) rpcError.get("code")).intValue());
     }
 
     // ========================================================================
@@ -365,6 +419,38 @@ class CrossLayerConsistencyTest {
         assertEquals(-32601, ((Number) error.get("code")).intValue());
     }
 
+    @Test
+    @Timeout(10)
+    void unsupportedOperation_httpAndJsonRpc_bothRejectExplicitly() throws Exception {
+        HttpResponse<String> httpResp = getWithAuth("/nonexistent");
+        assertEquals(404, httpResp.statusCode());
+        Map<String, Object> httpError = JsonReader.parseObject(httpResp.body());
+        assertEquals("not_found", httpError.get("error"));
+
+        String initReq = jsonRpcRequest(1, "initialize", Map.of("systemPrompt", "test"));
+        String badReq = jsonRpcRequest(2, "nonexistent/method", null);
+        List<ParsedFrame> frames = executeJsonRpc(joinFrames(frame(initReq), frame(badReq)), 2, 5000);
+        assertEquals(2, frames.size());
+        Map<String, Object> rpcError = errorField(frames.get(1));
+        assertEquals(-32601, ((Number) rpcError.get("code")).intValue());
+    }
+
+    @Test
+    @Timeout(10)
+    void stopContract_httpAndJsonRpc_preserveSurfaceSpecificBehavior() throws Exception {
+        HttpResponse<String> httpResp = postWithAuth("/agent/stop", "");
+        assertEquals(400, httpResp.statusCode());
+        Map<String, Object> httpError = JsonReader.parseObject(httpResp.body());
+        assertEquals("invalid_params", httpError.get("error"));
+
+        String initReq = jsonRpcRequest(1, "initialize", Map.of("systemPrompt", "test"));
+        String stopReq = jsonRpcRequest(2, "agent/stop", null);
+        List<ParsedFrame> frames = executeJsonRpc(joinFrames(frame(initReq), frame(stopReq)), 2, 5000);
+        assertEquals(2, frames.size());
+        assertFalse(frames.get(1).fields().containsKey("error"));
+        assertNull(frames.get(1).fields().get("result"));
+    }
+
     // ========================================================================
     // HTTP helpers
     // ========================================================================
@@ -390,6 +476,17 @@ class CrossLayerConsistencyTest {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         return httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> mapList(Object value) {
+        return value instanceof List<?> list ? (List<Map<String, Object>>) (List<?>) list : List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> errorField(ParsedFrame frame) {
+        Object error = frame.fields().get("error");
+        return error instanceof Map ? (Map<String, Object>) error : Map.of();
     }
 
     private static String jsonField(String json, String key) {
@@ -540,6 +637,7 @@ class CrossLayerConsistencyTest {
         FilterDef def = new FilterDef();
         def.setFilterName(name);
         def.setFilter(filter);
+        def.setFilterClass(filter.getClass().getName());
         if (initParams != null) {
             initParams.forEach(def::addInitParameter);
         }

@@ -7,6 +7,7 @@ mapping:
   tests:
     - src/test/java/org/specdriven/agent/http/HttpE2eTest.java
     - src/test/java/org/specdriven/agent/http/HttpTestStack.java
+    - src/test/java/org/specdriven/agent/integration/CrossLayerConsistencyTest.java
 ---
 
 # http-e2e-tests.md

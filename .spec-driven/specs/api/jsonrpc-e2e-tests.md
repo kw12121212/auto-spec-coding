@@ -6,6 +6,7 @@ mapping:
     - src/main/java/org/specdriven/agent/jsonrpc/StdioTransport.java
   tests:
     - src/test/java/org/specdriven/agent/jsonrpc/JsonRpcEndToEndTest.java
+    - src/test/java/org/specdriven/agent/integration/CrossLayerConsistencyTest.java
 ---
 
 # jsonrpc-e2e-tests.md

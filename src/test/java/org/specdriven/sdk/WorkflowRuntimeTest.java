@@ -257,6 +257,10 @@ class WorkflowRuntimeTest {
         org.specdriven.agent.event.SimpleEventBus eventBus = new org.specdriven.agent.event.SimpleEventBus();
         WorkflowRuntime.InMemoryStateStore stateStore = new WorkflowRuntime.InMemoryStateStore();
         List<String> deliveredSessionIds = new CopyOnWriteArrayList<>();
+        List<org.specdriven.agent.event.Event> checkpointEvents = new CopyOnWriteArrayList<>();
+        List<org.specdriven.agent.event.Event> recoveredEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.WORKFLOW_CHECKPOINT_SAVED, checkpointEvents::add);
+        eventBus.subscribe(EventType.WORKFLOW_RECOVERED, recoveredEvents::add);
 
         org.specdriven.agent.question.QuestionDeliveryService deliveryService = new org.specdriven.agent.question.QuestionDeliveryService(
                 new org.specdriven.agent.question.QuestionDeliveryChannel() {
@@ -348,6 +352,15 @@ class WorkflowRuntimeTest {
             workflowId = started.workflowId();
             awaitStatus(firstRuntime, workflowId, WorkflowStatus.WAITING_FOR_INPUT, Duration.ofSeconds(5));
             assertEquals(List.of(workflowId), deliveredSessionIds);
+
+            org.specdriven.agent.event.Event waitingCheckpoint = awaitCheckpointEvent(
+                    checkpointEvents,
+                    workflowId,
+                    WorkflowStatus.WAITING_FOR_INPUT,
+                    0,
+                    Duration.ofSeconds(5));
+            assertEquals("waiting-recovery", waitingCheckpoint.metadata().get("workflowName"));
+            assertEquals(1, waitingCheckpoint.metadata().get("resumeFromStepIndex"));
         } finally {
             firstRuntime.close();
         }
@@ -379,6 +392,14 @@ class WorkflowRuntimeTest {
             WorkflowInstanceView waiting = recoveredRuntime.workflowState(workflowId);
             assertEquals(WorkflowStatus.WAITING_FOR_INPUT, waiting.status());
 
+            org.specdriven.agent.event.Event recovered = awaitRecoveredEvent(
+                    recoveredEvents,
+                    workflowId,
+                    Duration.ofSeconds(5));
+            assertEquals("waiting-recovery", recovered.metadata().get("workflowName"));
+            assertEquals(WorkflowStatus.WAITING_FOR_INPUT.name(), recovered.metadata().get("status"));
+            assertEquals(1, recovered.metadata().get("resumeFromStepIndex"));
+
             eventBus.publish(new org.specdriven.agent.event.Event(
                     EventType.QUESTION_ANSWERED,
                     System.currentTimeMillis(),
@@ -393,6 +414,121 @@ class WorkflowRuntimeTest {
             assertEquals("approved", resultMap.get("humanInput"));
         } finally {
             recoveredRuntime.close();
+        }
+    }
+
+    @Test
+    void resumedWorkflowPublishesCheckpointForRunningStateBeforeFinishing() {
+        org.specdriven.agent.event.SimpleEventBus eventBus = new org.specdriven.agent.event.SimpleEventBus();
+        WorkflowRuntime.InMemoryStateStore stateStore = new WorkflowRuntime.InMemoryStateStore();
+        List<org.specdriven.agent.event.Event> checkpointEvents = new CopyOnWriteArrayList<>();
+        eventBus.subscribe(EventType.WORKFLOW_CHECKPOINT_SAVED, checkpointEvents::add);
+
+        org.specdriven.agent.question.QuestionDeliveryService deliveryService = new org.specdriven.agent.question.QuestionDeliveryService(
+                new org.specdriven.agent.question.QuestionDeliveryChannel() {
+                    @Override
+                    public void send(org.specdriven.agent.question.Question q) {}
+
+                    @Override
+                    public void close() {}
+                },
+                new org.specdriven.agent.question.QuestionReplyCollector() {
+                    @Override
+                    public void collect(String sessionId, String questionId, org.specdriven.agent.question.Answer answer) {}
+
+                    @Override
+                    public void close() {}
+                },
+                new org.specdriven.agent.question.QuestionRuntime(eventBus),
+                new org.specdriven.agent.question.QuestionStore() {
+                    private final java.util.concurrent.ConcurrentHashMap<String, org.specdriven.agent.question.Question> store = new java.util.concurrent.ConcurrentHashMap<>();
+
+                    @Override
+                    public String save(org.specdriven.agent.question.Question question) {
+                        store.put(question.questionId(), question);
+                        return question.questionId();
+                    }
+
+                    @Override
+                    public org.specdriven.agent.question.Question update(String questionId, org.specdriven.agent.question.QuestionStatus status) {
+                        return store.get(questionId);
+                    }
+
+                    @Override
+                    public List<org.specdriven.agent.question.Question> findBySession(String sessionId) {
+                        return store.values().stream().filter(q -> sessionId.equals(q.sessionId())).toList();
+                    }
+
+                    @Override
+                    public List<org.specdriven.agent.question.Question> findByStatus(org.specdriven.agent.question.QuestionStatus status) {
+                        return store.values().stream().filter(q -> q.status() == status).toList();
+                    }
+
+                    @Override
+                    public java.util.Optional<org.specdriven.agent.question.Question> findPending(String sessionId) {
+                        return store.values().stream().filter(q -> sessionId.equals(q.sessionId())).findFirst();
+                    }
+
+                    @Override
+                    public void delete(String questionId) {
+                        store.remove(questionId);
+                    }
+                });
+
+        WorkflowRuntime runtime = new WorkflowRuntime(
+                eventBus,
+                List.of(
+                        new WorkflowStepExecutor() {
+                            @Override
+                            public WorkflowStep.StepType stepType() {
+                                return WorkflowStep.StepType.TOOL;
+                            }
+
+                            @Override
+                            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                                return WorkflowStepResult.awaitingInput("approve?");
+                            }
+                        },
+                        new WorkflowStepExecutor() {
+                            @Override
+                            public WorkflowStep.StepType stepType() {
+                                return WorkflowStep.StepType.SERVICE;
+                            }
+
+                            @Override
+                            public WorkflowStepResult execute(WorkflowStep step, Map<String, Object> input) {
+                                return WorkflowStepResult.success(Map.of("humanInput", input.get("humanInput")));
+                            }
+                        }),
+                deliveryService,
+                stateStore);
+        try {
+            runtime.declareWorkflow("resume-checkpoint", List.of(
+                    new WorkflowStep(WorkflowStep.StepType.TOOL, "pause-step"),
+                    new WorkflowStep(WorkflowStep.StepType.SERVICE, "finish-step")));
+
+            WorkflowInstanceView started = runtime.startWorkflow("resume-checkpoint", Map.of());
+            awaitStatus(runtime, started.workflowId(), WorkflowStatus.WAITING_FOR_INPUT, Duration.ofSeconds(5));
+            int checkpointCountBeforeResume = checkpointEvents.size();
+
+            eventBus.publish(new org.specdriven.agent.event.Event(
+                    EventType.QUESTION_ANSWERED,
+                    System.currentTimeMillis(),
+                    started.workflowId(),
+                    Map.of("sessionId", started.workflowId(), "questionId", "q-1", "content", "approved")));
+
+            awaitResult(runtime, started.workflowId(), Duration.ofSeconds(5));
+
+            org.specdriven.agent.event.Event runningCheckpoint = awaitCheckpointEvent(
+                    checkpointEvents,
+                    started.workflowId(),
+                    WorkflowStatus.RUNNING,
+                    checkpointCountBeforeResume,
+                    Duration.ofSeconds(5));
+            assertEquals("resume-checkpoint", runningCheckpoint.metadata().get("workflowName"));
+            assertEquals(1, runningCheckpoint.metadata().get("resumeFromStepIndex"));
+        } finally {
+            runtime.close();
         }
     }
 
@@ -540,6 +676,44 @@ class WorkflowRuntimeTest {
             sleepBriefly();
         }
         fail("Timed out waiting for retry-exhausted workflow failure event for workflowId=" + workflowId);
+        return null;
+    }
+
+    private org.specdriven.agent.event.Event awaitCheckpointEvent(
+            List<org.specdriven.agent.event.Event> checkpointEvents,
+            String workflowId,
+            WorkflowStatus expectedStatus,
+            int startIndex,
+            Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            for (int index = Math.max(0, startIndex); index < checkpointEvents.size(); index++) {
+                org.specdriven.agent.event.Event event = checkpointEvents.get(index);
+                if (workflowId.equals(event.metadata().get("workflowId"))
+                        && expectedStatus.name().equals(event.metadata().get("status"))) {
+                    return event;
+                }
+            }
+            sleepBriefly();
+        }
+        fail("Timed out waiting for checkpoint event for workflowId=" + workflowId + " and status=" + expectedStatus);
+        return null;
+    }
+
+    private org.specdriven.agent.event.Event awaitRecoveredEvent(
+            List<org.specdriven.agent.event.Event> recoveredEvents,
+            String workflowId,
+            Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            for (org.specdriven.agent.event.Event event : recoveredEvents) {
+                if (workflowId.equals(event.metadata().get("workflowId"))) {
+                    return event;
+                }
+            }
+            sleepBriefly();
+        }
+        fail("Timed out waiting for recovered event for workflowId=" + workflowId);
         return null;
     }
 

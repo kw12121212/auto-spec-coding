@@ -35,6 +35,7 @@ mapping:
     - src/test/java/org/specdriven/sdk/SpecDrivenTest.java
     - src/test/java/org/specdriven/sdk/SpecDrivenPlatformTest.java
     - src/test/java/org/specdriven/sdk/WorkflowRuntimeTest.java
+    - src/test/java/org/specdriven/agent/integration/CrossLayerConsistencyTest.java
 ---
 
 # sdk-public-api.md
