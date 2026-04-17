@@ -25,7 +25,6 @@
 - [m22-question-resolution.md](milestones/m22-question-resolution.md) - M22 - 交互问题解析与多通道回复 - complete
 - [m23-mobile-interaction-integration.md](milestones/m23-mobile-interaction-integration.md) - M23 - 配置化移动交互集成层 - complete
 - [m24-autonomous-loop-driver.md](milestones/m24-autonomous-loop-driver.md) - M24 - 内置自主循环执行流水线 - complete
-- [m25-production-install-repair.md](milestones/m25-production-install-repair.md) - M25 - 生产环境一键安装与修复 - proposed
 - [m26-autonomous-loop-recovery-escalation.md](milestones/m26-autonomous-loop-recovery-escalation.md) - M26 - 自主循环恢复与升级控制 - complete
 - [m27-smart-context-injection.md](milestones/m27-smart-context-injection.md) - M27 - 智能上下文注入与 Token 优化 - complete
 - [m28-dynamic-llm-config.md](milestones/m28-dynamic-llm-config.md) - M28 - 动态 LLM 配置与热切换 - complete
