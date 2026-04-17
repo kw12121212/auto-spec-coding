@@ -164,6 +164,7 @@ final class HttpTestStack implements AutoCloseable {
         FilterDef def = new FilterDef();
         def.setFilterName(name);
         def.setFilter(filter);
+        def.setFilterClass(filter.getClass().getName());
         initParams.forEach(def::addInitParameter);
         ctx.addFilterDef(def);
 

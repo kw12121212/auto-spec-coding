@@ -14,6 +14,8 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
@@ -406,25 +408,39 @@ class LealonePlatformTest {
     void sandlockFailsExplicitlyWhenBundledEntryMissing() throws Exception {
         Path configPath = writeProfilesConfig();
         Path bundledEntry = bundledEntryPath();
+        Path resourceRoot = tempDir.resolve("resource-root");
+        Path resourceDir = resourceRoot.resolve("depends").resolve("sandlock").resolve("v0.6.0").resolve("linux-x86_64");
         Files.deleteIfExists(bundledEntry);
         Files.createDirectories(bundledEntry.getParent());
+        Files.createDirectories(resourceDir);
+        Files.writeString(resourceDir.resolve("sandlock"), "#!/bin/sh\nprintf 'bundled:%s\\n' \"$0\"\n");
+        Files.writeString(resourceDir.resolve("libsandlock_ffi.so"), "fake-lib\n");
 
-        LealonePlatform platform = SpecDriven.builder()
-                .config(configPath)
-                .providerRegistry(new DefaultLlmProviderRegistry())
-                .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(Map.of(), tempDir))
-                .buildPlatform();
+        try (URLClassLoader resourceLoader = new URLClassLoader(new URL[]{resourceRoot.toUri().toURL()}, null)) {
+            LealonePlatform platform = SpecDriven.builder()
+                    .config(configPath)
+                    .providerRegistry(new DefaultLlmProviderRegistry())
+                    .sandlockRuntime(new LealonePlatform.SystemSandlockRuntime(
+                            Map.of(), tempDir, tempDir.resolve("runtime-cache"), resourceLoader))
+                    .buildPlatform();
 
-        try {
-            LealonePlatform.SandlockExecutionException error = assertThrows(
-                    LealonePlatform.SandlockExecutionException.class,
-                    () -> platform.sandlock().execute(List.of("echo", "hello")));
+            try {
+                LealonePlatform.SandlockExecutionResult result = platform.sandlock().execute(List.of("echo", "hello"));
 
-            assertEquals(LealonePlatform.SandlockFailureCode.UNAVAILABLE, error.failureCode());
-            assertTrue(error.getMessage().contains("repository-bundled entry"));
-            assertTrue(error.getMessage().contains(bundledEntry.toAbsolutePath().normalize().toString()));
-        } finally {
-            platform.close();
+                Path extractedEntry = tempDir.resolve("runtime-cache")
+                        .resolve("sandlock")
+                        .resolve("v0.6.0")
+                        .resolve("linux-x86_64")
+                        .resolve("sandlock")
+                        .toAbsolutePath()
+                        .normalize();
+                assertEquals(0, result.exitCode());
+                assertTrue(result.stdout().contains("bundled:" + extractedEntry));
+                assertTrue(Files.isExecutable(extractedEntry));
+                assertEquals("fake-lib\n", Files.readString(extractedEntry.getParent().resolve("libsandlock_ffi.so")));
+            } finally {
+                platform.close();
+            }
         }
     }
 

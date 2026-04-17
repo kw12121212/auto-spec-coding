@@ -7,6 +7,7 @@ import org.specdriven.agent.json.JsonReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.net.ServerSocket;
 import java.util.List;
 import java.util.Map;
 
@@ -152,6 +153,47 @@ class SpecDrivenCliMainTest {
     }
 
     @Test
+    void serviceRuntimeInvalidPortFailsBeforeBootstrapValidationRuns() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, "DROP TABLE unsupported;\n", StandardCharsets.UTF_8);
+
+        SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir,
+                "service-runtime",
+                "--services-sql", servicesSql.toString(),
+                "--port", "70000",
+                "--jdbc-url", isolatedJdbcUrl(),
+                "--exit-after-start");
+
+        assertEquals(1, result.exitCode());
+        Map<String, Object> json = JsonReader.parseObject(result.stdout());
+        assertEquals("failed", JsonReader.getString(json, "status"));
+        assertEquals("invalid_config", JsonReader.getString(json, "error"));
+        assertTrue(JsonReader.getString(json, "message").contains("port must be between"));
+    }
+
+    @Test
+    void serviceRuntimeHttpStartupFailureReturnsStructuredFailure() throws Exception {
+        Path servicesSql = tempDir.resolve("services.sql");
+        Files.writeString(servicesSql, "\n", StandardCharsets.UTF_8);
+
+        try (ServerSocket reservedPort = new ServerSocket(0)) {
+            SpecDrivenCliMain.Result result = SpecDrivenCliMain.runForTest(tempDir,
+                    "service-runtime",
+                    "--services-sql", servicesSql.toString(),
+                    "--host", "127.0.0.1",
+                    "--port", String.valueOf(reservedPort.getLocalPort()),
+                    "--jdbc-url", isolatedJdbcUrl(),
+                    "--exit-after-start");
+
+            assertEquals(1, result.exitCode());
+            Map<String, Object> json = JsonReader.parseObject(result.stdout());
+            assertEquals("failed", JsonReader.getString(json, "status"));
+            assertEquals("http_startup_error", JsonReader.getString(json, "error"));
+            assertNotNull(JsonReader.getString(json, "message"));
+        }
+    }
+
+    @Test
     void serviceRuntimeExitAfterStartReturnsStructuredSuccess() throws Exception {
         Path servicesSql = tempDir.resolve("services.sql");
         Files.writeString(servicesSql, "\n", StandardCharsets.UTF_8);
@@ -172,6 +214,7 @@ class SpecDrivenCliMainTest {
         assertTrue(JsonReader.getLong(json, "port") > 0);
         assertTrue(JsonReader.getString(json, "serviceBaseUrl").contains("/services"));
         assertTrue(JsonReader.getString(json, "healthUrl").contains("/api/v1/health"));
+        assertEquals(0L, JsonReader.getLong(json, "appliedStatements"));
     }
 
     @Test

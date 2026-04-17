@@ -6,6 +6,7 @@ mapping:
     - src/main/java/org/specdriven/agent/http/RateLimitFilter.java
   tests:
     - src/test/java/org/specdriven/agent/http/HttpE2eTest.java
+    - src/test/java/org/specdriven/agent/http/HttpTestStack.java
 ---
 
 # http-e2e-tests.md

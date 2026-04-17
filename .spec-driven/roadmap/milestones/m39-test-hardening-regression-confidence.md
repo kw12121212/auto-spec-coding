@@ -33,7 +33,7 @@
 - 测试补强相关变更 MUST 通过明确的 lint 或 validation 命令与 unit/integration test 命令验证
 
 ## Planned Changes
-- `service-runtime-regression-tests` - Declared: planned - 补强 service runtime、service HTTP exposure、启动配置与错误传播的回归测试，提升真实部署路径的回归可发现性
+- `service-runtime-regression-tests` - Declared: complete - 补强 service runtime、service HTTP exposure、启动配置与错误传播的回归测试，提升真实部署路径的回归可发现性
 - `workflow-recovery-regression-tests` - Declared: planned - 补强 workflow 的暂停恢复、checkpoint、retry exhaustion 和审计事件回归测试，提升复杂状态机场景的稳定性信心
 - `cross-interface-consistency-tests` - Declared: planned - 补强 SDK、HTTP、JSON-RPC 三层接口的一致性验证，降低多入口行为漂移风险
 
@@ -59,3 +59,4 @@
 - 判定原则：如果目标是防止某个已有外部行为回归，归入 M39；如果目标是让很多测试更容易写、更稳定或更可复用，则应归入 M40
 - 若需要执行 Maven 相关验证命令，本里程碑中的测试与验证工作统一使用 `mvnd`，不使用 `mvn`
 - 推荐推进顺序：先执行 `service-runtime-regression-tests`，再执行 `workflow-recovery-regression-tests`，最后执行 `cross-interface-consistency-tests`；完成 M39 后再进入 M40 的测试体系治理工作
+

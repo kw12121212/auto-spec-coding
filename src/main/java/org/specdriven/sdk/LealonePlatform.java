@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -818,18 +819,38 @@ public final class LealonePlatform implements AutoCloseable {
         private static final String BUNDLED_VERSION = "v0.6.0";
         private static final String BUNDLED_PLATFORM_DIR = "linux-x86_64";
         private static final String ENTRY_NAME = "sandlock";
+        private static final String LIB_NAME = "libsandlock_ffi.so";
         private final Map<String, String> environment;
         private final Path repositoryRoot;
+        private final Path runtimeCacheRoot;
+        private final ClassLoader resourceClassLoader;
 
         SystemSandlockRuntime() {
-            this(System.getenv(), Path.of(System.getProperty("user.dir", ".")));
+            this(System.getenv(), Path.of(System.getProperty("user.dir", ".")),
+                    Path.of(System.getProperty("user.home"), ".specdriven", "runtime-cache"),
+                    SystemSandlockRuntime.class.getClassLoader());
         }
 
         SystemSandlockRuntime(Map<String, String> environment, Path repositoryRoot) {
+            this(environment, repositoryRoot,
+                    Path.of(System.getProperty("user.home"), ".specdriven", "runtime-cache"),
+                    SystemSandlockRuntime.class.getClassLoader());
+        }
+
+        SystemSandlockRuntime(Map<String, String> environment, Path repositoryRoot, Path runtimeCacheRoot) {
+            this(environment, repositoryRoot, runtimeCacheRoot, SystemSandlockRuntime.class.getClassLoader());
+        }
+
+        SystemSandlockRuntime(Map<String, String> environment, Path repositoryRoot, Path runtimeCacheRoot,
+                              ClassLoader resourceClassLoader) {
             this.environment = Map.copyOf(environment == null ? Map.of() : environment);
             this.repositoryRoot = Objects.requireNonNull(repositoryRoot, "repositoryRoot must not be null")
                     .toAbsolutePath()
                     .normalize();
+            this.runtimeCacheRoot = Objects.requireNonNull(runtimeCacheRoot, "runtimeCacheRoot must not be null")
+                    .toAbsolutePath()
+                    .normalize();
+            this.resourceClassLoader = Objects.requireNonNull(resourceClassLoader, "resourceClassLoader must not be null");
         }
 
         @Override
@@ -908,9 +929,13 @@ public final class LealonePlatform implements AutoCloseable {
             if (Files.isExecutable(bundledEntry)) {
                 return new SandlockEntryResolution(bundledEntry, SandlockLaunchCheck.ready());
             }
+            Path extractedEntry = extractBundledEntryFromResources();
+            if (extractedEntry != null && Files.isExecutable(extractedEntry)) {
+                return new SandlockEntryResolution(extractedEntry, SandlockLaunchCheck.ready());
+            }
             return new SandlockEntryResolution(null, SandlockLaunchCheck.unavailable(
-                    "Sandlock is unavailable because the repository-bundled entry was not found or is not executable: "
-                            + bundledEntry));
+                    "Sandlock is unavailable because neither the repository-bundled entry nor the packaged runtime "
+                            + "resource was found or executable: " + bundledEntry));
         }
 
         Path bundledEntryPath() {
@@ -930,11 +955,55 @@ public final class LealonePlatform implements AutoCloseable {
                 return;
             }
             Path actualDir = entryPath.toAbsolutePath().normalize().getParent();
-            if (actualDir == null || !actualDir.equals(bundledDir)) {
+            if (actualDir == null) {
                 return;
             }
-            prependEnv(processEnvironment, "LD_LIBRARY_PATH", bundledDir.toString());
-            prependEnv(processEnvironment, "PATH", bundledDir.toString());
+            if (actualDir.equals(bundledDir) || looksLikeExtractedBundledDir(actualDir)) {
+                prependEnv(processEnvironment, "LD_LIBRARY_PATH", actualDir.toString());
+                prependEnv(processEnvironment, "PATH", actualDir.toString());
+            }
+        }
+
+        private Path extractBundledEntryFromResources() {
+            String resourceBase = bundledResourceBase();
+            try (InputStream entryStream = resourceStream(resourceBase + "/" + ENTRY_NAME);
+                 InputStream libStream = resourceStream(resourceBase + "/" + LIB_NAME)) {
+                if (entryStream == null || libStream == null) {
+                    return null;
+                }
+                Path targetDir = bundledExtractionDir();
+                Files.createDirectories(targetDir);
+                copyExecutable(entryStream, targetDir.resolve(ENTRY_NAME));
+                copyRegularFile(libStream, targetDir.resolve(LIB_NAME));
+                return targetDir.resolve(ENTRY_NAME);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to extract bundled Sandlock runtime resources", e);
+            }
+        }
+
+        private InputStream resourceStream(String resourcePath) {
+            return resourceClassLoader.getResourceAsStream(resourcePath);
+        }
+
+        private String bundledResourceBase() {
+            return "depends/sandlock/" + BUNDLED_VERSION + "/" + BUNDLED_PLATFORM_DIR;
+        }
+
+        private Path bundledExtractionDir() {
+            return runtimeCacheRoot.resolve("sandlock").resolve(BUNDLED_VERSION).resolve(BUNDLED_PLATFORM_DIR);
+        }
+
+        private boolean looksLikeExtractedBundledDir(Path path) {
+            return path.toAbsolutePath().normalize().equals(bundledExtractionDir().toAbsolutePath().normalize());
+        }
+
+        private void copyExecutable(InputStream source, Path target) throws IOException {
+            copyRegularFile(source, target);
+            target.toFile().setExecutable(true);
+        }
+
+        private void copyRegularFile(InputStream source, Path target) throws IOException {
+            Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
 
         private static void prependEnv(Map<String, String> environment, String key, String value) {

@@ -140,12 +140,13 @@ mvnd -q -Dexec.mainClass=org.specdriven.cli.SpecDrivenCliMain \
 Packaged-runtime startup:
 
 ```bash
-mvnd -q package dependency:copy-dependencies
+mvn -q -DskipBuiltinToolsDownload=true -DskipTests package
 
-java -cp "target/auto-spec-coding-0.1.0-SNAPSHOT.jar:target/dependency/*" \
-  org.specdriven.cli.SpecDrivenCliMain \
+java -jar target/auto-spec-coding-0.1.0-SNAPSHOT-standalone.jar \
   service-runtime --services-sql ./services.sql --host 127.0.0.1 --port 8080 --api-key test-api-key
 ```
+
+The `*-standalone.jar` artifact includes runtime dependencies and bundled default runtime assets needed for supported packaged execution, so operators do not need a separate dependency directory or a repository checkout beside the jar.
 
 Startup returns structured JSON. A successful start includes the resolved `services.sql` path, HTTP host and port, `serviceBaseUrl`, `healthUrl`, and applied bootstrap statement count. Startup failures return `status=failed` with an error code such as `missing_input`, `invalid_config`, `bootstrap_error`, or `http_startup_error`.
 
