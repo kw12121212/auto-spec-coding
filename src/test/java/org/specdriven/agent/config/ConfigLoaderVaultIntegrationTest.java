@@ -1,5 +1,6 @@
 package org.specdriven.agent.config;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.specdriven.agent.vault.SecretVault;
@@ -14,6 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@Tag("integration")
 class ConfigLoaderVaultIntegrationTest {
 
     private final StubVault vault = new StubVault();

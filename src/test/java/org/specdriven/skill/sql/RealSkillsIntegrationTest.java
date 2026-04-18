@@ -1,5 +1,6 @@
 package org.specdriven.skill.sql;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Verifies that all SKILL.md files from the auto-spec-driven reference project
  * parse successfully and generate valid SQL.
  */
+@Tag("integration")
 @DisabledOnOs(OS.WINDOWS) // reference project path is Linux-specific
 class RealSkillsIntegrationTest {
 

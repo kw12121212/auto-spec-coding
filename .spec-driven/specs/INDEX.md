@@ -104,6 +104,7 @@
 ## Testing (测试基础设施)
 
 - [test-fixtures.md](testing/test-fixtures.md) - CapturingEventBus, LealoneTestDb — shared test fixture helpers in testsupport package
+- [test-quality-gates.md](testing/test-quality-gates.md) - standard lint, unit test, integration test commands and three-layer test convention
 
 ## Release (发布准备)
 

@@ -54,6 +54,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * shared logical outcomes and explicit divergence boundaries rather than exact
  * response-envelope equality with HTTP.</p>
  */
+@Tag("integration")
 @Isolated
 @Execution(ExecutionMode.SAME_THREAD)
 class CrossLayerConsistencyTest {

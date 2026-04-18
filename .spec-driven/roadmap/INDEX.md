@@ -39,4 +39,4 @@
 - [m37-enterprise-workflow-runtime-governance.md](milestones/m37-enterprise-workflow-runtime-governance.md) - M37 - 企业级工作流运行与治理 - complete
 - [m38-fast-profiled-sandbox-runtime.md](milestones/m38-fast-profiled-sandbox-runtime.md) - M38 - 快速 Profile 化沙箱运行环境 - complete
 - [m39-test-hardening-regression-confidence.md](milestones/m39-test-hardening-regression-confidence.md) - M39 - 测试补强与回归信心 - complete
-- [m40-test-infrastructure-quality-gates.md](milestones/m40-test-infrastructure-quality-gates.md) - M40 - 测试基础设施与质量门禁 - proposed
+- [m40-test-infrastructure-quality-gates.md](milestones/m40-test-infrastructure-quality-gates.md) - M40 - 测试基础设施与质量门禁 - complete

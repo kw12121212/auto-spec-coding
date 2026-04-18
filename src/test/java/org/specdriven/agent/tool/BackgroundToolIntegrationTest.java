@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.agent.AgentContext;
 import org.specdriven.agent.agent.AgentState;
@@ -19,6 +19,7 @@ import org.specdriven.agent.event.SimpleEventBus;
 /**
  * Integration tests for background tool lifecycle management with Agent.
  */
+@Tag("integration")
 class BackgroundToolIntegrationTest {
 
     @Test

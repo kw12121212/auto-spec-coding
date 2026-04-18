@@ -1,5 +1,6 @@
 package org.specdriven.agent.agent;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
@@ -14,6 +15,7 @@ import org.specdriven.agent.testsupport.LealoneTestDb;
  * Verifies that DefaultAgent + LealoneSessionStore persist conversation history
  * so that a reloaded session matches the in-memory state after execution.
  */
+@Tag("integration")
 class SessionStoreIntegrationTest {
 
     /** Stub LlmClient that returns a fixed text response immediately. */

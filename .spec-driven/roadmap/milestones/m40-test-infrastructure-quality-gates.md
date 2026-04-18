@@ -35,7 +35,7 @@
 ## Planned Changes
 - `flaky-test-hardening` - Declared: complete - 修复脆弱时序、共享状态和不稳定等待逻辑，提升测试稳定性和回归信号可信度
 - `test-fixture-standardization` - Declared: complete - 统一高频测试夹具、辅助构造器和断言模式，降低新增测试成本并减少重复样板
-- `test-command-quality-gates` - Declared: planned - 统一 lint、validation、unit、integration 等常用验证命令与质量门禁约定，形成稳定的测试入口
+- `test-command-quality-gates` - Declared: complete - 统一 lint、validation、unit、integration 等常用验证命令与质量门禁约定，形成稳定的测试入口
 
 ## Dependencies
 
@@ -49,7 +49,7 @@
 - flaky tests 若只做表面重试而不修根因，会制造虚假的稳定感
 
 ## Status
-- Declared: proposed
+- Declared: complete
 
 ## Notes
 
@@ -58,5 +58,7 @@
 - 判定原则：如果目标是让很多测试更容易写、更稳定或更可复用，归入 M40；如果目标是防止某个已有外部行为回归，则应归入 M39
 - 若需要执行 Maven 相关验证命令，本里程碑中的测试与验证工作统一使用 `mvnd`，不使用 `mvn`
 - 推荐推进顺序：在 M39 的高风险回归测试补强完成后，先执行 `flaky-test-hardening`，再执行 `test-fixture-standardization`，最后执行 `test-command-quality-gates`
+
+
 
 
