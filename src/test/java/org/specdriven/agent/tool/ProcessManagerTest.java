@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.tool.BackgroundProcessHandle;
+import org.specdriven.agent.tool.ProcessState;
 
 class ProcessManagerTest {
 
@@ -114,9 +116,8 @@ class ProcessManagerTest {
         Process process = launchEchoProcess("hello");
         BackgroundProcessHandle handle = pm.register(process, "echo-tool", "echo hello");
 
-        // Wait for process to exit
         process.waitFor();
-        Thread.sleep(200); // Allow exit monitor to update state
+        awaitState(pm, handle.id(), ProcessState.COMPLETED);
 
         Optional<ProcessState> state = pm.getState(handle.id());
         assertTrue(state.isPresent());
@@ -132,7 +133,7 @@ class ProcessManagerTest {
         BackgroundProcessHandle handle = pm.register(process, "fail-tool", "exit 1");
 
         process.waitFor();
-        Thread.sleep(200);
+        awaitState(pm, handle.id(), ProcessState.FAILED);
 
         Optional<ProcessState> state = pm.getState(handle.id());
         assertTrue(state.isPresent());
@@ -150,11 +151,10 @@ class ProcessManagerTest {
         BackgroundProcessHandle handle = pm.register(process, "echo-tool", "echo hello world");
 
         process.waitFor();
-        Thread.sleep(300); // Allow output reader to finish
+        ProcessOutput output = awaitOutputContains(pm, handle.id(), "hello world");
 
-        Optional<ProcessOutput> output = pm.getOutput(handle.id());
-        assertTrue(output.isPresent());
-        assertTrue(output.get().stdout().contains("hello world"));
+        assertNotNull(output);
+        assertTrue(output.stdout().contains("hello world"));
     }
 
     @Test
@@ -166,11 +166,10 @@ class ProcessManagerTest {
         BackgroundProcessHandle handle = pm.register(process, "fail-tool", "echo err >&2; exit 1");
 
         process.waitFor();
-        Thread.sleep(300);
+        ProcessOutput output = awaitOutputContains(pm, handle.id(), "err");
 
-        Optional<ProcessOutput> output = pm.getOutput(handle.id());
-        assertTrue(output.isPresent());
-        assertTrue(output.get().stderr().contains("err"));
+        assertNotNull(output);
+        assertTrue(output.stderr().contains("err"));
     }
 
     @Test
@@ -198,7 +197,7 @@ class ProcessManagerTest {
         BackgroundProcessHandle handle = pm.register(process, "echo-tool", "echo done");
 
         process.waitFor();
-        Thread.sleep(300);
+        awaitState(pm, handle.id(), ProcessState.COMPLETED);
 
         Optional<ProcessOutput> output = pm.getOutput(handle.id());
         assertTrue(output.isPresent());
@@ -304,9 +303,8 @@ class ProcessManagerTest {
         BackgroundProcessHandle h1 = pm.register(running, "running-tool", "sleep 60");
         BackgroundProcessHandle h2 = pm.register(exiting, "fast-tool", "echo fast");
 
-        // Wait for the fast process to exit
         exiting.waitFor();
-        Thread.sleep(300);
+        awaitState(pm, h2.id(), ProcessState.COMPLETED);
 
         List<BackgroundProcessHandle> active = pm.listActive();
         assertEquals(1, active.size());
@@ -350,7 +348,7 @@ class ProcessManagerTest {
         BackgroundProcessHandle handle = pm.register(process, "echo-tool", "echo done");
 
         process.waitFor();
-        Thread.sleep(300);
+        awaitState(pm, handle.id(), ProcessState.COMPLETED);
 
         // Process already completed — stop should return false
         assertFalse(pm.stop(handle.id()));
@@ -385,5 +383,33 @@ class ProcessManagerTest {
         assertEquals(count, ids.size());
 
         pm.stopAll();
+    }
+
+    private static void awaitState(DefaultProcessManager pm, String id, ProcessState expected)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            Optional<ProcessState> state = pm.getState(id);
+            if (state.isPresent() && state.get() == expected) return;
+            Thread.sleep(25);
+        }
+        fail("Expected state " + expected + " for process " + id
+                + " but got " + pm.getState(id).orElse(null));
+    }
+
+    private static ProcessOutput awaitOutputContains(DefaultProcessManager pm, String id, String content)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            Optional<ProcessOutput> out = pm.getOutput(id);
+            if (out.isPresent()) {
+                String stdout = out.get().stdout();
+                String stderr = out.get().stderr();
+                if (stdout.contains(content) || stderr.contains(content)) return out.get();
+            }
+            Thread.sleep(25);
+        }
+        fail("Expected output containing '" + content + "' for process " + id);
+        return null;
     }
 }

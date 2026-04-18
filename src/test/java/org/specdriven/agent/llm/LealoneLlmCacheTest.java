@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -47,10 +48,14 @@ class LealoneLlmCacheTest {
     }
 
     @Test
-    void get_expiredEntry_returnsEmpty() throws InterruptedException {
-        cache.put("key1", "value", 1L);
-        Thread.sleep(10); // wait for expiry
-        Optional<String> result = cache.get("key1");
+    void get_expiredEntry_returnsEmpty() {
+        AtomicLong fakeClock = new AtomicLong(1_000_000L);
+        String dbName = "test_llm_cache_exp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        LealoneLlmCache expiryCache = new LealoneLlmCache(eventBus,
+                "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false", fakeClock::get);
+        expiryCache.put("key1", "value", 1L);
+        fakeClock.addAndGet(10);
+        Optional<String> result = expiryCache.get("key1");
         assertTrue(result.isEmpty());
     }
 

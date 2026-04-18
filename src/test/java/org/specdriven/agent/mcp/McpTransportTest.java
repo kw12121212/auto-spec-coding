@@ -101,7 +101,10 @@ class McpTransportTest {
         try (McpTransport server = new McpTransport(in2, out2, notifications::add)) {
             try (McpTransport client = new McpTransport(in1, out1, null)) {
                 client.sendNotification("test/notification", Map.of("data", 42));
-                Thread.sleep(200);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (notifications.isEmpty() && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
             }
         }
 

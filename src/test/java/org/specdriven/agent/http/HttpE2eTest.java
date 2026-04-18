@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -268,10 +269,13 @@ class HttpE2eTest {
         private static final int WINDOW_SEC = 2;
 
         private HttpTestStack rateLimitStack;
+        private AtomicLong fakeClock;
 
         @BeforeEach
         void startRlServer() throws Exception {
-            rateLimitStack = new HttpTestStack(API_KEY, LOW_MAX, WINDOW_SEC, testSdk()).start();
+            fakeClock = new AtomicLong(System.currentTimeMillis());
+            rateLimitStack = new HttpTestStack(API_KEY, LOW_MAX, WINDOW_SEC, testSdk(),
+                    fakeClock::get).start();
         }
 
         @AfterEach
@@ -309,19 +313,14 @@ class HttpE2eTest {
         }
 
         @Test
-        @Timeout(15)
+        @Timeout(10)
         void windowExpiry_allowsNewRequests() throws Exception {
             for (int i = 0; i < LOW_MAX; i++) {
                 rlGet("/tools");
             }
-            Thread.sleep((WINDOW_SEC + 1) * 1000L);
-            // Retry with backoff to tolerate timing jitter under load
-            HttpResponse<String> resp = null;
-            for (int attempt = 0; attempt < 5; attempt++) {
-                resp = rlGet("/tools");
-                if (resp.statusCode() == 200) break;
-                Thread.sleep(500);
-            }
+            // Advance the fake clock past the rate-limit window — no wall-clock sleep needed
+            fakeClock.addAndGet((WINDOW_SEC + 1) * 1000L);
+            HttpResponse<String> resp = rlGet("/tools");
             assertEquals(200, resp.statusCode());
         }
     }

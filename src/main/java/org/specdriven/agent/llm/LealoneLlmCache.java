@@ -7,6 +7,7 @@ import org.specdriven.agent.event.EventType;
 
 import java.sql.*;
 import java.util.*;
+import java.util.function.LongSupplier;
 
 /**
  * {@link LlmCache} backed by a Lealone embedded database.
@@ -43,6 +44,7 @@ public class LealoneLlmCache implements LlmCache {
 
     private final String jdbcUrl;
     private final EventBus eventBus;
+    private final LongSupplier clock;
 
     /**
      * Creates and initializes the cache.
@@ -51,8 +53,14 @@ public class LealoneLlmCache implements LlmCache {
      * @param jdbcUrl  Lealone JDBC URL, e.g. {@code jdbc:lealone:embed:agent_db}
      */
     public LealoneLlmCache(EventBus eventBus, String jdbcUrl) {
+        this(eventBus, jdbcUrl, System::currentTimeMillis);
+    }
+
+    /** Constructor with injectable clock for testing. */
+    LealoneLlmCache(EventBus eventBus, String jdbcUrl, LongSupplier clock) {
         this.eventBus = eventBus;
         this.jdbcUrl = jdbcUrl;
+        this.clock = clock;
         initTables();
         startCleanupThread();
     }
@@ -75,7 +83,7 @@ public class LealoneLlmCache implements LlmCache {
                 }
                 long createdAt = rs.getLong("created_at");
                 long ttlMs = rs.getLong("ttl_ms");
-                if (System.currentTimeMillis() > createdAt + ttlMs) {
+                if (clock.getAsLong() > createdAt + ttlMs) {
                     // Expired — delete and return miss
                     deleteByKey(key);
                     publishEvent(EventType.LLM_CACHE_MISS, key);
@@ -98,7 +106,7 @@ public class LealoneLlmCache implements LlmCache {
              PreparedStatement ps = conn.prepareStatement(upsert)) {
             ps.setString(1, key);
             ps.setString(2, responseJson);
-            ps.setLong(3, System.currentTimeMillis());
+            ps.setLong(3, clock.getAsLong());
             ps.setLong(4, ttlMs);
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -136,7 +144,7 @@ public class LealoneLlmCache implements LlmCache {
             ps.setInt(4, usage.promptTokens());
             ps.setInt(5, usage.completionTokens());
             ps.setInt(6, usage.totalTokens());
-            ps.setLong(7, System.currentTimeMillis());
+            ps.setLong(7, clock.getAsLong());
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to record usage", e);
@@ -256,7 +264,7 @@ public class LealoneLlmCache implements LlmCache {
     }
 
     private void cleanupExpired() throws SQLException {
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
         String sql = "DELETE FROM llm_cache WHERE created_at + ttl_ms < ?";
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {

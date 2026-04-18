@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 /**
  * Per-client fixed-window rate limit filter. Clients are identified by their API key
@@ -20,6 +21,7 @@ public class RateLimitFilter extends HttpFilter {
     private int maxRequests;
     private long windowMillis;
     private final ConcurrentHashMap<String, RateLimitWindow> windows = new ConcurrentHashMap<>();
+    private LongSupplier clock;
 
     public RateLimitFilter() {
         this(100, 60);
@@ -27,8 +29,14 @@ public class RateLimitFilter extends HttpFilter {
 
     /** Constructor for programmatic configuration. */
     public RateLimitFilter(int maxRequests, int windowSeconds) {
+        this(maxRequests, windowSeconds, System::currentTimeMillis);
+    }
+
+    /** Constructor for programmatic configuration with injectable clock (for testing). */
+    RateLimitFilter(int maxRequests, int windowSeconds, LongSupplier clock) {
         this.maxRequests = maxRequests;
         this.windowMillis = windowSeconds * 1000L;
+        this.clock = clock;
     }
 
     @Override
@@ -40,6 +48,9 @@ public class RateLimitFilter extends HttpFilter {
         }
         if (windowParam != null) {
             windowMillis = Long.parseLong(windowParam) * 1000L;
+        }
+        if (clock == null) {
+            clock = System::currentTimeMillis;
         }
     }
 
@@ -53,7 +64,7 @@ public class RateLimitFilter extends HttpFilter {
 
         String clientId = resolveClientId(req);
         RateLimitWindow window = windows.compute(clientId, (k, w) -> {
-            long now = System.currentTimeMillis();
+            long now = clock.getAsLong();
             if (w == null || now - w.startMillis >= windowMillis) {
                 return new RateLimitWindow(now, 1);
             }
@@ -61,7 +72,7 @@ public class RateLimitFilter extends HttpFilter {
         });
 
         if (window.count > maxRequests) {
-            long retryAfter = (window.startMillis + windowMillis - System.currentTimeMillis()) / 1000;
+            long retryAfter = (window.startMillis + windowMillis - clock.getAsLong()) / 1000;
             if (retryAfter < 1) retryAfter = 1;
             sendRateLimited(resp, (int) retryAfter);
             return;

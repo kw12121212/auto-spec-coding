@@ -66,7 +66,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(100); // let loop finish
+        waitUntilState(driver, LoopState.STOPPED);
         assertEquals(LoopState.STOPPED, driver.getState());
         assertFalse(events.isEmpty());
         assertEquals(EventType.LOOP_STARTED, events.get(0).type());
@@ -131,7 +131,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200); // let iteration complete
+        waitUntilNonEmpty(events);
 
         assertFalse(events.isEmpty());
         assertEquals(EventType.LOOP_ITERATION_COMPLETED, events.get(0).type());
@@ -184,8 +184,7 @@ class DefaultLoopDriverTest {
 
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler);
         driver.start();
-
-        Thread.sleep(1000); // wait for loop to finish
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
@@ -203,8 +202,8 @@ class DefaultLoopDriverTest {
         LoopConfig cfg = LoopConfig.defaults(Path.of("/tmp"), bus);
         LoopDriver driver = new DefaultLoopDriver(cfg, ctx -> Optional.empty());
         driver.start();
+        waitUntilState(driver, LoopState.STOPPED);
 
-        Thread.sleep(500);
         assertEquals(LoopState.STOPPED, driver.getState());
     }
 
@@ -233,7 +232,6 @@ class DefaultLoopDriverTest {
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler);
         driver.start();
         assertTrue(firstIter.await(5, TimeUnit.SECONDS));
-        Thread.sleep(50);
 
         driver.pause();
         assertEquals(LoopState.PAUSED, driver.getState());
@@ -244,7 +242,6 @@ class DefaultLoopDriverTest {
         assertFalse(resumedEvents.isEmpty());
 
         allowSecond.countDown();
-        Thread.sleep(200);
         driver.stop();
     }
 
@@ -260,7 +257,7 @@ class DefaultLoopDriverTest {
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler);
         driver.start();
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertThrows(UnsupportedOperationException.class,
                 () -> driver.getCompletedIterations().add(null));
@@ -296,8 +293,8 @@ class DefaultLoopDriverTest {
         LoopScheduler scheduler = ctx -> { throw new RuntimeException("scheduler boom"); };
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler);
         driver.start();
+        waitUntilStateIn(driver, LoopState.ERROR, LoopState.STOPPED);
 
-        Thread.sleep(500);
         LoopState state = driver.getState();
         assertTrue(state == LoopState.ERROR || state == LoopState.STOPPED,
                 "Expected ERROR or STOPPED but got " + state);
@@ -335,7 +332,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(2, driver.getCompletedIterations().size());
         assertEquals("already-done", driver.getCompletedIterations().get(0).changeName());
@@ -357,7 +354,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver, LoopState.STOPPED);
 
         // Check that the store has the iteration
         List<LoopIteration> iterations = store.loadIterations();
@@ -460,7 +457,7 @@ class DefaultLoopDriverTest {
         assertTrue(started.await(5, TimeUnit.SECONDS));
 
         driver.stop();
-        Thread.sleep(100);
+        waitUntilState(driver, LoopState.STOPPED);
 
         Optional<LoopProgress> progress = store.loadProgress();
         assertTrue(progress.isPresent());
@@ -480,7 +477,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(1, driver.getCompletedIterations().size());
@@ -499,7 +496,7 @@ class DefaultLoopDriverTest {
         });
         driver1.start();
         assertTrue(done1.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver1, LoopState.STOPPED);
         assertEquals(LoopState.STOPPED, driver1.getState());
 
         // Three-arg constructor
@@ -510,7 +507,7 @@ class DefaultLoopDriverTest {
         }, new StubLoopPipeline());
         driver2.start();
         assertTrue(done2.await(5, TimeUnit.SECONDS));
-        Thread.sleep(200);
+        waitUntilState(driver2, LoopState.STOPPED);
         assertEquals(LoopState.STOPPED, driver2.getState());
     }
 
@@ -562,8 +559,7 @@ class DefaultLoopDriverTest {
 
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline);
         driver.start();
-
-        Thread.sleep(2000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertFalse(exhaustedEvents.isEmpty());
@@ -589,8 +585,7 @@ class DefaultLoopDriverTest {
 
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
         driver.start();
-
-        Thread.sleep(2000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         Optional<LoopProgress> progress = store.loadProgress();
         assertTrue(progress.isPresent());
@@ -612,8 +607,7 @@ class DefaultLoopDriverTest {
 
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, store);
         driver.start();
-
-        Thread.sleep(1000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         LoopProgress progress = store.loadProgress().orElseThrow();
         assertEquals(LoopState.STOPPED, progress.loopState());
@@ -647,7 +641,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        Thread.sleep(1000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
@@ -801,8 +795,7 @@ class DefaultLoopDriverTest {
 
         LoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline);
         driver.start();
-
-        Thread.sleep(1000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
@@ -903,8 +896,7 @@ class DefaultLoopDriverTest {
 
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
         driver.start();
-
-        Thread.sleep(1000);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         // Iteration completed with SUCCESS (from retry)
@@ -935,8 +927,7 @@ class DefaultLoopDriverTest {
 
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertFalse(escalatedEvents.isEmpty(), "LOOP_QUESTION_ESCALATED should be published");
@@ -988,8 +979,7 @@ class DefaultLoopDriverTest {
         // No answer agent — pass null
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, null);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertEquals(1, driver.getCompletedIterations().size());
@@ -1018,8 +1008,7 @@ class DefaultLoopDriverTest {
 
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
         driver.start();
-
-        Thread.sleep(1000);
+        waitUntilNonEmpty(routedEvents);
 
         assertFalse(routedEvents.isEmpty());
         Event routed = routedEvents.get(0);
@@ -1047,8 +1036,7 @@ class DefaultLoopDriverTest {
 
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agentStub);
         driver.start();
-
-        Thread.sleep(1000);
+        waitUntilNonEmpty(answeredEvents);
 
         assertFalse(answeredEvents.isEmpty());
         Event answered = answeredEvents.get(0);
@@ -1108,8 +1096,7 @@ class DefaultLoopDriverTest {
                 Optional.of(new LoopCandidate("human-only-change", "m.md", "goal"));
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agent);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertEquals(0, answerAgentCalls.get());
@@ -1147,8 +1134,7 @@ class DefaultLoopDriverTest {
                 Optional.of(new LoopCandidate("human-delivery-change", "m.md", "goal"));
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null, agent);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertEquals(0, answerAgentCalls.get());
@@ -1183,8 +1169,7 @@ class DefaultLoopDriverTest {
             return new AnswerResolution.Escalated("unexpected");
         });
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         LoopProgress progress = store.loadProgress().orElseThrow();
@@ -1220,7 +1205,7 @@ class DefaultLoopDriverTest {
         driver.start();
 
         assertTrue(schedulerCalled.await(5, TimeUnit.SECONDS));
-        Thread.sleep(300);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
@@ -1248,7 +1233,7 @@ class DefaultLoopDriverTest {
 
         waitUntilState(driver, LoopState.PAUSED);
         driver.resume();
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.STOPPED);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(2, driver.getCompletedIterations().size());
@@ -1282,8 +1267,7 @@ class DefaultLoopDriverTest {
                 },
                 deliveryService);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertEquals(1, channel.sent.size());
@@ -1293,24 +1277,43 @@ class DefaultLoopDriverTest {
         driver.stop();
     }
 
-    private static void waitUntilState(DefaultLoopDriver driver, LoopState expected) throws InterruptedException {
+    private static void waitUntilState(LoopDriver driver, LoopState expected) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
-            if (driver.getState() == expected) {
-                return;
-            }
+            if (driver.getState() == expected) return;
             Thread.sleep(25);
         }
         fail("Expected state " + expected + " but got " + driver.getState());
+    }
+
+    private static void waitUntilStateIn(LoopDriver driver, LoopState... expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            LoopState current = driver.getState();
+            for (LoopState s : expected) {
+                if (current == s) return;
+            }
+            Thread.sleep(25);
+        }
+        fail("Expected one of " + java.util.Arrays.toString(expected) + " but got " + driver.getState());
+    }
+
+    private static void waitUntilNonEmpty(List<?> list) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            synchronized (list) {
+                if (!list.isEmpty()) return;
+            }
+            Thread.sleep(25);
+        }
+        fail("Expected list to be non-empty within 5s");
     }
 
     private static <T> T waitUntilReference(AtomicReference<T> reference) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
             T value = reference.get();
-            if (value != null) {
-                return value;
-            }
+            if (value != null) return value;
             Thread.sleep(25);
         }
         fail("Expected reference to be set");
@@ -1461,8 +1464,7 @@ class DefaultLoopDriverTest {
         DefaultLoopDriver driver = new DefaultLoopDriver(cfg, scheduler, pipeline, null,
                 (q, timeout) -> new AnswerResolution.Escalated("escalated"));
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertTrue(enteredEvents.isEmpty(), "No LOOP_INTERACTIVE_ENTERED without factory");
@@ -1495,8 +1497,7 @@ class DefaultLoopDriverTest {
                 (q, timeout) -> new AnswerResolution.Escalated("escalated"),
                 null, factory);
         driver.start();
-
-        Thread.sleep(500);
+        waitUntilState(driver, LoopState.PAUSED);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         StubInteractiveSession session = waitUntilReference(createdSession);
@@ -1508,8 +1509,6 @@ class DefaultLoopDriverTest {
 
         // Close session to unblock
         session.close();
-        Thread.sleep(500);
-
         driver.stop();
     }
 
@@ -1542,7 +1541,7 @@ class DefaultLoopDriverTest {
 
         // Close the session — should publish EXITED but loop stays PAUSED
         session.close();
-        Thread.sleep(500);
+        waitUntilNonEmpty(exitedEvents);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published");
@@ -1580,7 +1579,7 @@ class DefaultLoopDriverTest {
 
         // Transition session to ERROR
         session.transitionToError();
-        Thread.sleep(500);
+        waitUntilNonEmpty(exitedEvents);
 
         assertEquals(LoopState.PAUSED, driver.getState());
         assertFalse(exitedEvents.isEmpty(), "LOOP_INTERACTIVE_EXITED should be published");
@@ -1618,7 +1617,8 @@ class DefaultLoopDriverTest {
         assertEquals(InteractiveSessionState.ACTIVE, session.state());
 
         driver.stop();
-        Thread.sleep(300);
+        waitUntilState(driver, LoopState.STOPPED);
+        waitUntilNonEmpty(exitedEvents);
 
         assertEquals(LoopState.STOPPED, driver.getState());
         assertEquals(InteractiveSessionState.CLOSED, session.state());
@@ -1675,9 +1675,8 @@ class DefaultLoopDriverTest {
 
         // Close first session and resume
         first.close();
-        Thread.sleep(500);
+        waitUntilStateIn(driver, LoopState.PAUSED, LoopState.RECOMMENDING);
         driver.resume();
-        Thread.sleep(500);
 
         // Wait for second pause
         waitUntilState(driver, LoopState.PAUSED);
@@ -1685,7 +1684,6 @@ class DefaultLoopDriverTest {
         assertNotSame(first, allSessions.get(1), "Second pause must create fresh session");
 
         allSessions.get(1).close();
-        Thread.sleep(300);
         driver.stop();
     }
 
@@ -1733,7 +1731,7 @@ class DefaultLoopDriverTest {
 
         // Close session
         session.close();
-        Thread.sleep(500);
+        waitUntilNonEmpty(exitedEvents);
 
         // Verify EXITED metadata
         assertFalse(exitedEvents.isEmpty());

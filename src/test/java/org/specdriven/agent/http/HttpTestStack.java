@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 
 /**
  * Embedded HTTP stack fixture for exercising the REST API through Tomcat,
@@ -29,14 +30,21 @@ final class HttpTestStack implements AutoCloseable {
     private final int rateLimitWindowSeconds;
     private final SpecDriven sdk;
     private final HttpClient client;
+    private final LongSupplier rateLimitClock;
     private Tomcat tomcat;
     private int port;
 
     HttpTestStack(String apiKey, int rateLimitMax, int rateLimitWindowSeconds, SpecDriven sdk) {
+        this(apiKey, rateLimitMax, rateLimitWindowSeconds, sdk, System::currentTimeMillis);
+    }
+
+    HttpTestStack(String apiKey, int rateLimitMax, int rateLimitWindowSeconds, SpecDriven sdk,
+                  LongSupplier rateLimitClock) {
         this.apiKey = Objects.requireNonNull(apiKey, "apiKey");
         this.rateLimitMax = rateLimitMax;
         this.rateLimitWindowSeconds = rateLimitWindowSeconds;
         this.sdk = Objects.requireNonNull(sdk, "sdk");
+        this.rateLimitClock = Objects.requireNonNull(rateLimitClock, "rateLimitClock");
         this.client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
@@ -49,9 +57,11 @@ final class HttpTestStack implements AutoCloseable {
 
         Context ctx = tomcat.addContext("", new File(".").getCanonicalPath());
         addFilter(ctx, "authFilter", new AuthFilter(), "/api/v1/*", Map.of("API_KEYS", apiKey));
-        addFilter(ctx, "rateLimitFilter", new RateLimitFilter(), "/api/v1/*", Map.of(
-                "RATE_LIMIT_MAX", String.valueOf(rateLimitMax),
-                "RATE_LIMIT_WINDOW_SECONDS", String.valueOf(rateLimitWindowSeconds)));
+        addFilter(ctx, "rateLimitFilter",
+                new RateLimitFilter(rateLimitMax, rateLimitWindowSeconds, rateLimitClock),
+                "/api/v1/*", Map.of(
+                        "RATE_LIMIT_MAX", String.valueOf(rateLimitMax),
+                        "RATE_LIMIT_WINDOW_SECONDS", String.valueOf(rateLimitWindowSeconds)));
 
         Tomcat.addServlet(ctx, "apiServlet", new HttpApiServlet(sdk));
         ctx.addServletMappingDecoded("/api/v1/*", "apiServlet");

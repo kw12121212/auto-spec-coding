@@ -7,6 +7,7 @@ import org.specdriven.agent.event.EventType;
 import java.sql.*;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 
 /**
  * {@link ToolCache} backed by a Lealone embedded database.
@@ -33,6 +34,7 @@ public class LealoneToolCache implements ToolCache {
 
     private final String jdbcUrl;
     private final EventBus eventBus;
+    private final LongSupplier clock;
 
     /**
      * Creates and initializes the cache.
@@ -41,8 +43,14 @@ public class LealoneToolCache implements ToolCache {
      * @param jdbcUrl  Lealone JDBC URL, e.g. {@code jdbc:lealone:embed:agent_db}
      */
     public LealoneToolCache(EventBus eventBus, String jdbcUrl) {
+        this(eventBus, jdbcUrl, System::currentTimeMillis);
+    }
+
+    /** Constructor with injectable clock for testing. */
+    LealoneToolCache(EventBus eventBus, String jdbcUrl, LongSupplier clock) {
         this.eventBus = eventBus;
         this.jdbcUrl = jdbcUrl;
+        this.clock = clock;
         initTable();
         startCleanupThread();
     }
@@ -60,7 +68,7 @@ public class LealoneToolCache implements ToolCache {
                 }
                 long createdAt = rs.getLong("created_at");
                 long ttlMs = rs.getLong("ttl_ms");
-                if (System.currentTimeMillis() > createdAt + ttlMs) {
+                if (clock.getAsLong() > createdAt + ttlMs) {
                     deleteByKey(key);
                     publishEvent(EventType.TOOL_CACHE_MISS, key);
                     return Optional.empty();
@@ -86,7 +94,7 @@ public class LealoneToolCache implements ToolCache {
             ps.setString(2, output);
             ps.setString(3, filePath);
             ps.setLong(4, fileModified);
-            ps.setLong(5, System.currentTimeMillis());
+            ps.setLong(5, clock.getAsLong());
             ps.setLong(6, ttlMs);
             ps.executeUpdate();
         } catch (SQLException e) {
@@ -173,7 +181,7 @@ public class LealoneToolCache implements ToolCache {
     }
 
     private void cleanupExpired() throws SQLException {
-        long now = System.currentTimeMillis();
+        long now = clock.getAsLong();
         String sql = "DELETE FROM tool_cache WHERE created_at + ttl_ms < ?";
         try (Connection conn = getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {

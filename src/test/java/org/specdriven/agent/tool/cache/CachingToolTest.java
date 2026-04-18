@@ -172,10 +172,8 @@ class CachingToolTest {
         caching.execute(input, new StubContext());
         assertEquals(1, callCount[0]);
 
-        // Modify file (ensure timestamp changes)
-        Thread.sleep(50);
+        // Modify file with an explicit future lastModified to guarantee cache invalidation
         Files.writeString(file, "world");
-        // Force a different lastModified
         file.toFile().setLastModified(System.currentTimeMillis() + 1000);
 
         // Second call: file changed, re-executes

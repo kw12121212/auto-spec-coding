@@ -77,8 +77,7 @@ class ServerToolLifecycleTest {
         CapturingEventBus bus = new CapturingEventBus();
         DefaultProcessManager pm = new DefaultProcessManager(bus);
 
-        int port = startTcpListener();
-        Thread.sleep(100); // Let listener bind
+        int port = startTcpListener(); // ServerSocket(0) binds synchronously; no sleep needed
 
         Process sleepProcess = new ProcessBuilder("sleep", "30").start();
         ReadyProbe probe = ReadyProbe.tcp(port);
@@ -154,8 +153,7 @@ class ServerToolLifecycleTest {
         CapturingEventBus bus = new CapturingEventBus();
         DefaultProcessManager pm = new DefaultProcessManager(bus);
 
-        int port = startTcpListener();
-        Thread.sleep(100);
+        int port = startTcpListener(); // ServerSocket(0) binds synchronously; no sleep needed
 
         Process sleepProcess = new ProcessBuilder("sleep", "30").start();
         ReadyProbe probe = ReadyProbe.tcp(port);
