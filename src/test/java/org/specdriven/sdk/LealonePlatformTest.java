@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealonePlatformTest {
 
@@ -638,9 +638,8 @@ class LealonePlatformTest {
     }
 
     private PlatformConfig testPlatformConfig(String prefix) {
-        String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "");
         return new PlatformConfig(
-                "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false",
+                LealoneTestDb.freshJdbcUrl(),
                 tempDir.resolve("cache-" + prefix));
     }
 

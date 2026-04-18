@@ -101,6 +101,10 @@
 
 - [orm-adoption.md](orm/orm-adoption.md) - ORM migration admission criteria, escape-hatch rules, and coexistence contract
 
+## Testing (测试基础设施)
+
+- [test-fixtures.md](testing/test-fixtures.md) - CapturingEventBus, LealoneTestDb — shared test fixture helpers in testsupport package
+
 ## Release (发布准备)
 
 - [release-preparation.md](release/release-preparation.md) - Repository release overview and Maven release metadata

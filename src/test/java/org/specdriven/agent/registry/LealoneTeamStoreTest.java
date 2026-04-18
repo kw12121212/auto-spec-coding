@@ -3,11 +3,11 @@ package org.specdriven.agent.registry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 import java.util.*;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,10 +18,8 @@ class LealoneTeamStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_teams_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
         eventBus = new CapturingEventBus();
-        store = new LealoneTeamStore(eventBus, jdbcUrl);
+        store = new LealoneTeamStore(eventBus, LealoneTestDb.freshJdbcUrl());
     }
 
     // -------------------------------------------------------------------------
@@ -246,8 +244,8 @@ class LealoneTeamStoreTest {
     void create_newTeam_publishesTeamCreated() {
         store.create(new Team(null, "Team", null, TeamStatus.ACTIVE, null, 0, 0));
 
-        assertEquals(1, eventBus.captured.size());
-        Event event = eventBus.captured.get(0);
+        assertEquals(1, eventBus.getEvents().size());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.TEAM_CREATED, event.type());
         assertEquals("TeamStore", event.source());
         assertNotNull(event.metadata().get("teamId"));
@@ -256,12 +254,12 @@ class LealoneTeamStoreTest {
     @Test
     void dissolve_publishesTeamDissolved() {
         String id = store.create(new Team(null, "Team", null, TeamStatus.ACTIVE, null, 0, 0));
-        eventBus.captured.clear();
+        eventBus.clear();
 
         store.dissolve(id);
 
-        assertEquals(1, eventBus.captured.size());
-        Event event = eventBus.captured.get(0);
+        assertEquals(1, eventBus.getEvents().size());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.TEAM_DISSOLVED, event.type());
         assertEquals(id, event.metadata().get("teamId"));
     }
@@ -330,24 +328,4 @@ class LealoneTeamStoreTest {
         assertEquals(true, loaded.metadata().get("bool"));
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-        }
-    }
 }

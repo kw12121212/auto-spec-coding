@@ -3,15 +3,14 @@ package org.specdriven.agent.interactive;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.question.*;
+import org.specdriven.agent.testsupport.CapturingEventBus;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -233,26 +232,4 @@ class InteractiveCommandHandlerTest {
         return roadmapDir;
     }
 
-    private static class CapturingEventBus implements EventBus {
-        private final List<Event> events = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            events.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, java.util.function.Consumer<Event> listener) {}
-
-        @Override
-        public void unsubscribe(EventType type, java.util.function.Consumer<Event> listener) {}
-
-        List<Event> eventsOfType(EventType type) {
-            return events.stream().filter(event -> event.type() == type).toList();
-        }
-
-        void clear() {
-            events.clear();
-        }
-    }
 }

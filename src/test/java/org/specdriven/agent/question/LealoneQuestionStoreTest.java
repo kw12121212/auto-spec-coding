@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealoneQuestionStoreTest {
 
@@ -18,8 +19,7 @@ class LealoneQuestionStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_questions_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        jdbcUrl = LealoneTestDb.freshJdbcUrl();
         store = new LealoneQuestionStore(
                 new NoOpEventBus(), jdbcUrl);
     }

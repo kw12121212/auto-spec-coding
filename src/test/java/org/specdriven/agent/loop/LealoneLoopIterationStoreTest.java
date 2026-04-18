@@ -10,8 +10,9 @@ import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealoneLoopIterationStoreTest {
 
@@ -21,8 +22,7 @@ class LealoneLoopIterationStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_loop_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        jdbcUrl = LealoneTestDb.freshJdbcUrl();
         eventBus = new CapturingEventBus();
         store = new LealoneLoopIterationStore(eventBus, jdbcUrl);
     }
@@ -195,8 +195,7 @@ class LealoneLoopIterationStoreTest {
 
     @Test
     void oldProgressTableSchemaIsUpgradedAndLoadsWithoutCheckpoint() throws Exception {
-        String dbName = "test_loop_old_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String oldJdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String oldJdbcUrl = LealoneTestDb.freshJdbcUrl();
         try (Connection conn = DriverManager.getConnection(oldJdbcUrl, "root", "");
              var stmt = conn.createStatement()) {
             stmt.execute("""
@@ -269,28 +268,12 @@ class LealoneLoopIterationStoreTest {
     void saveProgressPublishesEvent() {
         store.saveProgress(new LoopProgress(LoopState.RUNNING, Set.of("a"), 1));
 
-        assertFalse(eventBus.captured.isEmpty());
-        Event evt = eventBus.captured.get(0);
+        assertFalse(eventBus.getEvents().isEmpty());
+        Event evt = eventBus.getEvents().get(0);
         assertEquals(EventType.LOOP_PROGRESS_SAVED, evt.type());
         assertEquals("LoopIterationStore", evt.source());
         assertEquals(1, evt.metadata().get("iterationCount"));
         assertEquals(1, evt.metadata().get("completedChangeCount"));
     }
 
-    // --- Capturing EventBus ---
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, java.util.function.Consumer<Event> handler) {}
-
-        @Override
-        public void unsubscribe(EventType type, java.util.function.Consumer<Event> handler) {}
-    }
 }

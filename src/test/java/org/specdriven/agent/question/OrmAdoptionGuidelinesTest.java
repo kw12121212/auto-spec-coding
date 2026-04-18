@@ -12,10 +12,10 @@ import org.specdriven.agent.permission.PermissionDecision;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 /**
  * Documents the ORM adoption guidelines invariants established by the M31 pilot:
@@ -97,8 +97,7 @@ class OrmAdoptionGuidelinesTest {
     }
 
     private static String freshUrl(String prefix) {
-        String id = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        return "jdbc:lealone:embed:" + prefix + "_" + id + "?PERSISTENT=false";
+        return LealoneTestDb.freshJdbcUrl();
     }
 
     private static Question waitingQuestion(String questionId, String sessionId) {

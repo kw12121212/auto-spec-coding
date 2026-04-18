@@ -12,6 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealoneSessionStoreTest {
 
@@ -21,8 +22,7 @@ class LealoneSessionStoreTest {
     @BeforeEach
     void setUp() {
         // Unique in-memory DB per test for isolation
-        String dbName = "test_sessions_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        jdbcUrl = LealoneTestDb.freshJdbcUrl();
         store = new LealoneSessionStore(jdbcUrl);
     }
 

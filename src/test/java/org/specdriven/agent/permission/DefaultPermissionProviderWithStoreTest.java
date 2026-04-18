@@ -4,9 +4,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class DefaultPermissionProviderWithStoreTest {
 
@@ -15,8 +15,7 @@ class DefaultPermissionProviderWithStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_perm_prov_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String jdbcUrl = LealoneTestDb.freshJdbcUrl();
         PolicyStore store = new LealonePolicyStore(jdbcUrl);
 
         withStore = new DefaultPermissionProvider("/tmp/workspace", store);

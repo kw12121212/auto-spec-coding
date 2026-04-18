@@ -4,7 +4,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealonePolicyStoreConcurrentTest {
 
@@ -19,8 +19,7 @@ class LealonePolicyStoreConcurrentTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_perm_conc_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String jdbcUrl = LealoneTestDb.freshJdbcUrl();
         store = new LealonePolicyStore(jdbcUrl);
     }
 

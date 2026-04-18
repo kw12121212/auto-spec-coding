@@ -5,12 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.specdriven.agent.agent.LlmConfigSnapshot;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealoneRuntimeLlmConfigStoreTest {
 
@@ -103,7 +103,6 @@ class LealoneRuntimeLlmConfigStoreTest {
     }
 
     private static String jdbcUrl(String prefix) {
-        String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        return "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        return LealoneTestDb.freshJdbcUrl();
     }
 }

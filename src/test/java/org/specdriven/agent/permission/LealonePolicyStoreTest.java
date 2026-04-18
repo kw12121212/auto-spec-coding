@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class LealonePolicyStoreTest {
 
@@ -17,8 +17,7 @@ class LealonePolicyStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_perm_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        jdbcUrl = LealoneTestDb.freshJdbcUrl();
         store = new LealonePolicyStore(jdbcUrl);
     }
 

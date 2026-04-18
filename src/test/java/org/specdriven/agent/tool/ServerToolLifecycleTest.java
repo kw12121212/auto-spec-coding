@@ -4,33 +4,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.ServerSocket;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
 
 class ServerToolLifecycleTest {
-
-    static class CapturingEventBus implements EventBus {
-        final List<Event> events = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) { events.add(event); }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {}
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {}
-
-        List<Event> eventsOfType(EventType type) {
-            return events.stream().filter(e -> e.type() == type).toList();
-        }
-    }
 
     /**
      * Runs a TCP listener in a background thread that accepts one connection.

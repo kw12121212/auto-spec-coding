@@ -3,11 +3,10 @@ package org.specdriven.agent.question;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
 
 import java.util.*;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -175,7 +174,7 @@ class RetryingDeliveryChannelTest {
     }
 
     private List<Event> eventsOfType(EventType type) {
-        return eventBus.captured.stream().filter(e -> e.type() == type).toList();
+        return eventBus.eventsOfType(type);
     }
 
     // --- Stubs ---
@@ -202,19 +201,6 @@ class RetryingDeliveryChannelTest {
 
         int sendCount() { return sendCount; }
         boolean closed() { return isClosed; }
-    }
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) { captured.add(event); }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {}
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {}
     }
 
     private static class CapturingLogStore implements DeliveryLogStore {

@@ -3,16 +3,13 @@ package org.specdriven.agent.llm;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.agent.LlmUsage;
-import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,10 +20,8 @@ class LealoneLlmCacheTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_llm_cache_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
         eventBus = new CapturingEventBus();
-        cache = new LealoneLlmCache(eventBus, jdbcUrl);
+        cache = new LealoneLlmCache(eventBus, LealoneTestDb.freshJdbcUrl());
     }
 
     // -------------------------------------------------------------------------
@@ -50,9 +45,7 @@ class LealoneLlmCacheTest {
     @Test
     void get_expiredEntry_returnsEmpty() {
         AtomicLong fakeClock = new AtomicLong(1_000_000L);
-        String dbName = "test_llm_cache_exp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        LealoneLlmCache expiryCache = new LealoneLlmCache(eventBus,
-                "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false", fakeClock::get);
+        LealoneLlmCache expiryCache = new LealoneLlmCache(eventBus, LealoneTestDb.freshJdbcUrl(), fakeClock::get);
         expiryCache.put("key1", "value", 1L);
         fakeClock.addAndGet(10);
         Optional<String> result = expiryCache.get("key1");
@@ -82,17 +75,17 @@ class LealoneLlmCacheTest {
     @Test
     void get_hit_publishesCacheHitEvent() {
         cache.put("key1", "value", 60_000L);
-        eventBus.captured.clear();
+        eventBus.clear();
         cache.get("key1");
-        assertEquals(1, eventBus.captured.size());
-        assertEquals(EventType.LLM_CACHE_HIT, eventBus.captured.get(0).type());
+        assertEquals(1, eventBus.getEvents().size());
+        assertEquals(EventType.LLM_CACHE_HIT, eventBus.getEvents().get(0).type());
     }
 
     @Test
     void get_miss_publishesCacheMissEvent() {
         cache.get("nonexistent");
-        assertEquals(1, eventBus.captured.size());
-        assertEquals(EventType.LLM_CACHE_MISS, eventBus.captured.get(0).type());
+        assertEquals(1, eventBus.getEvents().size());
+        assertEquals(EventType.LLM_CACHE_MISS, eventBus.getEvents().get(0).type());
     }
 
     // -------------------------------------------------------------------------
@@ -197,24 +190,4 @@ class LealoneLlmCacheTest {
         // No exceptions means success
     }
 
-    // -------------------------------------------------------------------------
-    // Test helper
-    // -------------------------------------------------------------------------
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-        }
-    }
 }

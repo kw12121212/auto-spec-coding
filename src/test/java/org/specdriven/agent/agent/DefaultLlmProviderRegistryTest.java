@@ -27,9 +27,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class DefaultLlmProviderRegistryTest {
 
@@ -1251,7 +1251,6 @@ class DefaultLlmProviderRegistryTest {
     }
 
     private static String jdbcUrl(String prefix) {
-        String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        return "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        return LealoneTestDb.freshJdbcUrl();
     }
 }

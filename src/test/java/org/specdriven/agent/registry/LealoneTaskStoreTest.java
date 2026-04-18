@@ -3,16 +3,14 @@ package org.specdriven.agent.registry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,14 +18,11 @@ class LealoneTaskStoreTest {
 
     private LealoneTaskStore store;
     private CapturingEventBus eventBus;
-    private String jdbcUrl;
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_tasks_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
         eventBus = new CapturingEventBus();
-        store = new LealoneTaskStore(eventBus, jdbcUrl);
+        store = new LealoneTaskStore(eventBus, LealoneTestDb.freshJdbcUrl());
     }
 
     // -------------------------------------------------------------------------
@@ -214,8 +209,8 @@ class LealoneTaskStoreTest {
     void save_newTask_publishesTaskCreated() {
         store.save(new Task(null, "Task", null, TaskStatus.PENDING, null, null, null, 0, 0));
 
-        assertEquals(1, eventBus.captured.size());
-        Event event = eventBus.captured.get(0);
+        assertEquals(1, eventBus.getEvents().size());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.TASK_CREATED, event.type());
         assertEquals("TaskStore", event.source());
         assertNotNull(event.metadata().get("taskId"));
@@ -224,13 +219,13 @@ class LealoneTaskStoreTest {
     @Test
     void updateStatus_toCompleted_publishesTaskCompleted() {
         String id = store.save(new Task(null, "Task", null, TaskStatus.PENDING, null, null, null, 0, 0));
-        eventBus.captured.clear();
+        eventBus.clear();
 
         store.update(id, TaskStatus.IN_PROGRESS);
         store.update(id, TaskStatus.COMPLETED);
 
-        assertEquals(1, eventBus.captured.size());
-        Event event = eventBus.captured.get(0);
+        assertEquals(1, eventBus.getEvents().size());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.TASK_COMPLETED, event.type());
         assertEquals(id, event.metadata().get("taskId"));
     }
@@ -238,11 +233,11 @@ class LealoneTaskStoreTest {
     @Test
     void save_existingTask_doesNotPublishTaskCreated() {
         String id = store.save(new Task(null, "Task", null, TaskStatus.PENDING, null, null, null, 0, 0));
-        eventBus.captured.clear();
+        eventBus.clear();
 
         store.save(new Task(id, "Updated", null, TaskStatus.PENDING, null, null, null, 0, 0));
 
-        assertTrue(eventBus.captured.isEmpty());
+        assertTrue(eventBus.getEvents().isEmpty());
     }
 
     // -------------------------------------------------------------------------
@@ -306,26 +301,5 @@ class LealoneTaskStoreTest {
 
         // Not in list
         assertTrue(store.list().stream().noneMatch(t -> t.id().equals(id)));
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-        }
     }
 }

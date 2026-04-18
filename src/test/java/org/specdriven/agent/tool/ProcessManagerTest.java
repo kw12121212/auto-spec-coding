@@ -11,34 +11,12 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
 import org.specdriven.agent.tool.BackgroundProcessHandle;
 import org.specdriven.agent.tool.ProcessState;
 
 class ProcessManagerTest {
-
-    /**
-     * Capturing EventBus stub for testing event emission.
-     */
-    static class CapturingEventBus implements EventBus {
-        final List<Event> events = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            events.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, java.util.function.Consumer<Event> listener) {}
-
-        @Override
-        public void unsubscribe(EventType type, java.util.function.Consumer<Event> listener) {}
-
-        List<Event> eventsOfType(EventType type) {
-            return events.stream().filter(e -> e.type() == type).toList();
-        }
-    }
 
     private Process launchSleepProcess(int seconds) throws Exception {
         return new ProcessBuilder("sleep", String.valueOf(seconds)).start();

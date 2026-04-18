@@ -6,9 +6,9 @@ import org.junit.jupiter.api.condition.OS;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 /**
  * Integration test: runs discoverAndRegister() against the real auto-spec-driven skills directory.
@@ -25,8 +25,7 @@ class RealSkillsDiscoveryTest {
             return; // skip if reference project not available
         }
 
-        String dbName = "test_real_discovery_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String jdbcUrl = LealoneTestDb.freshJdbcUrl();
 
         DiscoveryResult result = new SkillAutoDiscovery(jdbcUrl, SKILLS_DIR).discoverAndRegister();
 

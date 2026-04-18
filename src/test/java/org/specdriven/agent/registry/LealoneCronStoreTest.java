@@ -6,6 +6,8 @@ import org.junit.jupiter.api.parallel.Isolated;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -26,14 +28,16 @@ class LealoneCronStoreTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_cron_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
         eventBus = new CapturingEventBus();
         fireCount = new AtomicInteger(0);
         fireLatch = new CountDownLatch(1);
         eventLatch = new CountDownLatch(1);
-        eventBus.eventLatch = eventLatch;
-        store = new LealoneCronStore(eventBus, jdbcUrl, () -> {
+        EventBus latchedBus = new EventBus() {
+            @Override public void publish(Event e) { eventBus.publish(e); eventLatch.countDown(); }
+            @Override public void subscribe(EventType t, Consumer<Event> l) {}
+            @Override public void unsubscribe(EventType t, Consumer<Event> l) {}
+        };
+        store = new LealoneCronStore(latchedBus, LealoneTestDb.freshJdbcUrl(), () -> {
             fireCount.incrementAndGet();
             fireLatch.countDown();
         });
@@ -102,8 +106,8 @@ class LealoneCronStoreTest {
         assertTrue(eventLatch.await(5, TimeUnit.SECONDS));
 
         assertEquals(1, fireCount.get());
-        assertEquals(1, eventBus.captured.size());
-        Event event = eventBus.captured.get(0);
+        assertEquals(1, eventBus.getEvents().size());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.CRON_TRIGGERED, event.type());
         assertEquals("CronStore", event.source());
     }
@@ -198,8 +202,8 @@ class LealoneCronStoreTest {
         assertTrue(fireLatch.await(5, TimeUnit.SECONDS));
         assertTrue(eventLatch.await(5, TimeUnit.SECONDS));
 
-        assertFalse(eventBus.captured.isEmpty());
-        Event event = eventBus.captured.get(0);
+        assertFalse(eventBus.getEvents().isEmpty());
+        Event event = eventBus.getEvents().get(0);
         assertEquals(EventType.CRON_TRIGGERED, event.type());
         assertEquals("CronStore", event.source());
         assertNotNull(event.metadata().get("entryId"));
@@ -255,28 +259,4 @@ class LealoneCronStoreTest {
         assertThrows(IllegalStateException.class, () -> store.cancel(id));
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-        private CountDownLatch eventLatch;
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-            if (eventLatch != null) {
-                eventLatch.countDown();
-            }
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-        }
-    }
 }

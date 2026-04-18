@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.specdriven.agent.event.Event;
 import org.specdriven.agent.event.EventType;
 import org.specdriven.agent.event.SimpleEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class DefaultLoopDriverTest {
 
@@ -305,8 +305,7 @@ class DefaultLoopDriverTest {
     // -------------------------------------------------------------------------
 
     private LealoneLoopIterationStore createStore(SimpleEventBus bus) {
-        String dbName = "test_driver_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String jdbcUrl = LealoneTestDb.freshJdbcUrl();
         return new LealoneLoopIterationStore(bus, jdbcUrl);
     }
 

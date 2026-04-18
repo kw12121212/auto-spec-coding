@@ -5,17 +5,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.specdriven.agent.event.Event;
-import org.specdriven.agent.event.EventBus;
 import org.specdriven.agent.event.EventType;
+import org.specdriven.agent.testsupport.CapturingEventBus;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,8 +25,7 @@ class LealoneVaultTest {
 
     @BeforeEach
     void setUp() {
-        String dbName = "test_vault_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        jdbcUrl = LealoneTestDb.freshJdbcUrl();
         eventBus = new CapturingEventBus();
         VaultMasterKey.setEnvSource(() -> "test-master-key");
     }
@@ -172,8 +169,8 @@ class LealoneVaultTest {
         LealoneVault vault = new LealoneVault(eventBus, jdbcUrl);
         vault.set("key1", "val", "desc");
 
-        assertFalse(eventBus.captured.isEmpty());
-        Event event = eventBus.captured.get(eventBus.captured.size() - 1);
+        assertFalse(eventBus.getEvents().isEmpty());
+        Event event = eventBus.getEvents().get(eventBus.getEvents().size() - 1);
         assertEquals(EventType.VAULT_SECRET_CREATED, event.type());
         assertEquals("key1", event.metadata().get("vaultKey"));
     }
@@ -182,12 +179,12 @@ class LealoneVaultTest {
     void deletePublishesEvent() {
         LealoneVault vault = new LealoneVault(eventBus, jdbcUrl);
         vault.set("key1", "val", "desc");
-        eventBus.captured.clear();
+        eventBus.clear();
 
         vault.delete("key1");
 
-        assertFalse(eventBus.captured.isEmpty());
-        Event event = eventBus.captured.get(eventBus.captured.size() - 1);
+        assertFalse(eventBus.getEvents().isEmpty());
+        Event event = eventBus.getEvents().get(eventBus.getEvents().size() - 1);
         assertEquals(EventType.VAULT_SECRET_DELETED, event.type());
         assertEquals("key1", event.metadata().get("vaultKey"));
     }
@@ -203,20 +200,4 @@ class LealoneVaultTest {
         });
     }
 
-    private static class CapturingEventBus implements EventBus {
-        final List<Event> captured = new ArrayList<>();
-
-        @Override
-        public void publish(Event event) {
-            captured.add(event);
-        }
-
-        @Override
-        public void subscribe(EventType type, Consumer<Event> listener) {
-        }
-
-        @Override
-        public void unsubscribe(EventType type, Consumer<Event> listener) {
-        }
-    }
 }

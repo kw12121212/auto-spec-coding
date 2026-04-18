@@ -16,10 +16,10 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 class OrmJdbcCoexistenceTest {
 
@@ -107,8 +107,7 @@ class OrmJdbcCoexistenceTest {
     }
 
     private static String jdbcUrl(String prefix) {
-        String dbName = prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        return "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        return LealoneTestDb.freshJdbcUrl();
     }
 
     private static Question waitingQuestion(String questionId, String sessionId) {

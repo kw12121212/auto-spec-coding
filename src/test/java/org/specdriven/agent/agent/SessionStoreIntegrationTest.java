@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.specdriven.agent.testsupport.LealoneTestDb;
 
 /**
  * Verifies that DefaultAgent + LealoneSessionStore persist conversation history
@@ -30,8 +31,7 @@ class SessionStoreIntegrationTest {
     @Test
     void executeWithStore_persistsConversationHistory() {
         String sessionId = UUID.randomUUID().toString();
-        String dbName = "test_integration_" + sessionId.replace("-", "").substring(0, 12);
-        String jdbcUrl = "jdbc:lealone:embed:" + dbName + "?PERSISTENT=false";
+        String jdbcUrl = LealoneTestDb.freshJdbcUrl();
 
         LealoneSessionStore store = new LealoneSessionStore(jdbcUrl);
 
