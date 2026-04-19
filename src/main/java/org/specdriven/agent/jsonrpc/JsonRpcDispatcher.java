@@ -5,6 +5,14 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.agent.registry.TaskStore;
+import org.specdriven.agent.registry.TeamStore;
+import org.specdriven.agent.registry.LealoneTaskStore;
+import org.specdriven.agent.registry.LealoneTeamStore;
+import org.specdriven.agent.registry.Task;
+import org.specdriven.agent.registry.TaskStatus;
+import org.specdriven.agent.registry.Team;
+import org.specdriven.agent.registry.TeamMember;
 import org.specdriven.agent.tool.ProcessManager;
 import org.specdriven.agent.tool.DefaultProcessManager;
 import org.specdriven.agent.tool.BackgroundProcessHandle;
@@ -33,6 +41,8 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
     private volatile boolean shutdown;
     private final Map<Object, SdkAgent> activeAgents = new ConcurrentHashMap<>();
     private final ProcessManager processManager;
+    private volatile TaskStore taskStore;
+    private volatile TeamStore teamStore;
 
     public JsonRpcDispatcher(JsonRpcTransport transport) {
         this.transport = transport;
@@ -60,6 +70,9 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 case "tasks/stop" -> handleTasksStop(request);
                 case "tasks/state" -> handleTasksState(request);
                 case "tasks/output" -> handleTasksOutput(request);
+                case "registry/tasks" -> handleRegistryTasks(request);
+                case "registry/teams" -> handleRegistryTeams(request);
+                case "registry/team-members" -> handleRegistryTeamMembers(request);
                 default -> sendError(request.id(), JsonRpcError.methodNotFound());
             }
         } catch (Exception e) {
@@ -117,7 +130,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", VERSION);
         result.put("capabilities", Map.of(
-                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result", "tasks/list", "tasks/stop", "tasks/state", "tasks/output"),
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result", "tasks/list", "tasks/stop", "tasks/state", "tasks/output", "registry/tasks", "registry/teams", "registry/team-members"),
                 "notifications", List.of("$/cancel", "event")
         ));
         sendSuccess(request.id(), result);
@@ -421,6 +434,107 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 "stdout", po.stdout(),
                 "stderr", po.stderr()
         ));
+    }
+
+    // --- Registry handlers ---
+
+    private void ensureRegistryStores() {
+        if (taskStore == null) {
+            synchronized (this) {
+                if (taskStore == null) {
+                    String jdbcUrl = sdk.platform().database().jdbcUrl();
+                    var bus = sdk.eventBus();
+                    taskStore = new LealoneTaskStore(bus, jdbcUrl);
+                    teamStore = new LealoneTeamStore(bus, jdbcUrl);
+                }
+            }
+        }
+    }
+
+    private void handleRegistryTasks(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureRegistryStores();
+
+        String statusFilter = extractStringParam(request, "status");
+        List<Task> tasks;
+        if (statusFilter != null && !statusFilter.isBlank()) {
+            try {
+                TaskStatus status = TaskStatus.valueOf(statusFilter);
+                tasks = taskStore.queryByStatus(status);
+            } catch (IllegalArgumentException e) {
+                sendError(request.id(), new JsonRpcError(-32602, "Invalid status filter: " + statusFilter, null));
+                return;
+            }
+        } else {
+            tasks = taskStore.list();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Task task : tasks) {
+            result.add(taskToMap(task));
+        }
+        sendSuccess(request.id(), Map.of("tasks", result));
+    }
+
+    private void handleRegistryTeams(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureRegistryStores();
+
+        List<Team> teams = teamStore.list();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Team team : teams) {
+            result.add(teamToMap(team));
+        }
+        sendSuccess(request.id(), Map.of("teams", result));
+    }
+
+    private void handleRegistryTeamMembers(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureRegistryStores();
+
+        String teamId = extractStringParam(request, "teamId");
+        if (teamId == null || teamId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        List<TeamMember> members = teamStore.listMembers(teamId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (TeamMember member : members) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("teamId", member.teamId());
+            item.put("memberId", member.memberId());
+            item.put("role", member.role().name());
+            item.put("joinedAt", member.joinedAt());
+            result.add(item);
+        }
+        sendSuccess(request.id(), Map.of("members", result));
+    }
+
+    private Map<String, Object> taskToMap(Task task) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", task.id());
+        item.put("title", task.title());
+        item.put("description", task.description());
+        item.put("status", task.status().name());
+        item.put("owner", task.owner());
+        item.put("parentTaskId", task.parentTaskId());
+        item.put("metadata", task.metadata());
+        item.put("createdAt", task.createdAt());
+        item.put("updatedAt", task.updatedAt());
+        return item;
+    }
+
+    private Map<String, Object> teamToMap(Team team) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", team.id());
+        item.put("name", team.name());
+        item.put("description", team.description());
+        item.put("status", team.status().name());
+        item.put("metadata", team.metadata());
+        item.put("createdAt", team.createdAt());
+        item.put("updatedAt", team.updatedAt());
+        return item;
     }
 
     // --- Event forwarding ---
