@@ -5,6 +5,10 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.agent.registry.CronEntry;
+import org.specdriven.agent.registry.CronStatus;
+import org.specdriven.agent.registry.CronStore;
+import org.specdriven.agent.registry.LealoneCronStore;
 import org.specdriven.agent.registry.TaskStore;
 import org.specdriven.agent.registry.TeamStore;
 import org.specdriven.agent.registry.LealoneTaskStore;
@@ -43,6 +47,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
     private final ProcessManager processManager;
     private volatile TaskStore taskStore;
     private volatile TeamStore teamStore;
+    private volatile CronStore cronStore;
 
     public JsonRpcDispatcher(JsonRpcTransport transport) {
         this.transport = transport;
@@ -73,6 +78,9 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 case "registry/tasks" -> handleRegistryTasks(request);
                 case "registry/teams" -> handleRegistryTeams(request);
                 case "registry/team-members" -> handleRegistryTeamMembers(request);
+                case "cron/list" -> handleCronList(request);
+                case "cron/create" -> handleCronCreate(request);
+                case "cron/cancel" -> handleCronCancel(request);
                 default -> sendError(request.id(), JsonRpcError.methodNotFound());
             }
         } catch (Exception e) {
@@ -130,7 +138,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", VERSION);
         result.put("capabilities", Map.of(
-                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result", "tasks/list", "tasks/stop", "tasks/state", "tasks/output", "registry/tasks", "registry/teams", "registry/team-members"),
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result", "tasks/list", "tasks/stop", "tasks/state", "tasks/output", "registry/tasks", "registry/teams", "registry/team-members", "cron/list", "cron/create", "cron/cancel"),
                 "notifications", List.of("$/cancel", "event")
         ));
         sendSuccess(request.id(), result);
@@ -522,6 +530,106 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         item.put("metadata", task.metadata());
         item.put("createdAt", task.createdAt());
         item.put("updatedAt", task.updatedAt());
+        return item;
+    }
+
+    // --- Cron handlers ---
+
+    private void ensureCronStore() {
+        if (cronStore == null) {
+            synchronized (this) {
+                if (cronStore == null) {
+                    String jdbcUrl = sdk.platform().database().jdbcUrl();
+                    var bus = sdk.eventBus();
+                    // Empty callback: scheduler thread updates timestamps and publishes
+                    // CRON_TRIGGERED events via EventBus, but does not trigger agent execution.
+                    // Agent execution from cron is a future enhancement.
+                    cronStore = new LealoneCronStore(bus, jdbcUrl, () -> {});
+                }
+            }
+        }
+    }
+
+    private void handleCronList(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureCronStore();
+
+        List<CronEntry> entries = cronStore.list();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (CronEntry entry : entries) {
+            result.add(cronEntryToMap(entry));
+        }
+        sendSuccess(request.id(), Map.of("entries", result));
+    }
+
+    private void handleCronCreate(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureCronStore();
+
+        Object params = request.params();
+        if (!(params instanceof Map<?, ?> map)) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        String name = map.get("name") instanceof String s ? s : null;
+        String prompt = map.get("prompt") instanceof String s ? s : null;
+        if (name == null || name.isBlank() || prompt == null || prompt.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        String cronExpression = map.get("cronExpression") instanceof String s && !s.isBlank() ? s : null;
+        long delayMillis = map.get("delayMillis") instanceof Number n ? n.longValue() : 0L;
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> metadata = map.get("metadata") instanceof Map<?, ?> m
+                ? (Map<String, Object>) m
+                : Map.of();
+
+        long now = System.currentTimeMillis();
+        CronEntry entry = new CronEntry(
+                null, name, cronExpression, delayMillis, CronStatus.ACTIVE,
+                prompt, metadata, now, now, 0L, 0L
+        );
+
+        String id = cronStore.create(entry);
+        sendSuccess(request.id(), Map.of("id", id));
+    }
+
+    private void handleCronCancel(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+        ensureCronStore();
+
+        String entryId = extractStringParam(request, "entryId");
+        if (entryId == null || entryId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        try {
+            cronStore.cancel(entryId);
+            sendSuccess(request.id(), Map.of("success", true));
+        } catch (NoSuchElementException e) {
+            sendError(request.id(), new JsonRpcError(-32602, "Entry not found: " + entryId, null));
+        } catch (IllegalStateException e) {
+            sendError(request.id(), new JsonRpcError(-32602, e.getMessage(), null));
+        }
+    }
+
+    private Map<String, Object> cronEntryToMap(CronEntry entry) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", entry.id());
+        item.put("name", entry.name());
+        item.put("cronExpression", entry.cronExpression());
+        item.put("delayMillis", entry.delayMillis());
+        item.put("status", entry.status().name());
+        item.put("prompt", entry.prompt());
+        item.put("metadata", entry.metadata());
+        item.put("createdAt", entry.createdAt());
+        item.put("updatedAt", entry.updatedAt());
+        item.put("nextFireTime", entry.nextFireTime());
+        item.put("lastFireTime", entry.lastFireTime());
         return item;
     }
 
