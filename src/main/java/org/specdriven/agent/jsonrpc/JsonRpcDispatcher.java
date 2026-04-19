@@ -5,6 +5,11 @@ import org.specdriven.agent.event.Event;
 import org.specdriven.agent.question.*;
 import org.specdriven.agent.tool.Tool;
 import org.specdriven.agent.tool.ToolParameter;
+import org.specdriven.agent.tool.ProcessManager;
+import org.specdriven.agent.tool.DefaultProcessManager;
+import org.specdriven.agent.tool.BackgroundProcessHandle;
+import org.specdriven.agent.tool.ProcessState;
+import org.specdriven.agent.tool.ProcessOutput;
 import org.specdriven.sdk.*;
 
 import java.nio.file.Path;
@@ -27,10 +32,12 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
     private volatile SpecDriven sdk;
     private volatile boolean shutdown;
     private final Map<Object, SdkAgent> activeAgents = new ConcurrentHashMap<>();
+    private final ProcessManager processManager;
 
     public JsonRpcDispatcher(JsonRpcTransport transport) {
         this.transport = transport;
         this.executor = Executors.newVirtualThreadPerTaskExecutor();
+        this.processManager = new DefaultProcessManager(new org.specdriven.agent.event.SimpleEventBus());
     }
 
     // --- JsonRpcMessageHandler ---
@@ -49,6 +56,10 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
                 case "workflow/start" -> handleWorkflowStart(request);
                 case "workflow/state" -> handleWorkflowState(request);
                 case "workflow/result" -> handleWorkflowResult(request);
+                case "tasks/list" -> handleTasksList(request);
+                case "tasks/stop" -> handleTasksStop(request);
+                case "tasks/state" -> handleTasksState(request);
+                case "tasks/output" -> handleTasksOutput(request);
                 default -> sendError(request.id(), JsonRpcError.methodNotFound());
             }
         } catch (Exception e) {
@@ -106,7 +117,7 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("version", VERSION);
         result.put("capabilities", Map.of(
-                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result"),
+                "methods", List.of("initialize", "shutdown", "agent/run", "agent/stop", "agent/state", "tools/list", "question/answer", "workflow/start", "workflow/state", "workflow/result", "tasks/list", "tasks/stop", "tasks/state", "tasks/output"),
                 "notifications", List.of("$/cancel", "event")
         ));
         sendSuccess(request.id(), result);
@@ -339,6 +350,77 @@ public class JsonRpcDispatcher implements JsonRpcMessageHandler {
         } catch (IllegalArgumentException e) {
             sendError(request.id(), new JsonRpcError(-32603, e.getMessage(), null));
         }
+    }
+
+    // --- Background task handlers ---
+
+    private void handleTasksList(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        List<BackgroundProcessHandle> active = processManager.listActive();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (BackgroundProcessHandle handle : active) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", handle.id());
+            item.put("pid", handle.pid());
+            item.put("command", handle.command());
+            item.put("toolName", handle.toolName());
+            item.put("startTime", handle.startTime());
+            item.put("state", handle.state().name());
+            result.add(item);
+        }
+        sendSuccess(request.id(), Map.of("tasks", result));
+    }
+
+    private void handleTasksStop(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        String processId = extractStringParam(request, "processId");
+        if (processId == null || processId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        boolean stopped = processManager.stop(processId);
+        sendSuccess(request.id(), Map.of("success", stopped));
+    }
+
+    private void handleTasksState(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        String processId = extractStringParam(request, "processId");
+        if (processId == null || processId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        Optional<ProcessState> state = processManager.getState(processId);
+        if (state.isEmpty()) {
+            sendError(request.id(), new JsonRpcError(-32602, "Process not found: " + processId, null));
+            return;
+        }
+        sendSuccess(request.id(), Map.of("state", state.get().name()));
+    }
+
+    private void handleTasksOutput(JsonRpcRequest request) {
+        if (requireInitialized(request.id())) return;
+
+        String processId = extractStringParam(request, "processId");
+        if (processId == null || processId.isBlank()) {
+            sendError(request.id(), JsonRpcError.invalidParams());
+            return;
+        }
+
+        Optional<ProcessOutput> output = processManager.getOutput(processId);
+        if (output.isEmpty()) {
+            sendError(request.id(), new JsonRpcError(-32602, "Process not found: " + processId, null));
+            return;
+        }
+        ProcessOutput po = output.get();
+        sendSuccess(request.id(), Map.of(
+                "stdout", po.stdout(),
+                "stderr", po.stderr()
+        ));
     }
 
     // --- Event forwarding ---
